@@ -19,6 +19,16 @@ using namespace std;
 #define REAL       float
 #define TH_DIFF    8.418e-5
 
+__constant__ REAL F;
+
+
+__global__ void upTriangle(REAL *IC)
+{
+
+
+
+}
+
 
 int main()
 {
