@@ -7,7 +7,6 @@
 #include <cmath>
 #include <stlib>
 #include <stdlib>
-
 #include <ostream>
 #include <fstream>
 #include <math.h>
@@ -41,11 +40,11 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 	for (unsigned int k = 1; k<16; k++)
 	{
 		int sw = (k & 1);
-		int shft = 32*(sw*2-1);
+		int shft_rd = 32*((shft_wr+1) & 1);
 
 		if (tid <= (32-k-1) && tid >= k)
 		{
-			temper[tid + (32*sw)] = fo * (IC[tid+shft-1] + IC[tid+shft+1]) + (1-2.*fo) * IC[tid+shft];
+			temper[tid + (32*sw)] = fo * (temper[tid+shft-1] + temper[tid+shft+1]) + (1-2.*fo) * temper[tid+shft];
 		}
 
 		__syncthreads();
@@ -77,28 +76,58 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 {
 
 	__shared__ REAL temper[64];
+	__shared__ REAL sR[32];
+	__shared__ REAL sL[32];
+
 	unsigned int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	unsigned int tid = threadIdx.x;
 
+	// Pass to the left so all checks are for block 0.
+	// The left ridge is kept by the block.
+	sR[tid] = left[gid];
+
+	// The right ridge is passed, each block 1-end gets the right of 0-end-1
+	// Block 0 gets the right of the last block.
+	if (blockIdx.x > 0)
+	{
+		sL[tid] = right[gid-blockDim.x];
+	}
+	else
+	{
+		sL[tid] = right[blockDim.x*(blockDim.x-1) + tid];
+	}
+
+	__syncthreads();
+
+	//Initialize temper. Kind of an unrolled for loop.  This is actually at
+	//Timestep 0.
+	temper[13] = sL[0];
+	temper[14] = sL[1];
+	temper[15] = sR[0];
+	temper[16] = sR[1];
 	// k needs to first insert the right and left into the temper and then put the timestep in between them.
 	for (unsigned int k = 15; k>0; k--)
 	{
-
-		int sw = (k & 1);
-		int shft = 32*(sw*2-1);
-		temper[14-k+] =
-		temper[15-k]
-		temper[16+k]
-		temper[17+k]
-		// Well I reversed the loop so figure that out!
-		if (tid <= (32-k-1) && tid >= k)
+		// This tells you if the current row is the first or second.
+		int shft_wr = (k & 1);
+		// Read and write are opposite rows.
+		int shft_rd = 32*((shft_wr+1) & 1);
+		if (BlockIdx.x > 0)
 		{
-			temper[tid + (32*sw)] = fo * (IC[tid+(shft)-1] + IC[tid+(shft)+1]) + (1-2.*fo) * IC[tid+(shft)];
+			if (tid <= (32-k-1) && tid <= k)
+			{
+				temper[tid + (32*shft_wr)] = fo * (temper[tid+shft_rd-1] + temper[tid+shft_rd+1]) + (1-2.*fo) * temper[tid+shft_rd];
+			}
 		}
+		//Split part
+		else
+		{
 
+		}
+		
 		__syncthreads();
 
-
+		//Now there is only to handle the insertion and read out.
 	}
 
 
