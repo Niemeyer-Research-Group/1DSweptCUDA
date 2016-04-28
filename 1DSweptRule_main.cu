@@ -42,7 +42,7 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 		int sw = (k & 1);
 		int shft_rd = 32*((shft_wr+1) & 1);
 
-		if (tid <= (32-k-1) && tid >= k)
+		if (tid <= (31-k) && tid >= k)
 		{
 			temper[tid + (32*sw)] = fo * (temper[tid+shft-1] + temper[tid+shft+1]) + (1-2.*fo) * temper[tid+shft];
 		}
@@ -75,9 +75,13 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 {
 
-	__shared__ REAL temper[64];
+	//Now temper needs to accommodate a longer row by 2, one on each side.
+	//since it has two rows that's 4 extra floats.  The last row will still be
+	//32 numbers long.
+	__shared__ REAL temper[68];
 	__shared__ REAL sR[32];
 	__shared__ REAL sL[32];
+	// Maybe __shared__ REAL end_c[32;]
 
 	unsigned int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	unsigned int tid = threadIdx.x;
@@ -101,34 +105,75 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 
 	//Initialize temper. Kind of an unrolled for loop.  This is actually at
 	//Timestep 0.
-	temper[13] = sL[0];
-	temper[14] = sL[1];
-	temper[15] = sR[0];
-	temper[16] = sR[1];
+	temper[15] = sL[0];
+	temper[16] = sL[1];
+	temper[17] = sR[0];
+	temper[18] = sR[1];
+	int itr = 2;
+	int itr2 = 18;
 	// k needs to first insert the right and left into the temper and then put the timestep in between them.
-	for (unsigned int k = 15; k>0; k--)
+	for (unsigned int k = 17; k>1; k--)
 	{
 		// This tells you if the current row is the first or second.
 		int shft_wr = (k & 1);
 		// Read and write are opposite rows.
-		int shft_rd = 32*((shft_wr+1) & 1);
+		int shft_rd = 34*((shft_wr+1) & 1);
+
 		if (BlockIdx.x > 0)
 		{
-			if (tid <= (32-k-1) && tid <= k)
+			if (tid <= (33-k) && tid >= k)
 			{
-				temper[tid + (32*shft_wr)] = fo * (temper[tid+shft_rd-1] + temper[tid+shft_rd+1]) + (1-2.*fo) * temper[tid+shft_rd];
+				temper[tid + (34*shft_wr)] = fo * (temper[tid+shft_rd-1] + temper[tid+shft_rd+1]) + (1-2.*fo) * temper[tid+shft_rd];
 			}
+
+
 		}
 		//Split part
 		else
 		{
+			if (tid <= (33-k) && tid >= k)
+			{
+				if (tid == 16)
+				{
+					temper[tid + (34*shft_wr)] = 2. * fo * (temper[tid+shft_rd-1]-temper[tid+shft_rd]) + temper[tid+shft_rd]);
+				}
+				elseif (tid == 17)
+				{
+					temper[tid + (34*shft_wr)] = 2. * fo * (temper[tid+shft_rd+1]-temper[tid+shft_rd]) + temper[tid+shft_rd]);
+				}
+				else
+				{
+					temper[tid + (34*shft_wr)] = fo * (temper[tid+shft_rd-1] + temper[tid+shft_rd+1]) + (1-2.*fo) * temper[tid+shft_rd];
+				}
+			}
 
 		}
-		
+		__syncthreads();
+		//Fill edges
+		if (k>2 && tid == 0)
+		{
+			temper[(k-3)+(34*shft_wr)] = sL[itr];
+			temper[(k-2)+(34*shft_wr)] = sL[itr+1];
+			temper[itr2+(34*shft_wr)] = sR[itr];
+			itr ++;
+			temper[itr2+(34*shft_wr)] = sR[itr+1];
+			itr +=2;
+
+		}
+
 		__syncthreads();
 
-		//Now there is only to handle the insertion and read out.
 	}
+	//Now there is only global fill to handle.
+
+	if (blockIdx.x > 0)
+	{
+		//True if it ends on the first row! The first and last of temper on the final row are empty.
+		IC[gid - 15] = temper[tid+1];
+
+	}
+
+
 
 
 }
@@ -191,6 +236,6 @@ int main()
 	cudaFree(d_IC2);
 	cudaFree(d_coll);
 
-	return 1;
+	return 0;
 
 }
