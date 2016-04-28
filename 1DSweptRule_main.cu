@@ -5,6 +5,9 @@
 
 #include <iostream>
 #include <cmath>
+#include <stlib>
+#include <stdlib>
+
 #include <ostream>
 #include <fstream>
 #include <math.h>
@@ -28,24 +31,25 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 	__shared__ REAL sR[32];
 	__shared__ REAL sL[32];
 
-	unsigned int gid = blockDim.x * blockIdx.x + threadIdx; //Global Thread ID
+	unsigned int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	unsigned int tid = threadIdx.x;
 
-	Temper[tid] = IC[gid];
+	temper[tid] = IC[gid];
 	__syncthreads();
 	int itr = -1;
 
 	for (unsigned int k = 1; k<16; k++)
 	{
 		int sw = (k & 1);
-		int shft = sw*2-1;
+		int shft = 32*(sw*2-1);
 
-		if (tid <= (32-k-1) && >= k)
+		if (tid <= (32-k-1) && tid >= k)
 		{
-			temper[tid + (32*sw)] = fo * (IC[tid+(32*shft)-1] + IC[tid+(32*shft)+1]) + (1-2.*fo) * IC[tid+(32*shft)];
+			temper[tid + (32*sw)] = fo * (IC[tid+shft-1] + IC[tid+shft+1]) + (1-2.*fo) * IC[tid+shft];
 		}
 
 		__syncthreads();
+
 		if (sw)
 		{
 			sL[k+itr] = temper[k-1];
@@ -69,9 +73,33 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 
 }
 
-__global__ void downTriangle(REAL *IC)
+__global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 {
 
+	__shared__ REAL temper[64];
+	unsigned int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
+	unsigned int tid = threadIdx.x;
+
+	// k needs to first insert the right and left into the temper and then put the timestep in between them.
+	for (unsigned int k = 15; k>0; k--)
+	{
+
+		int sw = (k & 1);
+		int shft = 32*(sw*2-1);
+		temper[14-k+] =
+		temper[15-k]
+		temper[16+k]
+		temper[17+k]
+		// Well I reversed the loop so figure that out!
+		if (tid <= (32-k-1) && tid >= k)
+		{
+			temper[tid + (32*sw)] = fo * (IC[tid+(shft)-1] + IC[tid+(shft)+1]) + (1-2.*fo) * IC[tid+(shft)];
+		}
+
+		__syncthreads();
+
+
+	}
 
 
 }
@@ -85,7 +113,7 @@ int main()
 	REAL fou = TS*TH_DIFF/(ds*ds);
 
 	REAL IC[dv];
-	REAL *d_IC[dv], *d_right[dv], *d_left[dv];
+	REAL *d_IC, *d_right, *d_left;
 
 	for (int k = 0; k<dv; k++)
 	{
@@ -96,7 +124,7 @@ int main()
 	ofstream fwr;
 	fwr.open("1DHeatEQResult.dat");
 	// Write out x length and then delta x and then delta t.  First item of each line is timestamp.
-	filewrite << LENX << " " << ds << " " << TS << " " << 0 <<endl;
+	fwr << LENX << " " << ds << " " << TS << " " << 0 <<endl;
 
 	for (int k = 0; k<dv; k++)
 	{
@@ -117,10 +145,10 @@ int main()
 
 	// Some for loop
 
-	upTriangle <<< blk,32 >>>(d_IC,d_right,d_left);
+	upTriangle <<< bks,32 >>>(d_IC,d_right,d_left);
 
 
-	downTriangle <<< blk,32 >>>(d_IC2,d_IC);
+	downTriangle <<< bks,32 >>>(d_IC,d_right,d_left);
 
 	// Some condition about when to stop or copy memory.
 
