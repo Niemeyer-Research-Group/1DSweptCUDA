@@ -5,15 +5,14 @@
 
 #include <iostream>
 #include <cmath>
-#include <stlib>
-#include <stdlib>
+//#include <stdlib>
 #include <ostream>
 #include <fstream>
 #include <math.h>
 
 using namespace std;
 
-// Define Given Parameters.  NOTE TIMELIMIT is approximate.
+// Define Given Parameters.
 #define DIVISIONS  1024.
 #define LENX       50.
 #define TS         .5
@@ -30,26 +29,28 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 	__shared__ REAL sR[32];
 	__shared__ REAL sL[32];
 
-	unsigned int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
-	unsigned int tid = threadIdx.x;
+	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
+	int tid = threadIdx.x;
+	int shft_wr;
+	int shft_rd;
 
 	temper[tid] = IC[gid];
 	__syncthreads();
 	int itr = -1;
 
-	for (unsigned int k = 1; k<16; k++)
+	for (int k = 1; k<16; k++)
 	{
-		int sw = (k & 1);
-		int shft_rd = 32*((shft_wr+1) & 1);
+		shft_wr = (k & 1);
+		shft_rd = 32*((shft_wr+1) & 1);
 
 		if (tid <= (31-k) && tid >= k)
 		{
-			temper[tid + (32*sw)] = fo * (temper[tid+shft-1] + temper[tid+shft+1]) + (1-2.*fo) * temper[tid+shft];
+			temper[tid + (32*shft_wr)] = fo * (temper[tid+shft_rd-1] + temper[tid+shft_rd+1]) + (1-2.*fo) * temper[tid+shft_rd];
 		}
 
 		__syncthreads();
 
-		if (sw)
+		if (shft_wr)
 		{
 			sL[k+itr] = temper[k-1];
 			sL[k+itr+1] = temper[k];
@@ -66,11 +67,9 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 
 	right[gid] = sR[tid];
 	left[gid] = sL[tid];
-	__syncthreads();
-
-	}
 
 }
+
 
 __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 {
@@ -81,10 +80,11 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 	__shared__ REAL temper[68];
 	__shared__ REAL sR[32];
 	__shared__ REAL sL[32];
-	// Maybe __shared__ REAL end_c[32;]
 
-	unsigned int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
-	unsigned int tid = threadIdx.x;
+	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
+	int tid = threadIdx.x;
+	int shft_rd;
+	int shft_wr;
 
 	// Pass to the left so all checks are for block 0.
 	// The left ridge is kept by the block.
@@ -98,13 +98,15 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 	}
 	else
 	{
-		sL[tid] = right[blockDim.x*(blockDim.x-1) + tid];
+		sL[tid] = right[blockDim.x*(gridDim.x-1) + tid];
+
 	}
 
 	__syncthreads();
 
-	//Initialize temper. Kind of an unrolled for loop.  This is actually at
-	//Timestep 0.
+	// Initialize temper. Kind of an unrolled for loop.  This is actually at
+	// Timestep 0.
+	// I think I kinda lost the thread here so to speak.
 	temper[15] = sL[0];
 	temper[16] = sL[1];
 	temper[17] = sR[0];
@@ -112,14 +114,14 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 	int itr = 2;
 	int itr2 = 18;
 	// k needs to first insert the right and left into the temper and then put the timestep in between them.
-	for (unsigned int k = 17; k>1; k--)
+	for (int k = 17; k>1; k--)
 	{
 		// This tells you if the current row is the first or second.
-		int shft_wr = (k & 1);
+		shft_wr = (k & 1);
 		// Read and write are opposite rows.
-		int shft_rd = 34*((shft_wr+1) & 1);
+		shft_rd = 34*((shft_wr+1) & 1);
 
-		if (BlockIdx.x > 0)
+		if (blockIdx.x > 0)
 		{
 			if (tid <= (33-k) && tid >= k)
 			{
@@ -134,11 +136,11 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 			{
 				if (tid == 16)
 				{
-					temper[tid + (34*shft_wr)] = 2. * fo * (temper[tid+shft_rd-1]-temper[tid+shft_rd]) + temper[tid+shft_rd]);
+					temper[tid + (34*shft_wr)] = 2. * fo * (temper[tid+shft_rd-1]-temper[tid+shft_rd]) + temper[tid+shft_rd];
 				}
-				elseif (tid == 17)
+				else if (tid == 17)
 				{
-					temper[tid + (34*shft_wr)] = 2. * fo * (temper[tid+shft_rd+1]-temper[tid+shft_rd]) + temper[tid+shft_rd]);
+					temper[tid + (34*shft_wr)] = 2. * fo * (temper[tid+shft_rd+1]-temper[tid+shft_rd]) + temper[tid+shft_rd];
 				}
 				else
 				{
@@ -155,9 +157,9 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 			temper[(k-3)+(34*shft_wr)] = sL[itr];
 			temper[(k-2)+(34*shft_wr)] = sL[itr+1];
 			temper[itr2+(34*shft_wr)] = sR[itr];
-			itr ++;
+			itr2++;
 			temper[itr2+(34*shft_wr)] = sR[itr+1];
-			itr +=2;
+			itr+=2;
 
 		}
 
@@ -170,17 +172,18 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 	if (blockIdx.x > 0)
 	{
 		//True if it ends on the first row! The first and last of temper on the final row are empty.
-		IC[gid - 16] = temper[tid+1];
+		IC[gid - 16] = temper[tid];
 	}
 	else
 	{
 		if (tid>15)
 		{
-			IC[gid - 16] = temper[tid+2];
+			IC[gid - 16] = temper[tid];
 		}
 		else
 		{
-			IC[(blockDim.x * gridDim.x) + (tid - 16) ] = temper[tid+2];
+			IC[(blockDim.x * gridDim.x) + (tid - 16) ] = temper[tid+1];
+
 		}
 	}
 
@@ -209,7 +212,7 @@ int main()
 	ofstream fwr;
 	fwr.open("1DHeatEQResult.dat");
 	// Write out x length and then delta x and then delta t.  First item of each line is timestamp.
-	fwr << LENX << " " << ds << " " << TS << " " << 0 <<endl;
+	fwr << LENX << " " << DIVISIONS << " " << TS << " " << endl << 0 << " ";
 
 	for (int k = 0; k<dv; k++)
 	{
@@ -232,7 +235,7 @@ int main()
 	REAL t_eq = 0.;
 	double wall0 = clock();
 
-	for(unsigned int k = 0; k < ITERLIMIT; k++)
+	for(unsigned int k = 0; k < 20; k++)
 	{
 
 		upTriangle <<< bks,32 >>>(d_IC,d_right,d_left);
@@ -241,8 +244,19 @@ int main()
 
 		t_eq += (TS*17);
 
+		if (true)
+		{
+			cudaMemcpy(T_final, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+			fwr << t_eq << " ";
 
-	// Some condition about when to stop or copy memory.
+			for (int k = 0; k<dv; k++)
+			{
+				fwr << T_final[k] << " ";
+			}
+			fwr << endl;
+		}
+		// Some condition about when to stop and write out values.
+
 	}
 
 	double wall1 = clock();
@@ -250,12 +264,12 @@ int main()
 
 	cout << "That took: " << timed << " seconds" << endl;
 
-	cudaMemcpy(T_final, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost)
-	fwr << t_eq << " ";
-	for (unsigned int k = 0; k<dv; k++)
-	{
-		fwr << T_final[k] << " ";
-	}
+	// cudaMemcpy(T_final, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+	// fwr << t_eq << " ";
+	// for (int k = 0; k<dv; k++)
+	// {
+	// 	fwr << T_final[k] << " ";
+	// }
 
 	fwr.close();
 	// End loop and write out data.
