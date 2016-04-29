@@ -5,18 +5,19 @@
 
 #include <iostream>
 #include <cmath>
-//#include <stdlib>
+#include <cstdlib>
+#include <ctime>
 #include <ostream>
+#include <cstring>
 #include <fstream>
-#include <math.h>
 
 using namespace std;
 
-// Define Given Parameters.
+// Define Given Parameters.  Material is aluminum.
 #define DIVISIONS  1024.
 #define LENX       50.
 #define TS         .5
-#define ITERLIMIT  5000.
+#define ITERLIMIT  50000
 #define REAL       float
 #define TH_DIFF    8.418e-5
 
@@ -58,8 +59,8 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 			sL[k+itr+3] = temper[33+k];
 			sR[k+itr] = temper[31-k];
 			sR[k+itr+1] = temper[32-k];
-			sR[k+itr+2] = temper[61-k];
-			sR[k+itr+3] = temper[62-k];
+			sR[k+itr+2] = temper[62-k];
+			sR[k+itr+3] = temper[63-k];
 			itr += 2;
 		}
 
@@ -123,28 +124,28 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 
 		if (blockIdx.x > 0)
 		{
-			if (tid <= (33-k) && tid >= k)
+			if (tid <= (33-k) && tid >= (k-2))
 			{
-				temper[tid + (34*shft_wr)] = fo * (temper[tid+shft_rd-1] + temper[tid+shft_rd+1]) + (1-2.*fo) * temper[tid+shft_rd];
+				temper[tid + 1 + (34*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1-2.*fo) * temper[tid+shft_rd+1];
 			}
 
 		}
 		//Split part
 		else
 		{
-			if (tid <= (33-k) && tid >= k)
+			if (tid <= (33-k) && tid >= (k-2))
 			{
-				if (tid == 16)
+				if (tid == 15)
 				{
-					temper[tid + (34*shft_wr)] = 2. * fo * (temper[tid+shft_rd-1]-temper[tid+shft_rd]) + temper[tid+shft_rd];
+					temper[tid + 1 + (34*shft_wr)] = 2. * fo * (temper[tid+shft_rd]-temper[tid+shft_rd+1]) + temper[tid+shft_rd+1];
 				}
-				else if (tid == 17)
+				else if (tid == 16)
 				{
-					temper[tid + (34*shft_wr)] = 2. * fo * (temper[tid+shft_rd+1]-temper[tid+shft_rd]) + temper[tid+shft_rd];
+					temper[tid + 1 + (34*shft_wr)] = 2. * fo * (temper[tid+shft_rd+2]-temper[tid+shft_rd+1]) + temper[tid+shft_rd+1];
 				}
 				else
 				{
-					temper[tid + (34*shft_wr)] = fo * (temper[tid+shft_rd-1] + temper[tid+shft_rd+1]) + (1-2.*fo) * temper[tid+shft_rd];
+					temper[tid + 1 + (34*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1-2.*fo) * temper[tid+shft_rd+1];
 				}
 			}
 
@@ -172,17 +173,18 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 	if (blockIdx.x > 0)
 	{
 		//True if it ends on the first row! The first and last of temper on the final row are empty.
-		IC[gid - 16] = temper[tid];
+		IC[gid - 16] = temper[tid+1];
 	}
 	else
 	{
 		if (tid>15)
 		{
-			IC[gid - 16] = temper[tid];
+			IC[gid - 16] = temper[tid+1];
 		}
 		else
 		{
 			IC[(blockDim.x * gridDim.x) + (tid - 16) ] = temper[tid+1];
+
 
 		}
 	}
@@ -210,7 +212,7 @@ int main()
 
 	// Call out the file before the loop and write out the initial condition.
 	ofstream fwr;
-	fwr.open("1DHeatEQResult.dat");
+	fwr.open("1DHeatEQResult.dat",ios::trunc);
 	// Write out x length and then delta x and then delta t.  First item of each line is timestamp.
 	fwr << LENX << " " << DIVISIONS << " " << TS << " " << endl << 0 << " ";
 
@@ -235,7 +237,7 @@ int main()
 	REAL t_eq = 0.;
 	double wall0 = clock();
 
-	for(unsigned int k = 0; k < 20; k++)
+	for(unsigned int k = 0; k < ITERLIMIT; k++)
 	{
 
 		upTriangle <<< bks,32 >>>(d_IC,d_right,d_left);
@@ -244,18 +246,19 @@ int main()
 
 		t_eq += (TS*17);
 
-		if (true)
-		{
-			cudaMemcpy(T_final, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
-			fwr << t_eq << " ";
-
-			for (int k = 0; k<dv; k++)
-			{
-				fwr << T_final[k] << " ";
-			}
-			fwr << endl;
-		}
 		// Some condition about when to stop and write out values.
+		// if (true)
+		// {
+		// 	cudaMemcpy(T_final, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+		// 	fwr << t_eq << " ";
+		//
+		// 	for (int k = 0; k<dv; k++)
+		// 	{
+		// 		fwr << T_final[k] << " ";
+		// 	}
+		// 	fwr << endl;
+		// }
+
 
 	}
 
@@ -264,12 +267,12 @@ int main()
 
 	cout << "That took: " << timed << " seconds" << endl;
 
-	// cudaMemcpy(T_final, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
-	// fwr << t_eq << " ";
-	// for (int k = 0; k<dv; k++)
-	// {
-	// 	fwr << T_final[k] << " ";
-	// }
+	cudaMemcpy(T_final, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+	fwr << t_eq << " ";
+	for (int k = 0; k<dv; k++)
+	{
+		fwr << T_final[k] << " ";
+	}
 
 	fwr.close();
 	// End loop and write out data.
@@ -277,6 +280,7 @@ int main()
 	cudaFree(d_IC);
 	cudaFree(d_right);
 	cudaFree(d_left);
+	cudaDeviceReset();
 
 	return 0;
 }

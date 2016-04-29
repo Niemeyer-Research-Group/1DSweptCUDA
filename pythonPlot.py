@@ -8,14 +8,16 @@ import numpy as np
 import subprocess as sp
 import shlex
 
+c = int(raw_input("Do you want to compile it 1 for yes, 0 for no: ")) 
 
-compStr = "nvcc 1DSweptRule_main.cu -o SweptOut -arch sm_35"
-execut = ['./SweptOut']
-compArg = shlex.split(compStr)
-proc = sp.Popen(compArg)
-sp.Popen.wait(proc)
-proc = sp.Popen(execut)
-sp.Popen.wait(proc)
+if c:
+    compStr = "nvcc 1DSweptRule_main.cu -o SweptOut -arch sm_35"
+    execut = ['./SweptOut']
+    compArg = shlex.split(compStr)
+    proc = sp.Popen(compArg)
+    sp.Popen.wait(proc)
+    proc = sp.Popen(execut)
+    sp.Popen.wait(proc)
 
 fin = open('1DHeatEQResult.dat')
 data = []
@@ -29,16 +31,22 @@ for line in fin:
         data.append(ar)
 
 
-print len(xax)
-print len(data)
-print len(data[0])
-print len(data[1])
+print "Percent Difference in integrals:"
+df = 100*abs(np.trapz(data[0][1:],xax)-np.trapz(data[1][1:],xax))/np.trapz(data[0][1:],xax)
+print df
 
+lbl = ["Initial Condition"]
 
 plt.plot(xax,data[0][1:])
 plt.hold
-plt.plot(xax,data[1][1:])
-plt.hold
-plt.plot(xax,data[2][1:])
+for k in range(1,len(data)):
+    plt.plot(xax,data[k][1:])
+    lbl.append("t = {} seconds".format(data[k][0]))
+    
+
+plt.legend(lbl)
+plt.xlabel("Position on bar (m)")
+plt.ylabel("Temperature (C)")
+plt.title("Numerical solution to temperature along 1-D bar")
 plt.grid()
 plt.show()
