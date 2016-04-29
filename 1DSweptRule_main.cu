@@ -17,7 +17,7 @@ using namespace std;
 #define DIVISIONS  1024.
 #define LENX       50.
 #define TS         .5
-#define TIMELIMIT  5000.
+#define ITERLIMIT  5000.
 #define REAL       float
 #define TH_DIFF    8.418e-5
 
@@ -126,7 +126,6 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 				temper[tid + (34*shft_wr)] = fo * (temper[tid+shft_rd-1] + temper[tid+shft_rd+1]) + (1-2.*fo) * temper[tid+shft_rd];
 			}
 
-
 		}
 		//Split part
 		else
@@ -148,8 +147,9 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 			}
 
 		}
-		__syncthreads();
-		//Fill edges
+
+		// Fill edges.  Thread 0 never gets used for both operations so the calculation and the
+		// filling are conceptually coincident.
 		if (k>2 && tid == 0)
 		{
 			temper[(k-3)+(34*shft_wr)] = sL[itr];
@@ -163,30 +163,41 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 
 		__syncthreads();
 
+
 	}
 	//Now there is only global fill to handle.
 
 	if (blockIdx.x > 0)
 	{
 		//True if it ends on the first row! The first and last of temper on the final row are empty.
-		IC[gid - 15] = temper[tid+1];
-
+		IC[gid - 16] = temper[tid+1];
 	}
-
-
-
+	else
+	{
+		if (tid>15)
+		{
+			IC[gid - 16] = temper[tid+2];
+		}
+		else
+		{
+			IC[(blockDim.x * gridDim.x) + (tid - 16) ] = temper[tid+2];
+		}
+	}
 
 }
 
 
 int main()
 {
+
+	cudaSetDevice(0);
 	const int dv = int(DIVISIONS);
 	const int bks = dv/32;
 	const REAL ds = LENX/(DIVISIONS-1);
 	REAL fou = TS*TH_DIFF/(ds*ds);
 
 	REAL IC[dv];
+	REAL T_final[dv];
 	REAL *d_IC, *d_right, *d_left;
 
 	for (int k = 0; k<dv; k++)
@@ -218,24 +229,40 @@ int main()
 	cudaMemcpy(d_IC,IC,sizeof(REAL)*dv,cudaMemcpyHostToDevice);
 
 	// Some for loop
+	REAL t_eq = 0.;
+	double wall0 = clock();
 
-	upTriangle <<< bks,32 >>>(d_IC,d_right,d_left);
+	for(unsigned int k = 0; k < ITERLIMIT; k++)
+	{
 
+		upTriangle <<< bks,32 >>>(d_IC,d_right,d_left);
 
-	downTriangle <<< bks,32 >>>(d_IC,d_right,d_left);
+		downTriangle <<< bks,32 >>>(d_IC,d_right,d_left);
+
+		t_eq += (TS*17);
+
 
 	// Some condition about when to stop or copy memory.
+	}
 
+	double wall1 = clock();
+	double timed = (wall1-wall0)/CLOCKS_PER_SEC;
 
+	cout << "That took: " << timed << " seconds" << endl;
 
+	cudaMemcpy(T_final, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost)
+	fwr << t_eq << " ";
+	for (unsigned int k = 0; k<dv; k++)
+	{
+		fwr << T_final[k] << " ";
+	}
+
+	fwr.close();
 	// End loop and write out data.
 
-
-
 	cudaFree(d_IC);
-	cudaFree(d_IC2);
-	cudaFree(d_coll);
+	cudaFree(d_right);
+	cudaFree(d_left);
 
 	return 0;
-
 }
