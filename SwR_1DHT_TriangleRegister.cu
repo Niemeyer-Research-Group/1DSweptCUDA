@@ -11,9 +11,9 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 
 	//Need pieces of information:
 	//sum(2:2:base) (matlabese) of triangle (tA)
-	//base of triangle (tB)
+	//base of triangle (tB)  Ok we'll use 2D
 
-	REAL temper[tA];
+	REAL temper[tB][tB/2];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tid = threadIdx.x; //Warp or node ID
@@ -22,54 +22,37 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 	#pragma unroll
 	for (int k = 0; k<tB; k++)
 	{
-		temper[k] = (IC[gid*tB+k]);
+		temper[0][k] = (IC[gid*tB+k]);
 	}
+
+	//Global to global or register to global?
+	right[gid*tB] = IC[gid*tB];
+	right[gid*tB+1] = IC[gid*tB+1];
+	left[gid*tB] = IC[ ((gid+1) * tB) - 2];
+	left[gid*tB+1] = IC[ ((gid+1) * tB) - 1];
 
 	//The initial conditions are timeslice 0 so start k at 1.
 	#pragma unroll
-	for (int k = 1; k<16; k++)
+	for (int k = 1; k<tB/2; k++)
 	{
-		//Well there's definitely still some math here.
-		for(int n = tB*k; n<tB-(2*k)); n++)
-		//Bitwise even odd. On even iterations write to first row.
-		shft_wr = (k & 1);
-		//On even iterations write to second row (starts at element 32)
-		shft_rd = 32*((shft_wr+1) & 1);
 
+		for(int n = k; n < (tB-k); n++)
+		{
 		//Each iteration the triangle narrows.  When k = 1, 30 points are
 		//computed, k = 2, 28 points.
-		if (tid <= (31-k) && tid >= k)
-		{
-			temper[tid + (32*shft_wr)] = fo * (temper[tid+shft_rd-1] + temper[tid+shft_rd+1]) + (1-2.*fo) * temper[tid+shft_rd];
+			temper[k][n] = fo * (temper[k-1][n+1]  + temper[k-1][n-1] ) + (1-2.*fo) * temper[k-1][n];
 		}
 
-		//Make sure the threads are synced
-		__syncthreads();
-
-		//Now thread 0 in each block (which never computes a value) is used to
-		//fill the shared right and left arrays with the relevant values.
-		//This grabs the top and bottom edges on the iteration when the top
-		//row is written.
-		if (shft_wr && tid == 0)
-		{
-			sL[k+itr] = temper[k-1];
-			sL[k+itr+1] = temper[k];
-			sL[k+itr+2] = temper[32+k];
-			sL[k+itr+3] = temper[33+k];
-			sR[k+itr] = temper[31-k];
-			sR[k+itr+1] = temper[32-k];
-			sR[k+itr+2] = temper[62-k];
-			sR[k+itr+3] = temper[63-k];
-			itr += 2;
-		}
+		// Global memory version
+		// Index math is kinda out of contol.
+		right[gid*tB+2*k] = temper[k][k];
+		right[gid*tB+(2*k+1)] = temper[k][k+1];
+		left[gid*tB+2*k] =  temper[k][tB-k-1];
+		left[gid*tB+(2*k+1)] =  temper[k][tB-k-2];
 
 	}
 
-	//After the triangle has been computed, the right and left shared arrays are
-	//stored in global memory by the global thread ID since (conveniently),
-	//they're the same size as a warp!
-	right[gid] = sR[tid];
-	left[gid] = sL[tid];
+	// Ok, let's use shfl next time
 
 }
 
@@ -89,39 +72,40 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 	//Now temper needs to accommodate a longer row by 2, one on each side.
 	//since it has two rows that's 4 extra floats.  The last row will still be
 	//32 numbers long.
-	__shared__ REAL temper[68];
-	__shared__ REAL sR[32];
-	__shared__ REAL sL[32];
+	REAL temper[tB+2][tB/2+1];
+	REAL sR[tB/2];
+	REAL sL[tB/2];
 
 	//Same as upTriangle
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
 	int tid = threadIdx.x;
-	int shft_rd;
-	int shft_wr;
 
 	// Pass to the left so all checks are for block 0 (this reduces arithmetic).
-	// The left ridge is always kept by the block.
-	sR[tid] = left[gid];
-
+	// The left ridge is always kept by the block. Max gid = block*grid-1
+	#pragma unroll
+	for (int k = 0; k<tB/2; k++)
+	{
+		sR[k] = left[gid*tB+k];
+		if (gid > 0)
+		{
+			sL[k] = right[(gid-1)*tB+k];
+		}
+		else
+		{
+			sL[k] = right[(blockDim.x*gridDim.x-1)*tB+k];
+		}
+	}
 	// The right ridge is passed, each block 1-end gets the right of 0-end-1
 	// Block 0 gets the right of the last block.
-	if (blockIdx.x > 0)
-	{
-		sL[tid] = right[gid-blockDim.x];
-	}
-	else
-	{
-		sL[tid] = right[blockDim.x*(gridDim.x-1) + tid];
-	}
-
-	__syncthreads();
+	// Damn thread divergence!
 
 	// Initialize temper. Kind of an unrolled for loop.  This is actually at
 	// Timestep 0.
-	temper[15] = sL[0];
-	temper[16] = sL[1];
-	temper[17] = sR[0];
-	temper[18] = sR[1];
+
+	temper[0][tB/2-1] = sL[0];
+	temper[0][tB/2] = sL[1];
+	temper[0][tB/2+1] = sR[0];
+	temper[0][tB/2+2] = sR[1];
 
 	//Now we need two counters since we need to use sL and sR EVERY iteration
 	//instead of every other iteration and instead of growing smaller with every
@@ -130,44 +114,36 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 	int itr2 = 18;
 	//k needs to insert the relevant left right values around the computed values
 	//every timestep.  Since it grows larger the loop is reversed.
-	for (int k = 17; k>1; k--)
+	for (int k = 1; k<(tB/2+2); k++)
 	{
-		// This tells you if the current row is the first or second.
-		shft_wr = (k & 1);
-		// Read and write are opposite rows.
-		shft_rd = 34*((shft_wr+1) & 1);
 
+		for (int n = (tB/2-k+1); n < (tB/2+k+1); n++)
+		{
 		//Block 0 is split so it needs a different algorithm.  This algorithm
 		//is slightly different than top triangle as described in the note above.
-		if (blockIdx.x > 0)
+		if gid > 0)
 		{
-			if (tid <= (33-k) && tid >= (k-2))
+
+			temper[k][n] = fo * (temper[k-1][n+1]  + temper[k-1][n-1] ) + (1-2.*fo) * temper[k-1][n];
+
+		}
+
+
+		else
+		{
+			if (tid == 15)
+			{
+				temper[tid + 1 + (34*shft_wr)] = 2. * fo * (temper[tid+shft_rd]-temper[tid+shft_rd+1]) + temper[tid+shft_rd+1];
+			}
+			else if (tid == 16)
+			{
+				temper[tid + 1 + (34*shft_wr)] = 2. * fo * (temper[tid+shft_rd+2]-temper[tid+shft_rd+1]) + temper[tid+shft_rd+1];
+			}
+			else
 			{
 				temper[tid + 1 + (34*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1-2.*fo) * temper[tid+shft_rd+1];
 			}
 
-		}
-
-		//Split part.  This exhibits thread divergence and is suboptimal.
-		//So it's ripe to be improved.
-
-		else
-		{
-			if (tid <= (33-k) && tid >= (k-2))
-			{
-				if (tid == 15)
-				{
-					temper[tid + 1 + (34*shft_wr)] = 2. * fo * (temper[tid+shft_rd]-temper[tid+shft_rd+1]) + temper[tid+shft_rd+1];
-				}
-				else if (tid == 16)
-				{
-					temper[tid + 1 + (34*shft_wr)] = 2. * fo * (temper[tid+shft_rd+2]-temper[tid+shft_rd+1]) + temper[tid+shft_rd+1];
-				}
-				else
-				{
-					temper[tid + 1 + (34*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1-2.*fo) * temper[tid+shft_rd+1];
-				}
-			}
 
 		}
 
@@ -177,6 +153,7 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 		//reliant on the entire loop.
 		if (k>2 && tid == 0)
 		{
+
 			temper[(k-3)+(34*shft_wr)] = sL[itr];
 			temper[(k-2)+(34*shft_wr)] = sL[itr+1];
 			temper[itr2+(34*shft_wr)] = sR[itr];
@@ -185,7 +162,6 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 			itr+=2;
 
 		}
-		__syncthreads();
 
 	}
 
