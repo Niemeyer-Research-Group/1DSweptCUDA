@@ -10,10 +10,9 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 {
 
 	//Need pieces of information:
-	//sum(2:2:base) (matlabese) of triangle (tA)
 	//base of triangle (tB)  Ok we'll use 2D
 
-	REAL temper[tB][tB/2];
+	REAL temper[tB*tB/4];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tid = threadIdx.x; //Warp or node ID
@@ -22,33 +21,42 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 	#pragma unroll
 	for (int k = 0; k<tB; k++)
 	{
-		temper[0][k] = (IC[gid*tB+k]);
+		temper[k] = (IC[gid*tB+k]);
 	}
 
-	//Global to global or register to global?
+	//Global to global
 	right[gid*tB] = IC[gid*tB];
 	right[gid*tB+1] = IC[gid*tB+1];
 	left[gid*tB] = IC[ ((gid+1) * tB) - 2];
 	left[gid*tB+1] = IC[ ((gid+1) * tB) - 1];
+
+	int iter = tB;
+	int iter2 = tB;
 
 	//The initial conditions are timeslice 0 so start k at 1.
 	#pragma unroll
 	for (int k = 1; k<tB/2; k++)
 	{
 
-		for(int n = k; n < (tB-k); n++)
+		for(int n = 0; n < (tB-2*k); n++)
 		{
 		//Each iteration the triangle narrows.  When k = 1, 30 points are
 		//computed, k = 2, 28 points.
-			temper[k][n] = fo * (temper[k-1][n+1]  + temper[k-1][n-1] ) + (1-2.*fo) * temper[k-1][n];
+			temper[iter2+n] = fo * (temper[(iter2-iter)+n]  + temper[(iter2-iter)+2+n] ) + (1.-2.*fo) * temper[(iter2-iter)+1+n];
 		}
+
+		right[gid*tB+2*k] = temper[iter2];
+		right[gid*tB+(2*k+1)] = temper[(iter2+1];
+
+		iter -= 2
+		iter2 += iter
 
 		// Global memory version
 		// Index math is kinda out of contol.
-		right[gid*tB+2*k] = temper[k][k];
-		right[gid*tB+(2*k+1)] = temper[k][k+1];
-		left[gid*tB+2*k] =  temper[k][tB-k-1];
-		left[gid*tB+(2*k+1)] =  temper[k][tB-k-2];
+		// Could template this.
+
+		left[gid*tB+2*k] =  temper[iter2-2];
+		left[gid*tB+(2*k+1)] =  temper[iter2-1];
 
 	}
 
@@ -72,9 +80,9 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 	//Now temper needs to accommodate a longer row by 2, one on each side.
 	//since it has two rows that's 4 extra floats.  The last row will still be
 	//32 numbers long.
-	REAL temper[tB+2][tB/2+1];
-	REAL sR[tB/2];
-	REAL sL[tB/2];
+	REAL temper[tB*tB/4];
+	REAL shR[tB/2];
+	REAL shL[tB/2];
 
 	//Same as upTriangle
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
@@ -85,14 +93,14 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 	#pragma unroll
 	for (int k = 0; k<tB/2; k++)
 	{
-		sR[k] = left[gid*tB+k];
+		shR[k] = left[gid*tB+k];
 		if (gid > 0)
 		{
-			sL[k] = right[(gid-1)*tB+k];
+			shL[k] = right[(gid-1)*tB+k];
 		}
 		else
 		{
-			sL[k] = right[(blockDim.x*gridDim.x-1)*tB+k];
+			shL[k] = right[(blockDim.x*gridDim.x-1)*tB+k];
 		}
 	}
 	// The right ridge is passed, each block 1-end gets the right of 0-end-1
@@ -100,12 +108,25 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 	// Damn thread divergence!
 
 	// Initialize temper. Kind of an unrolled for loop.  This is actually at
-	// Timestep 0.
-
-	temper[0][tB/2-1] = sL[0];
-	temper[0][tB/2] = sL[1];
-	temper[0][tB/2+1] = sR[0];
-	temper[0][tB/2+2] = sR[1];
+	// Timestep 1 and 2.
+	if (gid>0)
+	{
+		temper[0] = fo * (shL[0]  + shR[0]) + (1.-2.*fo) * shL[1];
+		temper[1] = fo * (shR[1]  + shL[1]) + (1.-2.*fo) * shR[0];
+		temper[2] = fo * (shL[2]  + temper[0]) + (1.-2.*fo) * shL[3];
+		temper[3] = fo * (shL[3]  + temper[1]) + (1.-2.*fo) * temper[0];
+		temper[4] = fo * (shR[2]  + temper[0]) + (1.-2.*fo) * temper[1];
+		temper[5] = fo * (shR[3]  + temper[1]) + (1.-2.*fo) * shR[2];
+	}
+	else
+	{
+		temper[0] = 2 * fo * (shL[0]  - shL[1]) +  shL[1];
+		temper[1] = 2 * fo * (shR[1]  - shR[0]) +  shR[0];
+		temper[2] = fo * (shL[2]  + temper[0]) + (1.-2.*fo) * shL[3];
+		temper[3] = 2 * fo * (shL[3]  - temper[0]) +  temper[0];
+		temper[4] = 2 * fo * (shR[2]  - temper[1]) +  temper[1];
+		temper[5] = fo * (shR[3]  + temper[1]) + (1.-2.*fo) * shR[2];
+	}
 
 	//Now we need two counters since we need to use sL and sR EVERY iteration
 	//instead of every other iteration and instead of growing smaller with every
@@ -114,14 +135,16 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 	int itr2 = 18;
 	//k needs to insert the relevant left right values around the computed values
 	//every timestep.  Since it grows larger the loop is reversed.
-	for (int k = 1; k<(tB/2+2); k++)
+	for (int k = 2; k<(tB/2+2); k++)
 	{
+
+		temper[]
 
 		for (int n = (tB/2-k+1); n < (tB/2+k+1); n++)
 		{
 		//Block 0 is split so it needs a different algorithm.  This algorithm
 		//is slightly different than top triangle as described in the note above.
-		if gid > 0)
+		if (gid > 0)
 		{
 
 			temper[k][n] = fo * (temper[k-1][n+1]  + temper[k-1][n-1] ) + (1-2.*fo) * temper[k-1][n];
