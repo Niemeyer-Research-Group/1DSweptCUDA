@@ -11,11 +11,12 @@ import shlex
 c = int(raw_input("Do you want to compile it 1 for yes, 0 for no: ")) 
 
 if c:
-    compStr = "nvcc 1DSweptRule_main.cu -o SweptOut -arch sm_35"
+    compStr = "nvcc 1DSweptRule_mainregister.cu -o SweptOut -gencode arch=compute_35,code=sm_35 -lm -std=c++11"
     execut = ['./SweptOut']
     compArg = shlex.split(compStr)
     proc = sp.Popen(compArg)
     sp.Popen.wait(proc)
+    print "Compiled"
     proc = sp.Popen(execut)
     sp.Popen.wait(proc)
 
