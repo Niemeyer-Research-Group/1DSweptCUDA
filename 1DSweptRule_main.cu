@@ -11,7 +11,7 @@ it under the terms of the MIT license.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
 You should have received a copy of the MIT license
 along with this program.  If not, see <https://opensource.org/licenses/MIT>.
@@ -24,7 +24,7 @@ The nodes never calculate a full diamond in a single kernel call and the boundar
 values only get passed one direction, right.  This is a slightly simpler
 application that passes the shared values in each node to the GPU global memory
 more often.  This cuts down on some of the logic required in the full scheme and
-makes results easier to output at various pointsin the solution.
+makes results easier to output at various points in the solution.
 */
 
 #include <cuda.h>
@@ -42,12 +42,13 @@ makes results easier to output at various pointsin the solution.
 using namespace std;
 
 // Define Given Parameters.  Material is aluminum.
-#define DIVISIONS  1024.
-#define LENX       50.
-#define TS         .5
-#define ITERLIMIT  50000
+#define DIVISIONS  4096.
+#define LENX       5.
+#define TS         .005
+//#define ITERLIMIT  50000
 #define REAL       float
 #define TH_DIFF    8.418e-5
+#define THREADBLK  64
 
 // Declare constant Fourier number that will go in Device constant memory.
 __constant__ REAL fo;
@@ -72,9 +73,9 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 	variable has 64 values, or two rows of 32, linearized.  The current and
 	previous value alternate rows at each timeslice.
 	*/
-	__shared__ REAL temper[64];
-	__shared__ REAL sR[32];
-	__shared__ REAL sL[32];
+	__shared__ REAL temper[2*THREADBLK];
+	__shared__ REAL sR[THREADBLK];
+	__shared__ REAL sL[THREADBLK];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tid = threadIdx.x; //Warp or node ID
@@ -91,18 +92,18 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 	int itr = -1;
 
 	//The initial conditions are timslice 0 so start k at 1.
-	for (int k = 1; k<16; k++)
+	for (int k = 1; k<(THREADBLK/2); k++)
 	{
 		//Bitwise even odd. On even iterations write to first row.
 		shft_wr = (k & 1);
 		//On even iterations write to second row (starts at element 32)
-		shft_rd = 32*((shft_wr+1) & 1);
+		shft_rd = THREADBLK*((shft_wr+1) & 1);
 
 		//Each iteration the triangle narrows.  When k = 1, 30 points are
 		//computed, k = 2, 28 points.
-		if (tid <= (31-k) && tid >= k)
+		if (tid <= ((THREADBLK-1)-k) && tid >= k)
 		{
-			temper[tid + (32*shft_wr)] = fo * (temper[tid+shft_rd-1] + temper[tid+shft_rd+1]) + (1-2.*fo) * temper[tid+shft_rd];
+			temper[tid + (THREADBLK*shft_wr)] = fo * (temper[tid+shft_rd-1] + temper[tid+shft_rd+1]) + (1.f-2.f*fo) * temper[tid+shft_rd];
 		}
 
 		//Make sure the threads are synced
@@ -112,20 +113,17 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 		//fill the shared right and left arrays with the relevant values.
 		//This grabs the top and bottom edges on the iteration when the top
 		//row is written.
-		if (shft_wr && tid == 0)
+		if (shft_wr && tid < 4)
 		{
-			sL[k+itr] = temper[k-1];
-			sL[k+itr+1] = temper[k];
-			sL[k+itr+2] = temper[32+k];
-			sL[k+itr+3] = temper[33+k];
-			sR[k+itr] = temper[31-k];
-			sR[k+itr+1] = temper[32-k];
-			sR[k+itr+2] = temper[62-k];
-			sR[k+itr+3] = temper[63-k];
+			sL[k+itr+tid] = temper[(tid/2*(THREADBLK-1))+(tid-1)+k];
+			sR[k+itr+tid] = temper[((tid+2)/2*(THREADBLK-1))+(tid&1)-k];
 			itr += 2;
 		}
 
+		__syncthreads();
+
 	}
+
 
 	//After the triangle has been computed, the right and left shared arrays are
 	//stored in global memory by the global thread ID since (conveniently),
@@ -151,9 +149,9 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 	//Now temper needs to accommodate a longer row by 2, one on each side.
 	//since it has two rows that's 4 extra floats.  The last row will still be
 	//32 numbers long.
-	__shared__ REAL temper[68];
-	__shared__ REAL sR[32];
-	__shared__ REAL sL[32];
+	__shared__ REAL temper[(2*THREADBLK)+4];
+	__shared__ REAL sR[THREADBLK];
+	__shared__ REAL sL[THREADBLK];
 
 	//Same as upTriangle
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
@@ -180,32 +178,32 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 
 	// Initialize temper. Kind of an unrolled for loop.  This is actually at
 	// Timestep 0.
-	temper[15] = sL[0];
-	temper[16] = sL[1];
-	temper[17] = sR[0];
-	temper[18] = sR[1];
+	temper[THREADBLK/2-1] = sL[0];
+	temper[THREADBLK/2] = sL[1];
+	temper[THREADBLK/2+1] = sR[0];
+	temper[THREADBLK/2+2] = sR[1];
 
 	//Now we need two counters since we need to use sL and sR EVERY iteration
 	//instead of every other iteration and instead of growing smaller with every
 	//iteration this grows larger.
 	int itr = 2;
-	int itr2 = 18;
+	int itr2 = THREADBLK/2+2;
 	//k needs to insert the relevant left right values around the computed values
 	//every timestep.  Since it grows larger the loop is reversed.
-	for (int k = 17; k>1; k--)
+	for (int k = THREADBLK/2+1; k>1; k--)
 	{
 		// This tells you if the current row is the first or second.
 		shft_wr = (k & 1);
 		// Read and write are opposite rows.
-		shft_rd = 34*((shft_wr+1) & 1);
+		shft_rd = (THREADBLK+2)*((shft_wr+1) & 1);
 
 		//Block 0 is split so it needs a different algorithm.  This algorithm
 		//is slightly different than top triangle as described in the note above.
 		if (blockIdx.x > 0)
 		{
-			if (tid <= (33-k) && tid >= (k-2))
+			if (tid <= ((THREADBLK+1)-k) && tid >= (k-2))
 			{
-				temper[tid + 1 + (34*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1-2.*fo) * temper[tid+shft_rd+1];
+				temper[tid + 1 + ((THREADBLK+2)*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tid+shft_rd+1];
 			}
 
 		}
@@ -215,19 +213,19 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 
 		else
 		{
-			if (tid <= (33-k) && tid >= (k-2))
+			if (tid <= ((THREADBLK+1)-k) && tid >= (k-2))
 			{
-				if (tid == 15)
+				if (tid == (THREADBLK/2-1))
 				{
-					temper[tid + 1 + (34*shft_wr)] = 2. * fo * (temper[tid+shft_rd]-temper[tid+shft_rd+1]) + temper[tid+shft_rd+1];
+					temper[tid + 1 + ((THREADBLK+2)*shft_wr)] = 2.f * fo * (temper[tid+shft_rd]-temper[tid+shft_rd+1]) + temper[tid+shft_rd+1];
 				}
-				else if (tid == 16)
+				else if (tid == THREADBLK/2)
 				{
-					temper[tid + 1 + (34*shft_wr)] = 2. * fo * (temper[tid+shft_rd+2]-temper[tid+shft_rd+1]) + temper[tid+shft_rd+1];
+					temper[tid + 1 + ((THREADBLK+2)*shft_wr)] = 2.f * fo * (temper[tid+shft_rd+2]-temper[tid+shft_rd+1]) + temper[tid+shft_rd+1];
 				}
 				else
 				{
-					temper[tid + 1 + (34*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1-2.*fo) * temper[tid+shft_rd+1];
+					temper[tid + 1 + ((THREADBLK+2)*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tid+shft_rd+1];
 				}
 			}
 
@@ -239,11 +237,11 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 		//reliant on the entire loop.
 		if (k>2 && tid == 0)
 		{
-			temper[(k-3)+(34*shft_wr)] = sL[itr];
-			temper[(k-2)+(34*shft_wr)] = sL[itr+1];
-			temper[itr2+(34*shft_wr)] = sR[itr];
+			temper[(k-3)+((THREADBLK+2)*shft_wr)] = sL[itr];
+			temper[(k-2)+((THREADBLK+2)*shft_wr)] = sL[itr+1];
+			temper[itr2+((THREADBLK+2)*shft_wr)] = sR[itr];
 			itr2++;
-			temper[itr2+(34*shft_wr)] = sR[itr+1];
+			temper[itr2+((THREADBLK+2)*shft_wr)] = sR[itr+1];
 			itr+=2;
 
 		}
@@ -258,18 +256,18 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 	if (blockIdx.x > 0)
 	{
 		//True if it ends on the first row! The first and last of temper on the final row are empty.
-		IC[gid - 16] = temper[tid+1];
+		IC[gid - (THREADBLK/2)] = temper[tid+1];
 	}
 	//Block 0 holds values 0 to 15 and end-15 to end.  In that order.
 	else
 	{
-		if (tid>15)
+		if (tid >= THREADBLK/2)
 		{
-			IC[gid - 16] = temper[tid+1];
+			IC[gid - (THREADBLK/2)] = temper[tid+1];
 		}
 		else
 		{
-			IC[(blockDim.x * gridDim.x) + (tid - 16) ] = temper[tid+1];
+			IC[(blockDim.x * gridDim.x) + (tid - THREADBLK/2) ] = temper[tid+1];
 		}
 	}
 }
@@ -280,7 +278,7 @@ int main()
 	//Choose the GPGPU.  This is device 0 in my machine which has 2 devices.
 	cudaSetDevice(0);
 	const int dv = int(DIVISIONS); //Setting it to an int helps with arrays
-	const int bks = dv/32; //The number of blocks since threads/block = 32.
+	const int bks = dv/THREADBLK; //The number of blocks since threads/block = 32.
 	//Threads/block will be experimented on.
 	const REAL ds = LENX/(DIVISIONS-1); //The x division length.
 	REAL fou = TS*TH_DIFF/(ds*ds); //The Fourier number.
@@ -297,6 +295,7 @@ int main()
 		IC[k] = 500.f*expf((-ds*k)/LENX);
 	}
 
+	cout << fou << endl;
 	// Call out the file before the loop and write out the initial condition.
 	ofstream fwr;
 	fwr.open("1DHeatEQResult.dat",ios::trunc);
@@ -327,17 +326,19 @@ int main()
 
 	// Start the counter and start the clock.
 	REAL t_eq = 0.;
+	REAL t_fullstep = TS*(THREADBLK+1);
 	double wall0 = clock();
 
 	// Call the kernels until you reach the iteration limit.
-	for(unsigned int k = 0; k < ITERLIMIT; k++)
+	while(t_eq < 1e5)
 	{
 
-		upTriangle <<< bks,32 >>>(d_IC,d_right,d_left);
+		upTriangle <<< bks,THREADBLK >>>(d_IC,d_right,d_left);
 
-		downTriangle <<< bks,32 >>>(d_IC,d_right,d_left);
+		downTriangle <<< bks,THREADBLK >>>(d_IC,d_right,d_left);
 
-		t_eq += (TS*17);
+
+		t_eq += t_fullstep;
 
 		/* Since the procedure does not store the temperature values, the user
 		could input some time interval for which they want the temperature
