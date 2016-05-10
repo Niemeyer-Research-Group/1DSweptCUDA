@@ -5,43 +5,32 @@
 __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 {
 
-	REAL temper;
-	__shared__ REAL sR[THREADBLK];
-	__shared__ REAL sL[THREADBLK];
+	REAL temper[16];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tid = threadIdx.x % 32; //Warp or node ID.  Fix this.
 
-	temper = IC[gid];
-
-	// There's two ways to do it.  Either just initialize the shared arrays with
-	// the first row do it all at the end and make temper be THREADBLK/2 long.
-	// Since the warp size can't vary all the indices can be hardwired.
-	if (tid<2)
-	{
-		sL[tid] = temper;
-		sR[tid] = __shfl(temper,30+tid);
-	}
+	temper[0] = IC[gid];
 
 	//The initial conditions are timslice 0 so start k at 1.
 	#pragma unroll
 	for (int k = 1; k<16; k++)
 	{
-		temper = fo * (__shfl_down(temper,1) + __shfl_up(temper,1)) + (1.-2.*fo) * temper;
+		temper[k] = fo * (__shfl_down(temper[k-1],1) + __shfl_up(temper[k-1],1)) + (1.-2.*fo) * temper[k-1];
 		//Maybe it works.
-		if (tid < 2)
-		{
-			sL[tid+(2*k)] = __shfl_down(temper,k);
-			sR[tid+(2*k)] = __shfl_down(temper,(THREADBLK-1)-k);
-		}
-		__syncthreads();
 	}
 
-	//After the triangle has been computed, the right and left shared arrays are
-	//stored in global memory by the global thread ID since (conveniently),
-	//they're the same size as a warp!
-	right[gid] = sR[tid];
-	left[gid] = sL[tid];
+	#pragma unroll
+	for (int k = 0; k<16; k--)
+	{
+		if (tid<2)
+		{
+			right[gid+tid+2*k] = __shfl_down(temper[k],30-k);
+			left[gid+tid+2*k] = __shfl_down(temper[k],k);
+		}
+
+
+	}
 
 }
 
