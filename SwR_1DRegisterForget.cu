@@ -18,11 +18,9 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 	int tid = threadIdx.x; //Warp or node ID
 
 	//First row of register
-	#pragma unroll
-	for (int k = 0; k<tB; k++)
-	{
-		temper[k] = (IC[gid*tB+k]);
-	}
+
+	temper = IC[gid];
+
 
 	//Global to global
 	right[gid*tB] = IC[gid*tB];

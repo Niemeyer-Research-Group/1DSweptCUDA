@@ -15,6 +15,6 @@ set(
 cuda_add_executable(
 
     SweptOut
-    1DSweptRule_main.cu
+    1DSweptRule_maintester.cu
 
 )

@@ -8,11 +8,11 @@ import numpy as np
 import subprocess as sp
 import shlex
 
-#c = int(raw_input("Do you want to compile it 1 for yes, 0 for no: ")) 
+c = int(raw_input("Do you want to compile it 1 for yes, 0 for no: ")) 
 
-#if c:
-x = [32,64,128,256,512]
-for n in x:
+if c:
+#x = [32,64,128,256,512]
+#for n in x:
     print n
     compStr = "nvcc 1DSweptRule_main.cu -DTHREADBLK={} -o SweptOut -gencode arch=compute_35,code=sm_35 -lm -std=c++11".format(n)
     execut = ['./SweptOut']
