@@ -119,10 +119,11 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 
 	// Initialize temper. Kind of an unrolled for loop.  This is actually at
 	// Timestep 0.
-	temper[THREADBLK/2-1] = sL[0];
-	temper[THREADBLK/2] = sL[1];
-	temper[THREADBLK/2+1] = sR[0];
-	temper[THREADBLK/2+2] = sR[1];
+	if (tid < 2)
+	{
+		temper[tid+THREADBLK/2-1] = sL[tid];
+		temper[tid+THREADBLK/2+1] = sR[tid];
+	}
 
 	//Now we need two counters since we need to use sL and sR EVERY iteration
 	//instead of every other iteration and instead of growing smaller with every
@@ -216,12 +217,15 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 __global__ void wholeTriangle(REAL *right, REAL *left)
 {
 
-	__shared__ REAL temper[(2 * THREADBLK) + 4];
+	int base = THREADBLK + 2;
+	__shared__ REAL temper[2 * base];
 	__shared__ REAL sR[THREADBLK];
 	__shared__ REAL sL[THREADBLK];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
 	int tid = threadIdx.x;
+	int tidp = tid + 1;
+	int height = THREADBLK/2;
 	int shft_rd;
 	int shft_wr;
 
@@ -240,43 +244,57 @@ __global__ void wholeTriangle(REAL *right, REAL *left)
 
 	// Initialize temper. Kind of an unrolled for loop.  This is actually at
 	// Timestep 0.
-	temper[THREADBLK/2-1] = sL[0];
-	temper[THREADBLK/2] = sL[1];
-	temper[THREADBLK/2+1] = sR[0];
-	temper[THREADBLK/2+2] = sR[1];
 
+	if (tid < 2)
+	{
+		temper[tid+height-1] = sL[tid];
+		temper[tidp+height] = sR[tid];
+	}
 	//Wind it up!
 
-	for (int k = THREADBLK/2+1; k>1; k--)
+	int itr = 2;
+	int itr2 = height+2;
+
+	__syncthreads();
+
+	for (int k = height; k>1; k--)
 	{
 		// This tells you if the current row is the first or second.
-		shft_wr = (k & 1);
+		shft_wr = ((k + 1) & 1);
 		// Read and write are opposite rows.
-		shft_rd = (THREADBLK+2)*((shft_wr+1) & 1);
+		shft_rd = base*((shft_wr+1) & 1);
 		//Block 0 is split so it needs a different algorithm.  This algorithm
 		//is slightly different than top triangle as described in the note above.
 
-		if (tid <= ((THREADBLK+1)-k) && tid >= (k-2))
+		if (tid <= ((THREADBLK+1)-k) && tid >= k)
 		{
-			temper[tid + 1 + ((THREADBLK+2)*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tid+shft_rd+1];
+			temper[tidp + ((base)*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tidp+shft_rd];
 		}
 
 		//Add the next values in.  Fix this shit.
-		if (k>2 && tid == 0)
+		if (tid < 2)
 		{
-			temper[(k-3)+((THREADBLK+2)*shft_wr)] = sL[itr];
-			temper[(k-2)+((THREADBLK+2)*shft_wr)] = sL[itr+1];
-			temper[itr2+((THREADBLK+2)*shft_wr)] = sR[itr];
-			itr2++;
-			temper[itr2+((THREADBLK+2)*shft_wr)] = sR[itr+1];
-			itr+=2;
-
+			temper[tid+(k-2)+shft_wr*base] = sL[itr+tid];
+			temper[tidp+k+shft_wr*base] = sR[itr+tid];
 		}
 
 	}
 
+	//DO THE MIDDLE ONE.
+	if (blockIdx.x == (gridDim.x-1) && tid == 0 )
+	{
+		temper[2*base-1] = 0;
+	}
+	elseif (blockIdx.x == 0 && tid == 0)
+	{
+		temper[base] = 0;
+	}
+
+	temper[tidp] = fo * (temper[tid+base] + temper[tid+base+2]) + (1.f-2.f*fo) * temper[tidp+base];
+
+
 	//Wind it down!
-	for (int k = THREADBLK/2+1; k>1; k--)
+	for (int k = 0; k>height; k++)
 	{
 		// This tells you if the current row is the first or second.
 		shft_wr = (k & 1);
@@ -287,7 +305,7 @@ __global__ void wholeTriangle(REAL *right, REAL *left)
 
 		if (tid <= ((THREADBLK+1)-k) && tid >= (k-2))
 		{
-			temper[tid + 1 + ((THREADBLK+2)*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tid+shft_rd+1];
+			temper[tidp + ((THREADBLK+2)*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tidp+shft_rd];
 		}
 
 	}

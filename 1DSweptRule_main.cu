@@ -57,15 +57,15 @@ __constant__ REAL fo;
 //The host routine.
 int main()
 {
-	//Choose the GPGPU.  This is device 0 in my machine which has 2 devices.
+	// Choose the GPGPU.  This is device 0 in my machine which has 2 devices.
 	cudaSetDevice(0);
 	const int dv = int(DIVISIONS); //Setting it to an int helps with arrays
 	const int bks = dv/THREADBLK; //The number of blocks since threads/block = 32.
-	//Threads/block will be experimented on.
+	// Threads/block will be experimented on.
 	const REAL ds = LENX/(DIVISIONS-1); //The x division length.
 	REAL fou = TS*TH_DIFF/(ds*ds); //The Fourier number.
 
-	//Initialize arrays.
+	// Initialize arrays.
 	REAL IC[dv];
 	REAL T_final[dv];
 	REAL *d_IC, *d_right, *d_left;
@@ -103,7 +103,7 @@ int main()
 	cudaMalloc((void **)&d_right, sizeof(REAL)*dv);
 	cudaMalloc((void **)&d_left, sizeof(REAL)*dv);
 
-	//Copy the initial conditions to the device array.
+	// Copy the initial conditions to the device array.
 	cudaMemcpy(d_IC,IC,sizeof(REAL)*dv,cudaMemcpyHostToDevice);
 
 	// Start the counter and start the clock.
@@ -147,7 +147,7 @@ int main()
 
 	}
 
-	//Show the time and write out the final condition.
+	// Show the time and write out the final condition.
 	double wall1 = clock();
 	double timed = (wall1-wall0)/CLOCKS_PER_SEC;
 
@@ -163,7 +163,7 @@ int main()
 
 	fwr.close();
 
-	//Free the memory and reset the device.
+	// Free the memory and reset the device.
 	cudaFree(d_IC);
 	cudaFree(d_right);
 	cudaFree(d_left);
