@@ -104,17 +104,17 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 
 	// Pass to the left so all checks are for block 0 (this reduces arithmetic).
 	// The left ridge is always kept by the block.
-	sR[tid] = left[gid];
+	sL[tid] = right[gid];
 
 	// The right ridge is passed, each block 1-end gets the right of 0-end-1
 	// Block 0 gets the right of the last block.
-	if (blockIdx.x > 0)
+	if (blockIdx.x == (gridDim.x-1))
 	{
-		sL[tid] = right[gid-blockDim.x];
+		sR[tid] = left[tid];
 	}
 	else
 	{
-		sL[tid] = right[blockDim.x*(gridDim.x-1) + tid];
+		sR[tid] = left[gid+blockDim.x];
 	}
 
 	// Initialize temper. Kind of an unrolled for loop.  This is actually at
@@ -214,7 +214,7 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 	}
 }
 
-__global__ void wholeTriangle(REAL *right, REAL *left)
+__global__ void wholeDiamond(REAL *right, REAL *left)
 {
 
 	int base = THREADBLK + 2;
@@ -253,7 +253,6 @@ __global__ void wholeTriangle(REAL *right, REAL *left)
 	//Wind it up!
 
 	int itr = 2;
-	int itr2 = height+2;
 
 	__syncthreads();
 
@@ -294,24 +293,36 @@ __global__ void wholeTriangle(REAL *right, REAL *left)
 
 
 	//Wind it down!
-	for (int k = 0; k>height; k++)
+	for (int k = 0; k<height; k++)
 	{
 		// This tells you if the current row is the first or second.
 		shft_wr = (k & 1);
 		// Read and write are opposite rows.
-		shft_rd = (THREADBLK+2)*((shft_wr+1) & 1);
+		shft_rd = base*((shft_wr+1) & 1);
 		//Block 0 is split so it needs a different algorithm.  This algorithm
 		//is slightly different than top triangle as described in the note above.
 
-		if (tid <= ((THREADBLK+1)-k) && tid >= (k-2))
+		if (tid < (THREADBLK-k) && tid > k)
 		{
 			temper[tidp + ((THREADBLK+2)*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tidp+shft_rd];
 		}
-
 	}
 
+	//Make sure the threads are synced
+	__syncthreads();
 
+	//Now thread 0 in each block (which never computes a value) is used to
+	//fill the shared right and left arrays with the relevant values.
+	//This grabs the top and bottom edges on the iteration when the top
+	//row is written.
+	if (shft_wr && tid < 4)
+	{
+		sL[k+itr+tid] = temper[(tid/2*(THREADBLK-1))+(tid-1)+k];
+		sR[k+itr+tid] = temper[((tid+2)/2*(THREADBLK-1))+(tid&1)-k];
+		itr += 2;
+	}
 
+	__syncthreads();
 
 }
 
@@ -320,10 +331,109 @@ __global__ void wholeTriangle(REAL *right, REAL *left)
 __global__ void splitDiamond(REAL *right, REAL *left)
 {
 
-	__shared__ REAL temper[(2*THREADBLK)+4];
+	int base = THREADBLK + 2;
+	__shared__ REAL temper[2 * base];
 	__shared__ REAL sR[THREADBLK];
 	__shared__ REAL sL[THREADBLK];
 
+	int gid = blockDim.x * blockIdx.x + threadIdx.x;
+	int tid = threadIdx.x;
+	int tidp = tid + 1;
+	int height = THREADBLK/2;
+	int shft_rd;
+	int shft_wr;
 
+	sR[tid] = left[gid];
+
+	if (blockIdx.x > 0)
+	{
+		sL[tid] = right[gid-blockDim.x];
+	}
+	else
+	{
+		sL[tid] = right[blockDim.x*(gridDim.x-1) + tid];
+	}
+
+	// Initialize temper. Kind of an unrolled for loop.  This is actually at
+	// Timestep 0.
+
+	if (tid < 2)
+	{
+		temper[tid+height-1] = sL[tid];
+		temper[tidp+height] = sR[tid];
+	}
+	//Wind it up!
+
+	int itr = 2;
+
+	__syncthreads();
+
+	for (int k = height; k>1; k--)
+	{
+		// This tells you if the current row is the first or second.
+		shft_wr = ((k + 1) & 1);
+		// Read and write are opposite rows.
+		shft_rd = base*((shft_wr+1) & 1);
+		//Block 0 is split so it needs a different algorithm.  This algorithm
+		//is slightly different than top triangle as described in the note above.
+
+		if (tid <= ((THREADBLK+1)-k) && tid >= k)
+		{
+			temper[tidp + ((base)*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tidp+shft_rd];
+		}
+
+		//Add the next values in.  Fix this shit.
+		if (tid < 2)
+		{
+			temper[tid+(k-2)+shft_wr*base] = sL[itr+tid];
+			temper[tidp+k+shft_wr*base] = sR[itr+tid];
+		}
+
+	}
+
+	//DO THE MIDDLE ONE.
+	if (blockIdx.x == (gridDim.x-1) && tid == 0 )
+	{
+		temper[2*base-1] = 0;
+	}
+	elseif (blockIdx.x == 0 && tid == 0)
+	{
+		temper[base] = 0;
+	}
+
+	temper[tidp] = fo * (temper[tid+base] + temper[tid+base+2]) + (1.f-2.f*fo) * temper[tidp+base];
+
+
+	//Wind it down!
+	for (int k = 0; k<height; k++)
+	{
+		// This tells you if the current row is the first or second.
+		shft_wr = (k & 1);
+		// Read and write are opposite rows.
+		shft_rd = base*((shft_wr+1) & 1);
+		//Block 0 is split so it needs a different algorithm.  This algorithm
+		//is slightly different than top triangle as described in the note above.
+
+		if (tid < (THREADBLK-k) && tid > k)
+		{
+			temper[tidp + ((THREADBLK+2)*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tidp+shft_rd];
+		}
+	}
+
+	//Make sure the threads are synced
+	__syncthreads();
+
+	//Now thread 0 in each block (which never computes a value) is used to
+	//fill the shared right and left arrays with the relevant values.
+	//This grabs the top and bottom edges on the iteration when the top
+	//row is written.
+	if (shft_wr && tid < 4)
+	{
+		sL[k+itr+tid] = temper[(tid/2*(THREADBLK-1))+(tid-1)+k];
+		sR[k+itr+tid] = temper[((tid+2)/2*(THREADBLK-1))+(tid&1)-k];
+		itr += 2;
+	}
+
+	__syncthreads();
 
 }
