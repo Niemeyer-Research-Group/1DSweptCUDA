@@ -7,23 +7,35 @@ import matplotlib.pyplot as plt
 import numpy as np
 import subprocess as sp
 import shlex
+import os
 
-c = int(raw_input("Do you want to compile it 1 for yes, 0 for no: "))
-blk = int(raw_input("Choose BlockSize: "))
-div = int(raw_input("Choose WorkSize: "))
-tsend = int(raw_input("Choose final timestep: "))
+ofile = '1DSweptTiming.txt'
+if os.path.isfile(ofile):
+    os.remove(ofile)
 
-if c:
-#x = [32,64,128,256,512]
-#for n in x:
-    compStr = "nvcc 1DSweptRule_maintester.cu -DTHREADBLK={0} -DDIVISIONS={1} -DFINISH={2} -o SweptOut -gencode arch=compute_35,code=sm_35 -lm -w -std=c++11".format(blk,div,tsend)
-    execut = ['./SweptOut']
-    compArg = shlex.split(compStr)
-    proc = sp.Popen(compArg)
-    sp.Popen.wait(proc)
-    print "Compiled"
-    proc = sp.Popen(execut)
-    sp.Popen.wait(proc)
+basepath = os.path.dirname(__file__)
+filepath = os.path.abspath(os.path.join(basepath, ofile))
+
+div = [2**k for k in range(10,21)]
+blx = [32,64,128,256,512,1024]
+fn = open(filepath,'a+')
+fn.write("BlockSize\tXDimSize\tTime\n")
+fn.close()
+for k in blx:
+    for n in div:
+        fn = open(filepath,'a+')
+        fn.write(str(k)+"\t"+str(n)+"\t")
+        fn.close()
+        print n,k
+        compStr = "nvcc -DTHREADBLK={0} -DDIVISIONS={1} -o SweptOut 1DSweptRule_maintester.cu -gencode arch=compute_35,code=sm_35 -lm -w -std=c++11".format(k,n)
+        execut = ['./SweptOut']
+        compArg = shlex.split(compStr)
+        proc = sp.Popen(compArg)
+        sp.Popen.wait(proc)
+        print "Compiled"
+        proc = sp.Popen(execut)
+        sp.Popen.wait(proc)
+
 
 fin = open('1DHeatEQResult.dat')
 data = []

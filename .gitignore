@@ -4,3 +4,12 @@
 *.ptx
 *.cubin
 *.fatbin
+*.dat
+SweptOut
+misc/
+*.cmake
+CMakeFiles/
+FINDCUDAcopy.txt
+CMakeCache.txt
+Makefile
+

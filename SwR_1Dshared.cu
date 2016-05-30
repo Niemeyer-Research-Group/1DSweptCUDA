@@ -86,12 +86,15 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 //For instance, thread tid = 16 refers to temper[17].  That being said, tid is
 //unique and k is NOT so the index must be referenced by tid.
 
+
+// SPLIT
 __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 {
 
 	//Now temper needs to accommodate a longer row by 2, one on each side.
 	//since it has two rows that's 4 extra floats.  The last row will still be
 	//32 numbers long.
+
 	__shared__ REAL temper[(2*THREADBLK)+4];
 	__shared__ REAL sR[THREADBLK];
 	__shared__ REAL sL[THREADBLK];
@@ -270,11 +273,12 @@ __global__ void wholeDiamond(REAL *right, REAL *left)
 			temper[tidp + ((base)*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tidp+shft_rd];
 		}
 
-		//Add the next values in.  Fix this shit.
+		//Add the next values in.
 		if (tid < 2)
 		{
 			temper[tid+(k-2)+shft_wr*base] = sL[itr+tid];
 			temper[tidp+k+shft_wr*base] = sR[itr+tid];
+			itr += 2;
 		}
 
 	}
@@ -291,22 +295,21 @@ __global__ void wholeDiamond(REAL *right, REAL *left)
 
 	temper[tidp] = fo * (temper[tid+base] + temper[tid+base+2]) + (1.f-2.f*fo) * temper[tidp+base];
 
+	itr = -1;
 
 	//Wind it down!
-	for (int k = 0; k<height; k++)
+	for (int k = 1; k<height; k++)
 	{
 		// This tells you if the current row is the first or second.
 		shft_wr = (k & 1);
 		// Read and write are opposite rows.
 		shft_rd = base*((shft_wr+1) & 1);
-		//Block 0 is split so it needs a different algorithm.  This algorithm
-		//is slightly different than top triangle as described in the note above.
 
 		if (tid < (THREADBLK-k) && tid > k)
 		{
-			temper[tidp + ((THREADBLK+2)*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tidp+shft_rd];
+			temper[tidp + (base*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tidp+shft_rd];
 		}
-	}
+
 
 	//Make sure the threads are synced
 	__syncthreads();
@@ -315,14 +318,18 @@ __global__ void wholeDiamond(REAL *right, REAL *left)
 	//fill the shared right and left arrays with the relevant values.
 	//This grabs the top and bottom edges on the iteration when the top
 	//row is written.
-	if (shft_wr && tid < 4)
-	{
-		sL[k+itr+tid] = temper[(tid/2*(THREADBLK-1))+(tid-1)+k];
-		sR[k+itr+tid] = temper[((tid+2)/2*(THREADBLK-1))+(tid&1)-k];
-		itr += 2;
-	}
+		if (shft_wr && tid < 4)
+		{
+			sL[k+itr+tid] = temper[(tid/2*(base-1))+(tid-1)+k];
+			sR[k+itr+tid] = temper[(((tid/2)+1)*(base-1))+(tid&1)-k];
+			itr += 2;
+		}
 
+	}
 	__syncthreads();
+
+	right[gid] = sR[tid];
+	left[gid] = sL[tid];
 
 }
 
@@ -355,7 +362,6 @@ __global__ void splitDiamond(REAL *right, REAL *left)
 	}
 
 	// Initialize temper. Kind of an unrolled for loop.  This is actually at
-	// Timestep 0.
 
 	if (tid < 2)
 	{
@@ -371,41 +377,75 @@ __global__ void splitDiamond(REAL *right, REAL *left)
 	for (int k = height; k>1; k--)
 	{
 		// This tells you if the current row is the first or second.
-		shft_wr = ((k + 1) & 1);
+		shft_wr = ((k+1) & 1);
 		// Read and write are opposite rows.
 		shft_rd = base*((shft_wr+1) & 1);
 		//Block 0 is split so it needs a different algorithm.  This algorithm
 		//is slightly different than top triangle as described in the note above.
-
-		if (tid <= ((THREADBLK+1)-k) && tid >= k)
+		if (blockIdx.x > 0)
 		{
-			temper[tidp + ((base)*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tidp+shft_rd];
+
+			if (tidp <= ((THREADBLK+1)-k) && tidp >= k)
+			{
+				temper[tidp + (base*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tidp+shft_rd];
+			}
+
 		}
 
-		//Add the next values in.  Fix this shit.
+		else
+		{
+			if (tidp <= ((THREADBLK+1)-k) && tidp >= k)
+			{
+				if (tid == (height-1))
+				{
+					temper[tidp + (base*shft_wr)] = 2.f * fo * (temper[tid+shft_rd]-temper[tid+shft_rd+1]) + temper[tidp+shft_rd];
+				}
+				else if (tid == height)
+				{
+					temper[tidp + (base*shft_wr)] = 2.f * fo * (temper[tid+shft_rd+2]-temper[tid+shft_rd+1]) + temper[tidp+shft_rd];
+				}
+				else
+				{
+					temper[tidp + (base*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tidp+shft_rd];
+				}
+			}
+
+		//Add the next values in.
 		if (tid < 2)
 		{
 			temper[tid+(k-2)+shft_wr*base] = sL[itr+tid];
-			temper[tidp+k+shft_wr*base] = sR[itr+tid];
+			temper[tid+(base-k)+shft_wr*base] = sR[itr+tid];
+			itr += 2;
 		}
 
 	}
 
-	//DO THE MIDDLE ONE.
-	if (blockIdx.x == (gridDim.x-1) && tid == 0 )
-	{
-		temper[2*base-1] = 0;
-	}
-	elseif (blockIdx.x == 0 && tid == 0)
-	{
-		temper[base] = 0;
-	}
+	__syncthreads();
 
-	temper[tidp] = fo * (temper[tid+base] + temper[tid+base+2]) + (1.f-2.f*fo) * temper[tidp+base];
+	itr = -1;
+	if (blockIdx.x > 0)
+	{
+		temper[tidp] = fo * (temper[tid+base] + temper[tid+base+2]) + (1.f-2.f*fo) * temper[tidp+base];
+	}
+	else
+	{
+		if (tid == (height-1))
+		{
+			temper[tidp] = 2.f * fo * (temper[tid+base]-temper[tid+base+1]) + temper[tidp+base;
+		}
+		else if (tid == height)
+		{
+			temper[tidp] = 2.f * fo * (temper[tid+base+2]-temper[tid+base+1]) + temper[tidp+base];
+		}
+		else
+		{
+			temper[tidp] = fo * (temper[tid+base] + temper[tid+base+2]) + (1.f-2.f*fo) * temper[tidp+base];
+		}
 
+	}
 
 	//Wind it down!
-	for (int k = 0; k<height; k++)
+	for (int k = 1; k<height; k++)
 	{
 		// This tells you if the current row is the first or second.
 		shft_wr = (k & 1);
@@ -416,7 +456,7 @@ __global__ void splitDiamond(REAL *right, REAL *left)
 
 		if (tid < (THREADBLK-k) && tid > k)
 		{
-			temper[tidp + ((THREADBLK+2)*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tidp+shft_rd];
+			temper[tidp + (base*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tidp+shft_rd];
 		}
 	}
 
@@ -429,11 +469,15 @@ __global__ void splitDiamond(REAL *right, REAL *left)
 	//row is written.
 	if (shft_wr && tid < 4)
 	{
-		sL[k+itr+tid] = temper[(tid/2*(THREADBLK-1))+(tid-1)+k];
-		sR[k+itr+tid] = temper[((tid+2)/2*(THREADBLK-1))+(tid&1)-k];
+		sL[k+itr+tid] = temper[(tid/2*(base-1))+(tid-1)+k];
+		sR[k+itr+tid] = temper[(((tid/2)+1)*(base-1))+(tid&1)-k];
 		itr += 2;
 	}
 
 	__syncthreads();
+
+	right[gid] = sR[tid];
+	left[gid] = sL[tid];
+
 
 }
