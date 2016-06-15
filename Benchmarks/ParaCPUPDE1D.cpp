@@ -36,35 +36,44 @@ using namespace std;
 const int dv = DIVISIONS-1; //Setting it to an int helps with arrays
 const int dv2 = dv-1 ; //The number of blocks since threads/block = 32.
 //Threads/block will be experimented on.
-const REAL lx = 5.0*DIVISIONS/1024;
-const REAL ds = lx/dv; //The x division length.
-const REAL fo = TS*TH_DIFF/(ds*ds); //The Fourier number.
+const REAL lx = 5.f*(REAL)DIVISIONS/1024;
+const REAL ds = lx/(REAL)dv; //The x division length.
+const REAL fo = DT*TH_DIFF/(ds*ds); //The Fourier number.
 
-int NewRadicals(REAL left, REAL center, REAL right)
+
+REAL NewRadicals(REAL left, REAL center, REAL right)
 {
     return fo * (left + right) + (1.f-2.f*fo) * center;
 }
 
-void intialCond(REAL *give, int k)
-{
-    give[k] = 500.f*expf((-ds*k)/lx);
-}
 
 int main()
 {
     ofstream ftime;
-    ftime.open("GPUBenchTiming.txt",ios::app);
-
+    ftime.open("CPUBenchTiming.txt",ios::app);
+    ofstream fwr;
+    fwr.open("1DHeatEQResult.dat",ios::trunc);
+    fwr << lx << " " << DIVISIONS << " " << DT << " " << endl << 0 << " ";
     omp_set_num_threads( NUMT );
-    REAL *give = new REAL[DIVISIONS],
-    REAL *get = new REAL[DIVISIONS];
+
+    REAL *give = (REAL *) malloc(DIVISIONS*sizeof(REAL));
+    REAL *get = (REAL *) malloc(DIVISIONS*sizeof(REAL));
     REAL t_eq = 0.f;
 
+    cout << NUMT << " " << DIVISIONS << endl;
+
     #pragma omp parallel for
-    for (int k = 0, k<DIVISIONS, k++)
+    for (int k = 0; k<DIVISIONS; k++)
     {
-        initialCond(give[k],k);
+        give[k] = 500.f*expf((-ds*k)/lx);
     }
+
+    for (int k = 0; k<DIVISIONS; k++)
+    {
+        fwr << give[k] << " ";
+    }
+
+    fwr << endl;
 
     double time0 = omp_get_wtime();
     while(t_eq < FINISH)
@@ -73,22 +82,36 @@ int main()
         get[0] = 2.f * fo * give[1] + (1.f-2.f*fo) * give[0];
         get[dv] = 2.f * fo * give[dv2] + (1.f-2.f*fo) * give[dv];
 
-        #pragma omp parallel for
-        for (unsigned int k = 1, k<(DIVISIONS-1), k++)
+        #pragma omp parallel for default(none),shared(get,give),private(k),schedule(static)
+        for (int k = 1; k<dv; k++)
         {
             get[k] = NewRadicals(give[k-1], give[k], give[k+1]);
         }
         t_eq += DT;
         memcpy(give, get, DIVISIONS*sizeof(REAL));
+
     }
 
     double time1 = omp_get_wtime(); // Seconds it takes.
     double tf = (time1-time0); // Seconds to complete task
 
+    fwr << t_eq << " ";
+
+    for (int k = 0; k<DIVISIONS; k++)
+    {
+        fwr << give[k] << " ";
+    }
+
+    fwr << endl;
+
+    fwr.close();
+
     ftime << tf << endl;
     ftime.close();
     cout << "That took: " << tf << " seconds" << endl;
 
+    free(give);
+    free(get);
     return 0;
 
 }

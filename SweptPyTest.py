@@ -21,6 +21,7 @@ blx = [32,64,128,256,512,1024]
 fn = open(filepath,'a+')
 fn.write("BlockSize\tXDimSize\tTime\n")
 fn.close()
+execut = ['./SweptOut']
 for k in blx:
     for n in div:
         fn = open(filepath,'a+')
@@ -28,7 +29,6 @@ for k in blx:
         fn.close()
         print n,k
         compStr = "nvcc -DTHREADBLK={0} -DDIVISIONS={1} -o SweptOut 1DSweptRule_maintester.cu -gencode arch=compute_35,code=sm_35 -lm -w -std=c++11".format(k,n)
-        execut = ['./SweptOut']
         compArg = shlex.split(compStr)
         proc = sp.Popen(compArg)
         sp.Popen.wait(proc)
