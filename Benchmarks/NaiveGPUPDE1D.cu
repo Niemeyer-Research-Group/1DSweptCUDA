@@ -1,5 +1,3 @@
-
-
 #include <cuda.h>
 #include "cuda_runtime_api.h"
 #include "device_functions.h"
@@ -47,13 +45,14 @@ __global__ void NewRadicals(float *give, float *get)
 {
 
     int gid = threadIdx.x + blockIdx.x * blockDim.x;
+
     if (gid == 0)
     {
         get[gid] = fo * (2.f * give[gid+1]) + (1.f-2.f*fo) * give[gid];
     }
     else if (gid == gridDim.x*blockDim.x-1)
     {
-        get[gid] = fo * (2 * give[gid-1]) + (1.f-2.f*fo) * give[gid];
+        get[gid] = fo * (2.f * give[gid-1]) + (1.f-2.f*fo) * give[gid];
     }
     else
     {
