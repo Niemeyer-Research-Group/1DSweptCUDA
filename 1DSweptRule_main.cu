@@ -38,7 +38,7 @@ makes results easier to output at various points in the solution.
 #include <ostream>
 #include <cstring>
 #include <fstream>
-#include "SwR_1DShared.cuh"
+#include "SwR_1DShared.h"
 
 using namespace std;
 
@@ -68,7 +68,7 @@ int main()
 	// Initialize arrays.
 	REAL IC[dv];
 	REAL T_final[dv];
-	REAL *d_IC, *d_right, *d_left;
+	double wall0, wall1, timed;
 
 	// Some initial condition for the bar temperature, an exponential decay
 	// function.
@@ -99,62 +99,21 @@ int main()
 
 	// This initializes the device arrays on the device in global memory.
 	// They're all the same size.  Conveniently.
-	cudaMalloc((void **)&d_IC, sizeof(REAL)*dv);
-	cudaMalloc((void **)&d_right, sizeof(REAL)*dv);
-	cudaMalloc((void **)&d_left, sizeof(REAL)*dv);
-
-	// Copy the initial conditions to the device array.
-	cudaMemcpy(d_IC,IC,sizeof(REAL)*dv,cudaMemcpyHostToDevice);
 
 	// Start the counter and start the clock.
 	REAL t_eq = 0.;
 	REAL t_fullstep = TS*(THREADBLK+1);
-	double wall0 = clock();
+	wall0 = clock();
 
 	// Call the kernels until you reach the iteration limit.
-	while(t_eq < 1e5)
-	{
-
-		upTriangle <<< bks,THREADBLK >>>(d_IC,d_right,d_left);
-
-		downTriangle <<< bks,THREADBLK >>>(d_IC,d_right,d_left);
-
-
-		t_eq += t_fullstep;
-
-		/* Since the procedure does not store the temperature values, the user
-		could input some time interval for which they want the temperature
-		values and this loop could copy the values over from the device and
-		write them out.  This way the user could see the progression of the
-		solution over time, identify an area to be investigated and re-run a
-		shorter version of the simulation starting with those intiial conditions.
-
-		-------------------------------------
-	 	if (true)
-		{
-		cudaMemcpy(T_final, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
-		fwr << t_eq << " ";
-
-		for (int k = 0; k<dv; k++)
-		{
-				fwr << T_final[k] << " ";
-			}
-			fwr << endl;
-		}
-		-------------------------------------
-		*/
-
-
-	}
+	sweptWrapper(bks,THREADBLK,FINISH,IC,T_final);
 
 	// Show the time and write out the final condition.
-	double wall1 = clock();
-	double timed = (wall1-wall0)/CLOCKS_PER_SEC;
+	wall1 = clock();
+	timed = (wall1-wall0)/CLOCKS_PER_SEC;
 
 	cout << "That took: " << timed << " seconds" << endl;
 
-
-	cudaMemcpy(T_final, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
 	fwr << t_eq << " ";
 	for (int k = 0; k<dv; k++)
 	{

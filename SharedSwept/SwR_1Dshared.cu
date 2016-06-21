@@ -1,24 +1,29 @@
 
-#include "SwR_1DShared.cuh"
+
+#include <cuda.h>
+
 #include <cstdio>
 #include <cstdilib>
-#include <cuda.h>
+
+#include "SwR_1DShared.h"
 
 __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 {
 	/*
 	Initialize shared variables.  Each node (warp) will store 32 values on the
-	right and left sides of their triangle, 2 on each side for each timeslice.
-	Since the base of the triangle is 32 numbers for each node, 16 timeslices
+	right and left sides of their triangle, 2 on each side for each timeshLeftice.
+	Since the base of the triangle is 32 numbers for each node, 16 timeshLeftices
 	are evaluated per kernel call.
-	Temper stores the temperatures at each timeslice.  Since only the current
-	and previous timeslice results need to be held at each iteration.  This
+	Temper stores the temperatures at each timeshLeftice.  Since only the current
+	and previous timeshLeftice results need to be held at each iteration.  This
 	variable has 64 values, or two rows of 32, linearized.  The current and
-	previous value alternate rows at each timeslice.
+	previous value alternate rows at each timeshLeftice.
 	*/
-	__shared__ REAL temper[2*THREADBLK];
-	__shared__ REAL sR[THREADBLK];
-	__shared__ REAL sL[THREADBLK];
+	extern __shared__ REAL share[];
+
+	REAL *temper = (REAL*) share;
+	REAL *shRight = (REAL*) &share[2*blockDim.x];
+	REAL *shLeft = (REAL*) &share[3*blockDim.x];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tid = threadIdx.x; //Warp or node ID
@@ -58,8 +63,8 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 		//row is written.
 		if (shft_wr && tid < 4)
 		{
-			sL[k+itr+tid] = temper[(tid/2*(THREADBLK-1))+(tid-1)+k];
-			sR[k+itr+tid] = temper[((tid+2)/2*(THREADBLK-1))+(tid&1)-k];
+			shLeft[k+itr+tid] = temper[(tid/2*(THREADBLK-1))+(tid-1)+k];
+			shRight[k+itr+tid] = temper[((tid+2)/2*(THREADBLK-1))+(tid&1)-k];
 			itr += 2;
 		}
 
@@ -71,8 +76,8 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 	//After the triangle has been computed, the right and left shared arrays are
 	//stored in global memory by the global thread ID since (conveniently),
 	//they're the same size as a warp!
-	right[gid] = sR[tid];
-	left[gid] = sL[tid];
+	right[gid] = shRight[tid];
+	left[gid] = shLeft[tid];
 
 }
 
@@ -95,9 +100,11 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 	//since it has two rows that's 4 extra floats.  The last row will still be
 	//32 numbers long.
 
-	__shared__ REAL temper[(2*THREADBLK)+4];
-	__shared__ REAL sR[THREADBLK];
-	__shared__ REAL sL[THREADBLK];
+	extern __shared__ REAL share[];
+
+	REAL *temper = (REAL*) share;
+	REAL *shRight = (REAL*) &share[2*blockDim.x+4];
+	REAL *shLeft = (REAL*) &share[3*blockDim.x+4];
 
 	//Same as upTriangle
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
@@ -107,28 +114,28 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 
 	// Pass to the left so all checks are for block 0 (this reduces arithmetic).
 	// The left ridge is always kept by the block.
-	sL[tid] = right[gid];
+	shLeft[tid] = right[gid];
 
 	// The right ridge is passed, each block 1-end gets the right of 0-end-1
 	// Block 0 gets the right of the last block.
 	if (blockIdx.x == (gridDim.x-1))
 	{
-		sR[tid] = left[tid];
+		shRight[tid] = left[tid];
 	}
 	else
 	{
-		sR[tid] = left[gid+blockDim.x];
+		shRight[tid] = left[gid+blockDim.x];
 	}
 
 	// Initialize temper. Kind of an unrolled for loop.  This is actually at
 	// Timestep 0.
 	if (tid < 2)
 	{
-		temper[tid+THREADBLK/2-1] = sL[tid];
-		temper[tid+THREADBLK/2+1] = sR[tid];
+		temper[tid+THREADBLK/2-1] = shLeft[tid];
+		temper[tid+THREADBLK/2+1] = shRight[tid];
 	}
 
-	//Now we need two counters since we need to use sL and sR EVERY iteration
+	//Now we need two counters since we need to use shLeft and shRight EVERY iteration
 	//instead of every other iteration and instead of growing smaller with every
 	//iteration this grows larger.
 	int itr = 2;
@@ -143,7 +150,7 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 		shft_rd = (THREADBLK+2)*((shft_wr+1) & 1);
 
 		//Block 0 is split so it needs a different algorithm.  This algorithm
-		//is slightly different than top triangle as described in the note above.
+		//is shLeftightly different than top triangle as described in the note above.
 		if (blockIdx.x > 0)
 		{
 			if (tid <= ((THREADBLK+1)-k) && tid >= (k-2))
@@ -182,11 +189,11 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 		//reliant on the entire loop.
 		if (k>2 && tid == 0)
 		{
-			temper[(k-3)+((THREADBLK+2)*shft_wr)] = sL[itr];
-			temper[(k-2)+((THREADBLK+2)*shft_wr)] = sL[itr+1];
-			temper[itr2+((THREADBLK+2)*shft_wr)] = sR[itr];
+			temper[(k-3)+((THREADBLK+2)*shft_wr)] = shLeft[itr];
+			temper[(k-2)+((THREADBLK+2)*shft_wr)] = shLeft[itr+1];
+			temper[itr2+((THREADBLK+2)*shft_wr)] = shRight[itr];
 			itr2++;
-			temper[itr2+((THREADBLK+2)*shft_wr)] = sR[itr+1];
+			temper[itr2+((THREADBLK+2)*shft_wr)] = shRight[itr+1];
 			itr+=2;
 
 		}
@@ -220,29 +227,34 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 __global__ void wholeDiamond(REAL *right, REAL *left)
 {
 
-	int base = THREADBLK + 2;
-	__shared__ REAL temper[2 * base];
-	__shared__ REAL sR[THREADBLK];
-	__shared__ REAL sL[THREADBLK];
+	extern __shared__ REAL share[];
+
+	REAL *temper = (REAL*) share;
+	REAL *shRight = (REAL*) &share[2*blockDim.x+4];
+	REAL *shLeft = (REAL*) &share[3*blockDim.x+4];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
 	int tid = threadIdx.x;
 	int tidp = tid + 1;
+
+	//___________-----------------________Need new paradigm.
+	int base = THREADBLK + 2;
 	int height = THREADBLK/2;
+
 	int shft_rd;
 	int shft_wr;
 
-	sL[tid] = right[gid];
+	shLeft[tid] = right[gid];
 
 	// The right ridge is passed, each block 1-end gets the right of 0-end-1
 	// Block 0 gets the right of the last block.
 	if (blockIdx.x > 0)
 	{
-		sR[tid] = left[gid-blockDim.x];
+		shRight[tid] = left[gid-blockDim.x];
 	}
 	else
 	{
-		sR[tid] = left[blockDim.x*(gridDim.x-1) + tid];
+		shRight[tid] = left[blockDim.x*(gridDim.x-1) + tid];
 	}
 
 	// Initialize temper. Kind of an unrolled for loop.  This is actually at
@@ -250,8 +262,8 @@ __global__ void wholeDiamond(REAL *right, REAL *left)
 
 	if (tid < 2)
 	{
-		temper[tid+height-1] = sL[tid];
-		temper[tidp+height] = sR[tid];
+		temper[tid+height-1] = shLeft[tid];
+		temper[tidp+height] = shRight[tid];
 	}
 	//Wind it up!
 
@@ -266,7 +278,7 @@ __global__ void wholeDiamond(REAL *right, REAL *left)
 		// Read and write are opposite rows.
 		shft_rd = base*((shft_wr+1) & 1);
 		//Block 0 is split so it needs a different algorithm.  This algorithm
-		//is slightly different than top triangle as described in the note above.
+		//is shLeftightly different than top triangle as described in the note above.
 
 		if (tid <= ((THREADBLK+1)-k) && tid >= k)
 		{
@@ -276,8 +288,8 @@ __global__ void wholeDiamond(REAL *right, REAL *left)
 		//Add the next values in.
 		if (tid < 2)
 		{
-			temper[tid+(k-2)+shft_wr*base] = sL[itr+tid];
-			temper[tidp+k+shft_wr*base] = sR[itr+tid];
+			temper[tid+(k-2)+shft_wr*base] = shLeft[itr+tid];
+			temper[tidp+k+shft_wr*base] = shRight[itr+tid];
 			itr += 2;
 		}
 
@@ -320,16 +332,16 @@ __global__ void wholeDiamond(REAL *right, REAL *left)
 	//row is written.
 		if (shft_wr && tid < 4)
 		{
-			sL[k+itr+tid] = temper[(tid/2*(base-1))+(tid-1)+k];
-			sR[k+itr+tid] = temper[(((tid/2)+1)*(base-1))+(tid&1)-k];
+			shLeft[k+itr+tid] = temper[(tid/2*(base-1))+(tid-1)+k];
+			shRight[k+itr+tid] = temper[(((tid/2)+1)*(base-1))+(tid&1)-k];
 			itr += 2;
 		}
 
 	}
 	__syncthreads();
 
-	right[gid] = sR[tid];
-	left[gid] = sL[tid];
+	right[gid] = shRight[tid];
+	left[gid] = shLeft[tid];
 
 }
 
@@ -338,35 +350,39 @@ __global__ void wholeDiamond(REAL *right, REAL *left)
 __global__ void splitDiamond(REAL *right, REAL *left)
 {
 
-	int base = THREADBLK + 2;
-	__shared__ REAL temper[2 * base];
-	__shared__ REAL sR[THREADBLK];
-	__shared__ REAL sL[THREADBLK];
+	extern __shared__ REAL share[];
+
+	REAL *temper = (REAL*) share;
+	REAL *shRight = (REAL*) &share[2*blockDim.x+4];
+	REAL *shLeft = (REAL*) &share[3*blockDim.x+4];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
 	int tid = threadIdx.x;
 	int tidp = tid + 1;
+
+	//Could put them in constant memory.
+	int base = THREADBLK + 2;
 	int height = THREADBLK/2;
 	int shft_rd;
 	int shft_wr;
 
-	sR[tid] = left[gid];
+	shRight[tid] = left[gid];
 
 	if (blockIdx.x > 0)
 	{
-		sL[tid] = right[gid-blockDim.x];
+		shLeft[tid] = right[gid-blockDim.x];
 	}
 	else
 	{
-		sL[tid] = right[blockDim.x*(gridDim.x-1) + tid];
+		shLeft[tid] = right[blockDim.x*(gridDim.x-1) + tid];
 	}
 
 	// Initialize temper. Kind of an unrolled for loop.  This is actually at
 
 	if (tid < 2)
 	{
-		temper[tid+height-1] = sL[tid];
-		temper[tidp+height] = sR[tid];
+		temper[tid+height-1] = shLeft[tid];
+		temper[tidp+height] = shRight[tid];
 	}
 	//Wind it up!
 
@@ -381,7 +397,7 @@ __global__ void splitDiamond(REAL *right, REAL *left)
 		// Read and write are opposite rows.
 		shft_rd = base*((shft_wr+1) & 1);
 		//Block 0 is split so it needs a different algorithm.  This algorithm
-		//is slightly different than top triangle as described in the note above.
+		//is shLeftightly different than top triangle as described in the note above.
 		if (blockIdx.x > 0)
 		{
 
@@ -413,8 +429,8 @@ __global__ void splitDiamond(REAL *right, REAL *left)
 		//Add the next values in.
 		if (tid < 2)
 		{
-			temper[tid+(k-2)+shft_wr*base] = sL[itr+tid];
-			temper[tid+(base-k)+shft_wr*base] = sR[itr+tid];
+			temper[tid+(k-2)+shft_wr*base] = shLeft[itr+tid];
+			temper[tid+(base-k)+shft_wr*base] = shRight[itr+tid];
 			itr += 2;
 		}
 
@@ -452,7 +468,7 @@ __global__ void splitDiamond(REAL *right, REAL *left)
 		// Read and write are opposite rows.
 		shft_rd = base*((shft_wr+1) & 1);
 		//Block 0 is split so it needs a different algorithm.  This algorithm
-		//is slightly different than top triangle as described in the note above.
+		//is shLeftightly different than top triangle as described in the note above.
 
 		if (tid < (THREADBLK-k) && tid > k)
 		{
@@ -469,15 +485,71 @@ __global__ void splitDiamond(REAL *right, REAL *left)
 	//row is written.
 	if (shft_wr && tid < 4)
 	{
-		sL[k+itr+tid] = temper[(tid/2*(base-1))+(tid-1)+k];
-		sR[k+itr+tid] = temper[(((tid/2)+1)*(base-1))+(tid&1)-k];
+		shLeft[k+itr+tid] = temper[(tid/2*(base-1))+(tid-1)+k];
+		shRight[k+itr+tid] = temper[(((tid/2)+1)*(base-1))+(tid&1)-k];
 		itr += 2;
 	}
 
 	__syncthreads();
 
-	right[gid] = sR[tid];
-	left[gid] = sL[tid];
+	right[gid] = shRight[tid];
+	left[gid] = shLeft[tid];
 
+
+}
+
+
+//The host routine.
+void sweptWrapper(int bks, int tpb ,int t_end, REAL IC, REAL T_f)
+{
+
+	REAL *d_IC, *d_right, *d_left;
+	cudaMalloc((void **)&d_IC, sizeof(REAL)*dv);
+	cudaMalloc((void **)&d_right, sizeof(REAL)*dv);
+	cudaMalloc((void **)&d_left, sizeof(REAL)*dv);
+
+	// Copy the initial conditions to the device array.
+	cudaMemcpy(d_IC,IC,sizeof(REAL)*dv,cudaMemcpyHostToDevice);
+	// Start the counter and start the clock.
+	REAL t_eq = 0.;
+	REAL t_fullstep = TS*(THREADBLK+1);
+
+	const size_t smem1 = 4*tpb*sizeof(REAL);
+	const size_t smem2 = (4*tpb+4)*sizeof(REAL);
+
+	// Call the kernels until you reach the iteration limit.
+	while(t_eq < t_end)
+	{
+
+		upTriangle <<< bks,tpb,smem1>>>(d_IC,d_right,d_left);
+
+		downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
+
+		t_eq += t_fullstep;
+
+		/* Since the procedure does not store the temperature values, the user
+		could input some time interval for which they want the temperature
+		values and this loop could copy the values over from the device and
+		write them out.  This way the user could see the progression of the
+		solution over time, identify an area to be investigated and re-run a
+		shorter version of the simulation starting with those intiial conditions.
+
+		-------------------------------------
+	 	if (true)
+		{
+		cudaMemcpy(T_final, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+		fwr << t_eq << " ";
+
+		for (int k = 0; k<dv; k++)
+		{
+				fwr << T_final[k] << " ";
+			}
+			fwr << endl;
+		}
+		-------------------------------------
+		*/
+	}
+
+	cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
 
 }
