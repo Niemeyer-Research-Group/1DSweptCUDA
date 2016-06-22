@@ -8,6 +8,24 @@
 
 #include "SwR_1DShared.h"
 
+//-----------For testing --------------
+
+__host__ void initFun(int xnode, REAL ds, REAL lx,REAL result)
+{
+
+    result = 500.f*expf((-ds*(REAL)xnode)/lx);
+
+}
+
+__device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
+{
+
+    return fo*(tLeft+tRight) + (1.f-2.f*fo)*tCenter;
+
+}
+
+//-----------For testing --------------
+
 __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 {
 	/*
@@ -54,7 +72,7 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 		//computed, k = 2, 28 points.
 		if (tid <= k)
 		{
-			temper[tid + shft_wr)] = Heat_Diffusion(temper[tid+shift_rd], temper[tid2+shift_rd], temper[tid1+shift_rd])
+			temper[tid + shft_wr] = execFunc(temper[tid+shift_rd], temper[tid2+shift_rd], temper[tid1+shift_rd]);
 		}
 
 		//Make sure the threads are synced
@@ -120,10 +138,13 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 	if (blockIdx.x == (gridDim.x-1))
 	{
 		shRight[tid] = left[tid];
+        __syncthreads();
+        if (tid1 == blockDim.x) shRight[tid] = shRight[tid-1];
 	}
 	else
 	{
 		shRight[tid] = left[gid+blockDim.x];
+        if (gid == 0) shLeft[tid-1] = shLeft[tid];
 	}
 
 	if (tid < 2)
@@ -131,6 +152,8 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 		temper[tid] = shLeft[tid];
 		temper[tid2] = shRight[tid];
 	}
+
+    __syncthreads();
 
 	for (int k = 2; k < blockDim.x; k+=2)
 	{
@@ -141,17 +164,21 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 
 		if (tid < 2)
 		{
-			temper[tid + k + shft_wr*blockDim.x)] = shLeft[tid+k];
-			temper[tid2 + k + (shft_wr*blockDim.x)] = shRight[tid+k];
+			temper[tid + shft_wr] = shLeft[tid+k];
+			temper[tid2 + k + shft_wr] = shRight[tid+k];
 		}
 
-		if (tid < k+2 && tid > 2)
+		if (tid < (k+2) && tid > 1)
 		{
-			temper[tid + shft_wr)] = Heat_Diffusion(temper[tid+shift_rd], temper[tid2+shift_rd], temper[tid1+shift_rd])
+			temper[tid + shft_wr] = execFunc(temper[tid+shift_rd], temper[(tid-2)+shift_rd], temper[(tid-1)+shift_rd]);
 		}
-
+        __syncthreads();
 	}
 
+
+    temper[tid] = execFunc(temper[tid+blockDim.x], temper[tid2+blockDim.x], temper[tid1+blockDim.x]);
+
+    IC[gid] = temper[tid];
 }
 
 
@@ -559,10 +586,25 @@ __global__ void splitDiamond(REAL *right, REAL *left)
 
 }
 
-__host__ void CPU_diamond(REAL right,REAL left)
+//Do the split diamond on the CPU?
+__host__ void CPU_diamond(REAL right, REAL left, int tpb)
 {
+    int iter;
+    REAL temper[tpb+1][tpb+2];
+    temper[0][0] = left[0];
+    temper[0][1] = left[1];
+    temper[0][2] = right[0];
+    temper[0][3] = right[1];
+    iter = 2;
+
+    for (int k = 1;k < tpb+1; k++)
+    {
+        for(int n = 2)
 
 
+
+
+    }
 
 
 }
