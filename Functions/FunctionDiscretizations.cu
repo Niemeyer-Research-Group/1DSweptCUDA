@@ -1,9 +1,9 @@
 //
 
-#include <cmath>
-#include <cstdlib>
 #include <cuda.h>
 
+#include <cmath>
+#include <cstdlib>
 
 // Maybe use float2 to store 2nd derivative with velocity.
 __device__ REAL Kuramoto_Sivashinsky(REAL uLeft, REAL uRight, REAL uCenter, REAL uxxLeft, REAL uxxRight, REAL uxxCenter)
