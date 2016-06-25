@@ -10,14 +10,14 @@
 
 //-----------For testing --------------
 
-__host__ void initFun(int xnode, REAL ds, REAL lx,REAL result)
+__host__ __device__ void initFun(int xnode, REAL ds, REAL lx,REAL result)
 {
 
     result = 500.f*expf((-ds*(REAL)xnode)/lx);
 
 }
 
-__device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
+__host__ __device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
 {
 
     return fo*(tLeft+tRight) + (1.f-2.f*fo)*tCenter;
@@ -114,9 +114,9 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 
 	extern __shared__ REAL share[];
 
-	REAL *temper = (REAL*) share;
-	REAL *shRight = (REAL*) &share[2*blockDim.x+4];
-	REAL *shLeft = (REAL*) &share[3*blockDim.x+4];
+	REAL *temper = (REAL *) share;
+	REAL *shRight = (REAL *) &share[2*blockDim.x+4];
+	REAL *shLeft = (REAL *) &share[3*blockDim.x+4];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tid = threadIdx.x; //Block Thread ID
@@ -139,12 +139,12 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 	{
 		shRight[tid] = left[tid];
         __syncthreads();
-        if (tid1 == blockDim.x) shRight[tid] = shRight[tid-1];
+        if (tid1 == blockDim.x) shRight[tid] = shRight[tid-2];
 	}
 	else
 	{
 		shRight[tid] = left[gid+blockDim.x];
-        if (gid == 0) shLeft[tid-1] = shLeft[tid];
+        if (gid == 0) shLeft[tid] = shLeft[tid2];
 	}
 
 	if (tid < 2)
@@ -315,119 +315,108 @@ __global__ void downSplitTriangle(REAL *IC, REAL *right, REAL *left)
 __global__ void wholeDiamond(REAL *right, REAL *left)
 {
 
-	extern __shared__ REAL share[];
+    extern __shared__ REAL share[];
 
 	REAL *temper = (REAL*) share;
 	REAL *shRight = (REAL*) &share[2*blockDim.x+4];
 	REAL *shLeft = (REAL*) &share[3*blockDim.x+4];
 
-	int gid = blockDim.x * blockIdx.x + threadIdx.x;
-	int tid = threadIdx.x;
-	int tidp = tid + 1;
+	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
+	int tid = threadIdx.x; //Block Thread ID
+	int tid1 = tid + 1;
+	int tid2 = tid + 2;
+	//int height = blockDim.x/2;
+	int shft_wr; //Initialize the shift to the written row of temper.
+	int shft_rd; //Initialize the shift to the read row (opposite of written)
+	int logic_position;
+	int itr = 0;
 
-	//___________-----------------________Need new paradigm.
-	int base = THREADBLK + 2;
-	int height = THREADBLK/2;
+	//int base = THREADBLK + 2;
+	//int height = THREADBLK/2;
 
-	int shft_rd;
-	int shft_wr;
+    shLeft[tid] = right[gid];
 
-	shLeft[tid] = right[gid];
-
-	// The right ridge is passed, each block 1-end gets the right of 0-end-1
-	// Block 0 gets the right of the last block.
-	if (blockIdx.x > 0)
+	if (blockIdx.x == (gridDim.x-1))
 	{
-		shRight[tid] = left[gid-blockDim.x];
+		shRight[tid] = left[tid];
+        __syncthreads();
+        if (tid1 == blockDim.x) shRight[tid] = shRight[tid-1];
 	}
 	else
 	{
-		shRight[tid] = left[blockDim.x*(gridDim.x-1) + tid];
+		shRight[tid] = left[gid+blockDim.x];
+        if (gid == 0) shLeft[tid] = shLeft[tid2];
 	}
-
-	// Initialize temper. Kind of an unrolled for loop.  This is actually at
-	// Timestep 0.
 
 	if (tid < 2)
 	{
-		temper[tid+height-1] = shLeft[tid];
-		temper[tidp+height] = shRight[tid];
+		temper[tid] = shLeft[tid];
+		temper[tid+2] = shRight[tid];
 	}
-	//Wind it up!
 
-	int itr = 2;
 
-	__syncthreads();
-
-	for (int k = height; k>1; k--)
+    for (int k = 2; k < blockDim.x; k+=2)
 	{
-		// This tells you if the current row is the first or second.
-		shft_wr = ((k + 1) & 1);
-		// Read and write are opposite rows.
-		shft_rd = base*((shft_wr+1) & 1);
-		//Block 0 is split so it needs a different algorithm.  This algorithm
-		//is shLeftightly different than top triangle as described in the note above.
+		logic_position = (k/2 & 1);
+		shift_wr = blockDim.x*logic_position;
+		//On even iterations write to second row (starts at element 32)
+		shft_rd = blockDim.x*((logic_position+1) & 1);
 
-		if (tid <= ((THREADBLK+1)-k) && tid >= k)
-		{
-			temper[tidp + ((base)*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tidp+shft_rd];
-		}
-
-		//Add the next values in.
 		if (tid < 2)
 		{
-			temper[tid+(k-2)+shft_wr*base] = shLeft[itr+tid];
-			temper[tidp+k+shft_wr*base] = shRight[itr+tid];
-			itr += 2;
+			temper[tid + shft_wr] = shLeft[tid+k];
+			temper[tid2 + k + shft_wr] = shRight[tid+k];
 		}
 
-	}
-
-	//DO THE MIDDLE ONE.
-	if (blockIdx.x == (gridDim.x-1) && tid == 0 )
-	{
-		temper[2*base-1] = 0;
-	}
-	elseif (blockIdx.x == 0 && tid == 0)
-	{
-		temper[base] = 0;
-	}
-
-	temper[tidp] = fo * (temper[tid+base] + temper[tid+base+2]) + (1.f-2.f*fo) * temper[tidp+base];
-
-	itr = -1;
-
-	//Wind it down!
-	for (int k = 1; k<height; k++)
-	{
-		// This tells you if the current row is the first or second.
-		shft_wr = (k & 1);
-		// Read and write are opposite rows.
-		shft_rd = base*((shft_wr+1) & 1);
-
-		if (tid < (THREADBLK-k) && tid > k)
+		if (tid < (k+2) && tid > 1)
 		{
-			temper[tidp + (base*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tidp+shft_rd];
+			temper[tid + shft_wr] = execFunc(temper[tid+shift_rd], temper[(tid-2)+shift_rd], temper[(tid-1)+shift_rd]);
+		}
+        __syncthreads();
+	}
+
+    temper[tid] = execFunc(temper[tid+blockDim.x], temper[tid2+blockDim.x], temper[tid1+blockDim.x]);
+
+    __syncthreads(); // Then make sure each block of threads are synced.
+
+    //-------------------TOP PART------------------------------------------
+
+    int itr = 0;
+
+	//The initial conditions are timeslice 0 so start k at 1.
+	for (int k = 30; k>1 ; k-=2)
+	{
+		//Bitwise even odd. On even iterations write to first row.
+		logic_position = (k/2 & 1);
+		shift_wr = blockDim.x*logic_position;
+		//On even iterations write to second row (starts at element 32)
+		shft_rd = blockDim.x*((logic_position+1) & 1);
+
+		//Each iteration the triangle narrows.  When k = 1, 30 points are
+		//computed, k = 2, 28 points.
+		if (tid <= k)
+		{
+			temper[tid + shft_wr] = execFunc(temper[tid+shift_rd], temper[tid2+shift_rd], temper[tid1+shift_rd]);
 		}
 
+		//Make sure the threads are synced
+		__syncthreads();
 
-	//Make sure the threads are synced
-	__syncthreads();
-
-	//Now thread 0 in each block (which never computes a value) is used to
-	//fill the shared right and left arrays with the relevant values.
-	//This grabs the top and bottom edges on the iteration when the top
-	//row is written.
+		//Really tricky to get unique values with threads.
 		if (shft_wr && tid < 4)
 		{
-			shLeft[k+itr+tid] = temper[(tid/2*(base-1))+(tid-1)+k];
-			shRight[k+itr+tid] = temper[(((tid/2)+1)*(base-1))+(tid&1)-k];
-			itr += 2;
+			shLeft[tid+itr] = temper[(tid & 1) + (tid/2 * blockDim.x)]; // Still baroque.
+			shRight[tid+itr] = temper[(right_pick[tid] + k) + (tid/2 * blockDim.x)];
+			itr += 4;
 		}
 
-	}
-	__syncthreads();
+		__syncthreads();
 
+	}
+
+	//After the triangle has been computed, the right and left shared arrays are
+	//stored in global memory by the global thread ID since (conveniently),
+	//they're the same size as a warp!
 	right[gid] = shRight[tid];
 	left[gid] = shLeft[tid];
 
@@ -536,7 +525,7 @@ __global__ void splitDiamond(REAL *right, REAL *left)
 	{
 		if (tid == (height-1))
 		{
-			temper[tidp] = 2.f * fo * (temper[tid+base]-temper[tid+base+1]) + temper[tidp+base;
+			temper[tidp] = 2.f * fo * (temper[tid+base]-temper[tid+base+1]) + temper[tidp+base];
 		}
 		else if (tid == height)
 		{
@@ -589,23 +578,95 @@ __global__ void splitDiamond(REAL *right, REAL *left)
 //Do the split diamond on the CPU?
 __host__ void CPU_diamond(REAL right, REAL left, int tpb)
 {
-    int iter;
+    int idx;
+    int ht = tpb/2;
     REAL temper[tpb+1][tpb+2];
     temper[0][0] = left[0];
     temper[0][1] = left[1];
     temper[0][2] = right[0];
     temper[0][3] = right[1];
-    iter = 2;
 
-    for (int k = 1;k < tpb+1; k++)
+    //Splitting it is the whole point!
+
+    for (int k = 1; k < ht; k++)
     {
-        for(int n = 2)
 
+        temper[k][0] = left[2*k];
+        temper[k][1] = left[2*(k+1)];
+        temper[k][(k+1)*2] = right[2*k];
+        temper[k][(k+1)*2+1] = right[2*(k+1)];
 
+        for(int n = 2; n<(k+1)*2; n++)
+        {
+            //Double trailing index.
+            if(n == k+1)
+            {
+                temper[k][n] = execFunc(temper[k-1][n-2], temper[k-1][n-2], temper[k-1][n-1]);
+            }
+            //Double leading index.
+            else if(n==k+2)
+            {
+                temper[k][n] = execFunc(temper[k-1][n], temper[k-1][n], temper[k-1][n-1]);
+            }
+            else
+            {
+                temper[k][n] = execFunc(temper[k-1][n-2], temper[k-1][n], temper[k-1][n-1]);
+            }
 
+        }
 
     }
 
+    for(int n = 0; n < tpb; n++)
+    {
+        //Double trailing index.
+        if(n == ht-1)
+        {
+            temper[ht][n] = execFunc(temper[k-1][n], temper[k-1][n+2], temper[k-1][n+1]);
+        }
+        //Double leading index.
+        else if(n == ht)
+        {
+            temper[ht][n] = execFunc(temper[k-1][n], temper[k-1][n], temper[k-1][n-1]);
+        }
+        else
+        {
+            temper[ht][n] = execFunc(temper[k-1][n-2], temper[k-1][n], temper[k-1][n-1]);
+        }
+    }
+
+    left[0] = temper[ht][0];
+    left[1] = temper[ht][1];
+    right[0] = temper[ht][tpb-2];
+    right[1] = temper[ht][tpb-1];
+
+    //Top part.
+    for (int k = 1; k<ht; k++)
+    {
+
+        for (int n = 0; n<(tpb-2*k); n++)
+        {
+            if(n == ht-1)
+            {
+                temper[k+ht][n] = execFunc(temper[k-1+ht][n], temper[k-1+ht][n+2], temper[k-1+ht][n+1]);
+            }
+            //Double leading index.
+            else if(n == ht)
+            {
+                temper[k+ht][n] = execFunc(temper[k-1+ht][n], temper[k-1+ht][n], temper[k-1+ht][n-1]);
+            }
+            else
+            {
+                temper[k+ht][n] = execFunc(temper[k-1+ht][n-2], temper[k-1+ht][n], temper[k-1+ht][n-1]);
+            }
+        }
+
+        right[2*k] = temper[k+ht][0];
+        right[2*k+1] = temper[k+ht][1];
+        left[2*k] = temper[k+ht][(tpb-2)-2*k];
+        left[2*k+1] = temper[k+ht][(tpb-2)-2*k];
+
+    }
 
 }
 
