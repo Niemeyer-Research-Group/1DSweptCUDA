@@ -14,7 +14,7 @@
 
 //-----------For testing --------------
 
-__host__ __device__ void initFun(int xnode, REAL ds, REAL lx, REAL result)
+__host__ __device__ void initFun(int xnode, REAL ds, REAL lx,REAL result)
 {
 
     result = 500.f*expf((-ds*(REAL)xnode)/lx);
