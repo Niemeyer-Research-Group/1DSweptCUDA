@@ -1,0 +1,80 @@
+# -*- coding: utf-8 -*-
+
+# Just writing a plotting script for the Swept rule CUDA.
+# Perhaps this will also be the calling script.
+
+import matplotlib.pyplot as plt
+import numpy as np
+import subprocess as sp
+import shlex
+import os
+
+#Choose between the three examples in reality
+Fname = 'KS'
+timeout = '1D_Timing.txt'
+rsltout = '1D_Result.dat'
+sourcebase = '1D_SweptShared.cu'
+
+sourcepath = os.path.dirname(__file__)
+basepath = os.path.join(sourcepath,'Results')
+ofile = Fname + timeout
+filepath = os.path.abspath(os.path.join(basepath, ofile))
+if os.path.isfile(filepath):
+    os.remove(filepath)
+
+div = [2**k for k in range(10,21)]
+blx = [32,64,128,256,512,1024]
+fn = open(filepath,'a+')
+
+Exec1 = './bin/' + Fname + 'Out'
+
+compStr = 'nvcc -o ./bin/' + Fname + 'Out ' + Fname + sourcebase + ' -gencode arch=compute_35,code=sm_35 -lm -w -std=c++11'
+compArg = shlex.split(compStr)
+proc = sp.Popen(compArg)
+sp.Popen.wait(proc)
+print "Compiled"
+fn.write("BlockSize\tXDimSize\tTime\n")
+fn.close()
+
+for k in blx:
+    for n in div:
+        print n,k
+        execut = Exec1 + ' {0} {1} {2} {3}'.format(n,k,.01,10000)
+        exeStr = shlex.split(execut)
+        proc = sp.Popen(exeStr)
+        sp.Popen.wait(proc)
+
+
+rslt = Fname + rsltout
+rsltfile = os.path.abspath(os.path.join(basepath, tslt))
+
+data = []
+
+for line in fin:
+    ar = [float(n) for n in line.split()]
+
+    if len(ar)<50:
+        xax = np.linspace(0,ar[0],ar[1])
+    else:
+        data.append(ar)
+
+
+print "Percent Difference in integrals:"
+df = 100*abs(np.trapz(data[0][1:],xax)-np.trapz(data[1][1:],xax))/np.trapz(data[0][1:],xax)
+print df
+
+lbl = ["Initial Condition"]
+
+plt.plot(xax,data[0][1:])
+plt.hold
+for k in range(1,len(data)):
+    plt.plot(xax,data[k][1:])
+    lbl.append("t = {} seconds".format(data[k][0]))
+
+
+plt.legend(lbl)
+plt.xlabel("Position on bar (m)")
+plt.ylabel("Velocity")
+plt.title("Kuramoto-Sivashinsky")
+plt.grid()
+plt.show()

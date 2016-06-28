@@ -5,3 +5,7 @@
 *.cubin
 *.fatbin
 *.dat
+bin/
+misc/
+CMakeFiles/
+*.cmake
