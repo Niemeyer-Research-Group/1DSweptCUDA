@@ -6,7 +6,7 @@
 #include <ostream>
 #include <iostream>
 #include <cstdio>
-#include <cstdilib>
+#include <cstdlib>
 #include <cmath>
 #include <fstream>
 
@@ -671,14 +671,15 @@ __host__ void CPU_diamond(REAL right, REAL left, int tpb)
         left[2*k+1] = temper[k+ht][(tpb-2) - 2*k + 1];
 
     }
-
 }
 
 //The host routine.
-void sweptWrapper(int bks, int tpb ,int t_end, REAL IC, REAL T_f)
+void sweptWrapper(const int bks, const int tpb, const int dv, REAL dt, const int t_end, const int cpu, REAL *IC, REAL *T_f)
 {
 
 	REAL *d_IC, *d_right, *d_left;
+    REAL right, left;
+
 	cudaMalloc((void **)&d_IC, sizeof(REAL)*dv);
 	cudaMalloc((void **)&d_right, sizeof(REAL)*dv);
 	cudaMalloc((void **)&d_left, sizeof(REAL)*dv);
@@ -686,132 +687,212 @@ void sweptWrapper(int bks, int tpb ,int t_end, REAL IC, REAL T_f)
 	// Copy the initial conditions to the device array.
 	cudaMemcpy(d_IC,IC,sizeof(REAL)*dv,cudaMemcpyHostToDevice);
 	// Start the counter and start the clock.
-	REAL t_eq = 0.;
-	REAL t_fullstep = TS*(THREADBLK+1);
+	const double t_fullstep = dt.y*(double)tpb;
 
 	const size_t smem1 = 4*tpb*sizeof(REAL);
 	const size_t smem2 = (4*tpb+4)*sizeof(REAL);
 
-	//upTriangle <<< bks,tpb,smem1>>>(d_IC,d_right,d_left);
+	upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
+
+	double t_eq = t_fullstep;
 
 	// Call the kernels until you reach the iteration limit.
-	while(t_eq < t_end)
-	{
+    if (cpu == 1)
+    {
+    	while(t_eq < t_end)
+    	{
 
-		upTriangle <<< bks,tpb,smem1>>>(d_IC,d_right,d_left);
+            cudaMemcpy(right,d_right,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
+            cudaMemcpy(left,d_left,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
 
-		downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
+            CPU_diamond(right, left, tpb);
 
-		/*
-		splitDiamond <<< bks,tpb,smem2 >>> (d_right,d_left);
-		wholeDiamond <<< bks,tpb,smem2 >>> (d_right,d_left);
-		*/
+            cudaMemcpy(d_right, right, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
+            cudaMemcpy(d_left, left, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
 
-		t_eq += t_fullstep;
+            wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,-1);
 
-		/* Since the procedure does not store the temperature values, the user
-		could input some time interval for which they want the temperature
-		values and this loop could copy the values over from the device and
-		write them out.  This way the user could see the progression of the
-		solution over time, identify an area to be investigated and re-run a
-		shorter version of the simulation starting with those intiial conditions.
+		    //So it always ends on a left pass since the down triangle is a right pass.
 
-		-------------------------------------
-	 	if (true)
-		{
-		cudaMemcpy(T_final, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
-		fwr << t_eq << " ";
+		    t_eq += t_fullstep;
 
-		for (int k = 0; k<dv; k++)
-		{
-				fwr << T_final[k] << " ";
-			}
-			fwr << endl;
-		}
-		-------------------------------------
-		*/
+    		/* Since the procedure does not store the temperature values, the user
+    		could input some time interval for which they want the temperature
+    		values and this loop could copy the values over from the device and
+    		write them out.  This way the user could see the progression of the
+    		solution over time, identify an area to be investigated and re-run a
+    		shorter version of the simulation starting with those intiial conditions.
+
+    		-------------------------------------
+    	 	if (true)
+    		{
+    			downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
+    			cudaMemcpy(T_final, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+    			fwr << t_eq << " ";
+
+    			for (int k = 0; k<dv; k++)
+    			{
+    					fwr << T_final.x[k] << " ";
+    			}
+    				fwr << endl;
+
+    			upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
+    			wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,-1);
+    		}
+    		-------------------------------------
+    		*/
+        }
 	}
+    else
+    {
+        while(t_eq < t_end)
+        {
 
-	//downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
+            splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,-1);
+
+            wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,1);
+            //So it always ends on a left pass since the down triangle is a right pass.
+
+            t_eq += t_fullstep;
+
+            /* Since the procedure does not store the temperature values, the user
+            could input some time interval for which they want the temperature
+            values and this loop could copy the values over from the device and
+            write them out.  This way the user could see the progression of the
+            solution over time, identify an area to be investigated and re-run a
+            shorter version of the simulation starting with those intiial conditions.
+
+            -------------------------------------
+            if (true)
+            {
+                downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
+                cudaMemcpy(T_final, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+                fwr << t_eq << " ";
+
+                for (int k = 0; k<dv; k++)
+                {
+                        fwr << T_final.x[k] << " ";
+                }
+                    fwr << endl;
+
+                upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
+                wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,-1);
+            }
+            -------------------------------------
+            */
+        }
+    }
+
+	downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
 
 	cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
 
+	cudaFree(d_IC);
+	cudaFree(d_right);
+	cudaFree(d_left);
+
 }
 
-
-
-int main()
+int main( int argc, char *argv[] )
 {
+	if (argc != 6)
+	{
+		cout << "The Program takes five inputs: #Divisions, #Threads/block, dt, finish time, and GPU/CPU or all GPU" << endl;
+		exit(-1);
+	}
 	// Choose the GPGPU.  This is device 0 in my machine which has 2 devices.
 	cudaSetDevice(0);
-	const int dv = int(DIVISIONS); //Setting it to an int helps with arrays
-	const int bks = dv/THREADBLK; //The number of blocks since threads/block = 32.
-	// Threads/block will be experimented on.
-	const REAL ds = LENX/(DIVISIONS-1); //The x division length.
-	REAL fou = TS*TH_DIFF/(ds*ds); //The Fourier number.
+
+	const int dv = atoi(argv[1]); //Setting it to an int helps with arrays
+	const int tpb = atoi(argv[2]);
+	const int tf = atoi(argv[4]);
+	const int bks = dv/tpb; //The number of blocks since threads/block = 32.
+
+	//Conditions for main input.  Unit testing kinda.
+	//dv and tpb must be powers of two.  dv must be larger than tpb and divisible by
+	//tpb.
+
+	//if ((dv & (tpb-1) !=0) || tpb&31 != 0)
+
+	REAL dsc;
+	dsc.x = lx/(dv-1);
+	dsc.y = atof(argv[3]);
 
 	// Initialize arrays.
 	REAL IC[dv];
+	REAL *IC_p;
 	REAL T_final[dv];
-	double wall0, wall1, timed;
+	REAL *Tfin_p;
 
+	Tfin_p = T_final;
 	// Some initial condition for the bar temperature, an exponential decay
 	// function.
 	for (int k = 0; k<dv; k++)
 	{
-		IC[k] = 500.f*expf((-ds*k)/LENX);
+		initFun((float)k*dsc.x,IC[k]);
 	}
 
-	cout << fou << endl;
 	// Call out the file before the loop and write out the initial condition.
-	ofstream fwr;
-	fwr.open("1DHeatEQResult.dat",ios::trunc);
+	ofstream fwr, ftime;
+	fwr.open("Results/Heat1D_Result.dat",ios::trunc);
+	ftime.open("Results/Heat1D_Timing.txt",ios::app);
 	// Write out x length and then delta x and then delta t.
 	// First item of each line is timestamp.
-	fwr << LENX << " " << DIVISIONS << " " << TS << " " << endl << 0 << " ";
+	fwr << lx << " " << dv << " " << dsc.x << " " << endl << 0 << " ";
 
 	for (int k = 0; k<dv; k++)
 	{
-		fwr << IC[k] << " ";
+		fwr << IC[k].x << " ";
 	}
 
 	fwr << endl;
 
+	IC_p = IC;
+
 	// Transfer data to GPU.
 
 	// This puts the Fourier number in constant memory.
-	cudaMemcpyToSymbol(fo,&fou,sizeof(REAL));
+	cudaMemcpyToSymbol(disc,&dsc,sizeof(REAL));
 
 	// This initializes the device arrays on the device in global memory.
 	// They're all the same size.  Conveniently.
 
 	// Start the counter and start the clock.
-	REAL t_eq = 0.;
-	REAL t_fullstep = TS*(THREADBLK+1);
-	wall0 = clock();
+	cudaEvent_t start, stop;
+	float timed;
+	cudaEventCreate( &start );
+	cudaEventCreate( &stop );
+	cudaEventRecord( start, 0);
 
 	// Call the kernels until you reach the iteration limit.
-	sweptWrapper(bks,THREADBLK,FINISH,IC,T_final);
+	sweptWrapper(bks,tpb,dv,dsc,tf,IC_p,Tfin_p);
 
 	// Show the time and write out the final condition.
-	wall1 = clock();
-	timed = (wall1-wall0)/CLOCKS_PER_SEC;
+	cudaEventRecord(stop, 0);
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime( &timed, start, stop);
+
+	timed = timed * 1.e-3;
 
 	cout << "That took: " << timed << " seconds" << endl;
 
-	fwr << t_eq << " ";
+	ftime << dv << " " << tpb << " " << timed << endl;
+
+	ftime.close();
+
+	fwr << tf << " ";
 	for (int k = 0; k<dv; k++)
 	{
-		fwr << T_final[k] << " ";
+		fwr << Tfin_p[k].x << " ";
 	}
 
 	fwr.close();
 
 	// Free the memory and reset the device.
-	cudaFree(d_IC);
-	cudaFree(d_right);
-	cudaFree(d_left);
+
 	cudaDeviceReset();
+	cudaEventDestroy( start );
+	cudaEventDestroy( start );
 
 	return 0;
 
