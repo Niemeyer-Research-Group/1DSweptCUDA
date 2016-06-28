@@ -12,6 +12,11 @@
 
 //#include "SwR_1DShared.h"
 
+#ifndef REAL
+#define REAL  float
+#endif
+
+
 //-----------For testing --------------
 
 __host__ __device__ void initFun(int xnode, REAL ds, REAL lx,REAL result)
@@ -63,12 +68,13 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 	temper[tid] = IC[gid];
 	__syncthreads(); // Then make sure each block of threads are synced.
 
+    #pragma unroll
 	//The initial conditions are timeslice 0 so start k at 1.
-	for (int k = 30; k>1 ; k-=2)
+	for (int k = (blockDim.x-2); k>1; k-=2)
 	{
 		//Bitwise even odd. On even iterations write to first row.
 		logic_position = (k/2 & 1);
-		shift_wr = blockDim.x*logic_position;
+		shft_wr = blockDim.x*logic_position;
 		//On even iterations write to second row (starts at element 32)
 		shft_rd = blockDim.x*((logic_position+1) & 1);
 
@@ -76,7 +82,7 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 		//computed, k = 2, 28 points.
 		if (tid <= k)
 		{
-			temper[tid + shft_wr] = execFunc(temper[tid+shift_rd], temper[tid2+shift_rd], temper[tid1+shift_rd]);
+			temper[tid + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
 		}
 
 		//Make sure the threads are synced
@@ -90,8 +96,6 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 			itr += 4;
 		}
 
-		__syncthreads();
-
 	}
 
 	//After the triangle has been computed, the right and left shared arrays are
@@ -102,17 +106,8 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 
 }
 
-//The upside down triangle.  This function essentially takes right and left and
-//returns IC.
-
-//IMPORTANT note: k and tid were in sync in the first function, but here they're
-//out of sync in the loop.  This is because we can't use tid = 33 or 32 and the
-//shared temperature array is that long.  BUT in order to fill the arrays, these
-//elements must be accessed.  So each element in each row is shifted by +1.
-//For instance, thread tid = 16 refers to temper[17].  That being said, tid is
-//unique and k is NOT so the index must be referenced by tid.
-
-//
+// Down triangle is only called at the end when data is passed left.  It's never split.
+// It returns IC which is a full 1D result at a certain time.
 __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 {
 
@@ -130,25 +125,20 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 	int shft_wr; //Initialize the shift to the written row of temper.
 	int shft_rd; //Initialize the shift to the read row (opposite of written)
 	int logic_position;
-	int itr = 0;
+    int base = blockDim.x + 2;
 
 	//Assign the initial values to the first row in temper, each warp (in this
 	//case each block) has it's own version of temper shared among its threads.
 
-	// Pass to the left so all checks are for block 0 (this reduces arithmetic).
-	// The left ridge is always kept by the block.
 	shLeft[tid] = right[gid];
 
 	if (blockIdx.x == (gridDim.x-1))
 	{
 		shRight[tid] = left[tid];
-        __syncthreads();
-        if (tid1 == blockDim.x) shRight[tid] = shRight[tid-2];
 	}
 	else
 	{
 		shRight[tid] = left[gid+blockDim.x];
-        if (gid == 0) shLeft[tid] = shLeft[tid2];
 	}
 
 	if (tid < 2)
@@ -159,12 +149,13 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 
     __syncthreads();
 
+    #pragma unroll
 	for (int k = 2; k < blockDim.x; k+=2)
 	{
 		logic_position = (k/2 & 1);
-		shift_wr = blockDim.x*logic_position;
-		//On even iterations write to second row (starts at element 32)
-		shft_rd = blockDim.x*((logic_position+1) & 1);
+		shft_wr = base*logic_position;
+
+		shft_rd = base*((logic_position+1) & 1);
 
 		if (tid < 2)
 		{
@@ -172,21 +163,23 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 			temper[tid2 + k + shft_wr] = shRight[tid+k];
 		}
 
-		if (tid < (k+2) && tid > 1)
+		if (tid < k)
 		{
-			temper[tid + shft_wr] = execFunc(temper[tid+shift_rd], temper[(tid-2)+shift_rd], temper[(tid-1)+shift_rd]);
+			temper[tid2 + shft_wr] = execFunc(temper[tid + shft_rd], temper[tid2+shft_rd], temper[tid1 + shft_rd]);
 		}
         __syncthreads();
 	}
 
+    if (gid == 0) temper[base] = temper[base+2];
+    if (gid == (blockDim.x*gridDim.x-1)) temper[2*blockDim.x+3] = temper[2*blockDim.x+1];
 
-    temper[tid] = execFunc(temper[tid+blockDim.x], temper[tid2+blockDim.x], temper[tid1+blockDim.x]);
+    temper[tid] = execFunc(temper[tid+base], temper[tid2+base], temper[tid1+base]);
 
     IC[gid] = temper[tid];
 }
 
 
-__global__ void downSplitTriangle(REAL *IC, REAL *right, REAL *left)
+/*__global__ void downSplitTriangle(REAL *IC, REAL *right, REAL *left)
 {
 
 	extern __shared__ REAL share[];
@@ -315,8 +308,9 @@ __global__ void downSplitTriangle(REAL *IC, REAL *right, REAL *left)
 		}
 	}
 }
+*/
 
-__global__ void wholeDiamond(REAL *right, REAL *left)
+__global__ void wholeDiamond(REAL *right, REAL *left, bool full)
 {
 
     extern __shared__ REAL share[];
@@ -333,9 +327,7 @@ __global__ void wholeDiamond(REAL *right, REAL *left)
 	int shft_wr; //Initialize the shift to the written row of temper.
 	int shft_rd; //Initialize the shift to the read row (opposite of written)
 	int logic_position;
-	int itr = 0;
-
-	//int base = THREADBLK + 2;
+	int base = THREADBLK + 2;
 	//int height = THREADBLK/2;
 
     shLeft[tid] = right[gid];
@@ -343,13 +335,10 @@ __global__ void wholeDiamond(REAL *right, REAL *left)
 	if (blockIdx.x == (gridDim.x-1))
 	{
 		shRight[tid] = left[tid];
-        __syncthreads();
-        if (tid1 == blockDim.x) shRight[tid] = shRight[tid-1];
 	}
 	else
 	{
 		shRight[tid] = left[gid+blockDim.x];
-        if (gid == 0) shLeft[tid] = shLeft[tid2];
 	}
 
 	if (tid < 2)
@@ -362,9 +351,9 @@ __global__ void wholeDiamond(REAL *right, REAL *left)
     for (int k = 2; k < blockDim.x; k+=2)
 	{
 		logic_position = (k/2 & 1);
-		shift_wr = blockDim.x*logic_position;
+		shft_wr =base*logic_position;
 		//On even iterations write to second row (starts at element 32)
-		shft_rd = blockDim.x*((logic_position+1) & 1);
+		shft_rd = base*((logic_position+1) & 1);
 
 		if (tid < 2)
 		{
@@ -372,35 +361,42 @@ __global__ void wholeDiamond(REAL *right, REAL *left)
 			temper[tid2 + k + shft_wr] = shRight[tid+k];
 		}
 
-		if (tid < (k+2) && tid > 1)
+        if (tid < k)
 		{
-			temper[tid + shft_wr] = execFunc(temper[tid+shift_rd], temper[(tid-2)+shift_rd], temper[(tid-1)+shift_rd]);
+			temper[tid2 + shft_wr] = execFunc(temper[tid + shft_rd], temper[tid2+shft_rd], temper[tid1 + shft_rd]);
 		}
         __syncthreads();
 	}
 
-    temper[tid] = execFunc(temper[tid+blockDim.x], temper[tid2+blockDim.x], temper[tid1+blockDim.x]);
+    if (full)
+    {
+        if (gid == 0) temper[base] = temper[base+2];
+        if (gid == (blockDim.x*gridDim.x-1)) temper[2*blockDim.x+3] = temper[2*blockDim.x+1];
+    }
+
+    temper[tid] = execFunc(temper[tid+base], temper[tid2+base], temper[tid1+base]);
 
     __syncthreads(); // Then make sure each block of threads are synced.
 
     //-------------------TOP PART------------------------------------------
 
     int itr = 0;
+    int right_pick[4] = {2,1,-1,0}; //Template!
 
 	//The initial conditions are timeslice 0 so start k at 1.
-	for (int k = 30; k>1 ; k-=2)
+	for (int k = (blockDim-2); k>1 ; k-=2)
 	{
 		//Bitwise even odd. On even iterations write to first row.
 		logic_position = (k/2 & 1);
-		shift_wr = blockDim.x*logic_position;
+		shft_wr = base*logic_position;
 		//On even iterations write to second row (starts at element 32)
-		shft_rd = blockDim.x*((logic_position+1) & 1);
+		shft_rd = base*((logic_position+1) & 1);
 
 		//Each iteration the triangle narrows.  When k = 1, 30 points are
 		//computed, k = 2, 28 points.
 		if (tid <= k)
 		{
-			temper[tid + shft_wr] = execFunc(temper[tid+shift_rd], temper[tid2+shift_rd], temper[tid1+shift_rd]);
+			temper[tid + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
 		}
 
 		//Make sure the threads are synced
@@ -409,8 +405,8 @@ __global__ void wholeDiamond(REAL *right, REAL *left)
 		//Really tricky to get unique values with threads.
 		if (shft_wr && tid < 4)
 		{
-			shLeft[tid+itr] = temper[(tid & 1) + (tid/2 * blockDim.x)]; // Still baroque.
-			shRight[tid+itr] = temper[(right_pick[tid] + k) + (tid/2 * blockDim.x)];
+			shLeft[tid+itr] = temper[(tid & 1) + (tid/2 * base)]; // Still baroque.
+			shRight[tid+itr] = temper[(right_pick[tid] + k) + (tid/2 * base)];
 			itr += 4;
 		}
 

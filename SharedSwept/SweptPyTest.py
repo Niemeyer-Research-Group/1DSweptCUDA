@@ -8,9 +8,43 @@ import numpy as np
 import subprocess as sp
 import shlex
 import os
+from Tkinter import *
 
-#Choose between the three examples in reality
-Fname = 'KS'
+OPTIONS = [
+    "KS",
+    "Heat",
+    "Euler"
+]
+
+master = Tk()
+
+master.geometry("400x400")
+
+variable = StringVar(master)
+variable.set(OPTIONS[0]) # default value
+
+w = apply(OptionMenu, (master, variable) + tuple(OPTIONS))
+w.pack()
+
+def ok():
+    master.destroy()
+
+def skip():
+    master.destroy()
+
+def on_closing():
+    raise SystemExit
+
+master.protocol("WM_DELETE_WINDOW", on_closing)
+button = Button(master, text="OK", command=ok)
+button.pack()
+button = Button(master, text="Skip Run", command=skip)
+button.pack()
+
+master.mainloop()
+
+Fname = variable.get()
+
 timeout = '1D_Timing.txt'
 rsltout = '1D_Result.dat'
 sourcebase = '1D_SweptShared.cu'
@@ -22,7 +56,7 @@ filepath = os.path.abspath(os.path.join(basepath, ofile))
 if os.path.isfile(filepath):
     os.remove(filepath)
 
-div = [2**k for k in range(10,21)]
+div = [2**k for k in range(10,18)]
 blx = [32,64,128,256,512,1024]
 fn = open(filepath,'a+')
 
@@ -39,15 +73,16 @@ fn.close()
 for k in blx:
     for n in div:
         print n,k
-        execut = Exec1 + ' {0} {1} {2} {3}'.format(n,k,.01,10000)
+        execut = Exec1 + ' {0} {1} {2} {3} {4}'.format(n,k,.01,10000,1)
         exeStr = shlex.split(execut)
         proc = sp.Popen(exeStr)
         sp.Popen.wait(proc)
 
 
-rslt = Fname + rsltout
-rsltfile = os.path.abspath(os.path.join(basepath, tslt))
 
+rslt = Fname + rsltout
+rsltfile = os.path.abspath(os.path.join(basepath, rslt))
+fin = open(rsltfile)
 data = []
 
 for line in fin:
