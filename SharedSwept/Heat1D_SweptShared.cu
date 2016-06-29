@@ -327,7 +327,7 @@ __global__ void wholeDiamond(REAL *right, REAL *left, bool full)
 	int shft_wr; //Initialize the shift to the written row of temper.
 	int shft_rd; //Initialize the shift to the read row (opposite of written)
 	int logic_position;
-	int base = THREADBLK + 2;
+	int base = blockDim.x + 2;
 	//int height = THREADBLK/2;
 
     shLeft[tid] = right[gid];
@@ -427,21 +427,24 @@ __global__ void wholeDiamond(REAL *right, REAL *left, bool full)
 __global__ void splitDiamond(REAL *right, REAL *left)
 {
 
-	extern __shared__ REAL share[];
+    extern __shared__ REAL share[];
 
 	REAL *temper = (REAL*) share;
 	REAL *shRight = (REAL*) &share[2*blockDim.x+4];
 	REAL *shLeft = (REAL*) &share[3*blockDim.x+4];
 
-	int gid = blockDim.x * blockIdx.x + threadIdx.x;
-	int tid = threadIdx.x;
-	int tidp = tid + 1;
-
-	//Could put them in constant memory.
-	int base = THREADBLK + 2;
-	int height = THREADBLK/2;
-	int shft_rd;
-	int shft_wr;
+	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
+	int tid = threadIdx.x; //Block Thread ID
+	int tid1 = tid + 1;
+	int tid2 = tid + 2;
+	//int height = blockDim.x/2;
+	int shft_wr; //Initialize the shift to the written row of temper.
+	int shft_rd; //Initialize the shift to the read row (opposite of written)
+	int logic_position;
+    const int right_pick[4] = {2,1,-1,0}; //Template!
+    int itr = 0;
+	const int base = blockDim.x + 2;
+	const int height = blockDim.x/2;
 
 	shRight[tid] = left[gid];
 
@@ -458,122 +461,124 @@ __global__ void splitDiamond(REAL *right, REAL *left)
 
 	if (tid < 2)
 	{
-		temper[tid+height-1] = shLeft[tid];
-		temper[tidp+height] = shRight[tid];
+        temper[tid] = shLeft[tid];
+		temper[tid2] = shRight[tid];
 	}
 	//Wind it up!
 
-	int itr = 2;
-
-	__syncthreads();
-
-	for (int k = height; k>1; k--)
+    for (int k = 2; k < blockDim.x; k+=2)
 	{
-		// This tells you if the current row is the first or second.
-		shft_wr = ((k+1) & 1);
-		// Read and write are opposite rows.
-		shft_rd = base*((shft_wr+1) & 1);
-		//Block 0 is split so it needs a different algorithm.  This algorithm
-		//is shLeftightly different than top triangle as described in the note above.
-		if (blockIdx.x > 0)
-		{
+		logic_position = (k/2 & 1);
+		shft_wr = base*logic_position;
+		//On even iterations write to second row (starts at element 32)
+		shft_rd = base*((logic_position+1) & 1);
 
-			if (tidp <= ((THREADBLK+1)-k) && tidp >= k)
-			{
-				temper[tidp + (base*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tidp+shft_rd];
-			}
-
-		}
-
-		else
-		{
-			if (tidp <= ((THREADBLK+1)-k) && tidp >= k)
-			{
-				if (tid == (height-1))
-				{
-					temper[tidp + (base*shft_wr)] = 2.f * fo * (temper[tid+shft_rd]-temper[tid+shft_rd+1]) + temper[tidp+shft_rd];
-				}
-				else if (tid == height)
-				{
-					temper[tidp + (base*shft_wr)] = 2.f * fo * (temper[tid+shft_rd+2]-temper[tid+shft_rd+1]) + temper[tidp+shft_rd];
-				}
-				else
-				{
-					temper[tidp + (base*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tidp+shft_rd];
-				}
-			}
-		}
-
-		//Add the next values in.
 		if (tid < 2)
 		{
-			temper[tid+(k-2)+shft_wr*base] = shLeft[itr+tid];
-			temper[tid+(base-k)+shft_wr*base] = shRight[itr+tid];
-			itr += 2;
+			temper[tid + shft_wr] = shLeft[tid+k];
+			temper[tid2 + k + shft_wr] = shRight[tid+k];
 		}
 
-	}
+        if (tid < k)
+        {
+            if (blockIdx.x > 0)
+            {
+        		temper[tid2 + shft_wr] = execFunc(temper[tid + shft_rd], temper[tid2+shft_rd], temper[tid1 + shft_rd]);
+            }
+            else
+            {
+                if (tid2 == k)
+                {
+                    temper[tid2 + shft_wr] = execFunc(temper[tid + shft_rd], temper[tid+shft_rd], temper[tid1 + shft_rd]);
+                }
+                else if (tid2 == (k+1))
+                {
+                    temper[tid2 + shft_wr] = execFunc(temper[tid2 + shft_rd], temper[tid2+shft_rd], temper[tid1 + shft_rd]);
+                }
+                else
+                {
+                    temper[tid2 + shft_wr] = execFunc(temper[tid + shft_rd], temper[tid2+shft_rd], temper[tid1 + shft_rd]);
+                }
+            }
+        }
+        __syncthreads();
+    }
 
-	__syncthreads();
+    if (gid == (height-1))
+    {
+        temper[tid] = execFunc(temper[tid+base], temper[tid+base], temper[tid1+base]);
+    }
+    else if (gid == height)
+    {
+        temper[tid] = execFunc(temper[tid2+base], temper[tid2+base], temper[tid1+base]);
+    }
+    else
+    {
+        temper[tid] = execFunc(temper[tid+base], temper[tid2+base], temper[tid1+base]);
+    }
 
-	itr = -1;
-	if (blockIdx.x > 0)
+    __syncthreads(); // Then make sure each block of threads are synced.
+
+	int itr = 0;
+
+    //-------------------TOP PART------------------------------------------
+
+	//The initial conditions are timeslice 0 so start k at 1.
+	for (int k = (blockDim.x-2); k>1; k-=2)
 	{
-		temper[tidp] = fo * (temper[tid+base] + temper[tid+base+2]) + (1.f-2.f*fo) * temper[tidp+base];
-	}
-	else
-	{
-		if (tid == (height-1))
+		//Bitwise even odd. On even iterations write to first row.
+		logic_position = (k/2 & 1);
+		shft_wr = base*logic_position;
+		//On even iterations write to second row (starts at element 32)
+		shft_rd = base*((logic_position+1) & 1);
+
+		//Each iteration the triangle narrows.  When k = 1, 30 points are
+		//computed, k = 2, 28 points.
+        if (blockDim.x > 0)
+        {
+    		if (tid <= k)
+    		{
+    			temper[tid + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
+    		}
+        }
+        else
+        {
+            if (tid == (k/2-1))
+            {
+                temper[tid + shft_wr] = execFunc(temper[tid + shft_rd], temper[tid+shft_rd], temper[tid1 + shft_rd]);
+            }
+            else if (tid == k/2)
+            {
+                temper[tid + shft_wr] = execFunc(temper[tid2 + shft_rd], temper[tid2+shft_rd], temper[tid1 + shft_rd]);
+            }
+            else
+            {
+                temper[tid + shft_wr] = execFunc(temper[tid + shft_rd], temper[tid2+shft_rd], temper[tid1 + shft_rd]);
+            }
+        }
+
+		//Make sure the threads are synced
+		__syncthreads();
+
+		//Really tricky to get unique values with threads.
+		if (shft_wr && tid < 4)
 		{
-			temper[tidp] = 2.f * fo * (temper[tid+base]-temper[tid+base+1]) + temper[tidp+base];
-		}
-		else if (tid == height)
-		{
-			temper[tidp] = 2.f * fo * (temper[tid+base+2]-temper[tid+base+1]) + temper[tidp+base];
-		}
-		else
-		{
-			temper[tidp] = fo * (temper[tid+base] + temper[tid+base+2]) + (1.f-2.f*fo) * temper[tidp+base];
+			shLeft[tid+itr] = temper[(tid & 1) + (tid/2 * base)]; // Still baroque.
+			shRight[tid+itr] = temper[(right_pick[tid] + k) + (tid/2 * base)];
+			itr += 4;
 		}
 
-	}
+		__syncthreads();
 
-	//Wind it down!
-	for (int k = 1; k<height; k++)
-	{
-		// This tells you if the current row is the first or second.
-		shft_wr = (k & 1);
-		// Read and write are opposite rows.
-		shft_rd = base*((shft_wr+1) & 1);
-		//Block 0 is split so it needs a different algorithm.  This algorithm
-		//is shLeftightly different than top triangle as described in the note above.
-
-		if (tid < (THREADBLK-k) && tid > k)
-		{
-			temper[tidp + (base*shft_wr)] = fo * (temper[tid+shft_rd] + temper[tid+shft_rd+2]) + (1.f-2.f*fo) * temper[tidp+shft_rd];
-		}
-	}
-
-	//Make sure the threads are synced
-	__syncthreads();
-
-	//Now thread 0 in each block (which never computes a value) is used to
-	//fill the shared right and left arrays with the relevant values.
-	//This grabs the top and bottom edges on the iteration when the top
-	//row is written.
-	if (shft_wr && tid < 4)
-	{
-		shLeft[k+itr+tid] = temper[(tid/2*(base-1))+(tid-1)+k];
-		shRight[k+itr+tid] = temper[(((tid/2)+1)*(base-1))+(tid&1)-k];
-		itr += 2;
 	}
 
-	__syncthreads();
-
+	//After the triangle has been computed, the right and left shared arrays are
+	//stored in global memory by the global thread ID since (conveniently),
+	//they're the same size as a warp!
 	right[gid] = shRight[tid];
 	left[gid] = shLeft[tid];
-
 }
+
 
 //Do the split diamond on the CPU?
 __host__ void CPU_diamond(REAL right, REAL left, int tpb)
@@ -693,7 +698,7 @@ void sweptWrapper(const int bks, const int tpb, const int dv, REAL dt, const int
 	double t_eq = t_fullstep;
 
 	// Call the kernels until you reach the iteration limit.
-    if (cpu == 1)
+    if (cpu)
     {
     	while(t_eq < t_end)
     	{
@@ -702,6 +707,7 @@ void sweptWrapper(const int bks, const int tpb, const int dv, REAL dt, const int
             cudaMemcpy(left,d_left,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
 
             CPU_diamond(right, left, tpb);
+            wholeDiamond <<< bks-1,tpb,smem2 >>>(d_right,d_left,1);
 
             cudaMemcpy(d_right, right, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
             cudaMemcpy(d_left, left, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
@@ -744,7 +750,7 @@ void sweptWrapper(const int bks, const int tpb, const int dv, REAL dt, const int
         while(t_eq < t_end)
         {
 
-            splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,-1);
+            splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
 
             wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,1);
             //So it always ends on a left pass since the down triangle is a right pass.
