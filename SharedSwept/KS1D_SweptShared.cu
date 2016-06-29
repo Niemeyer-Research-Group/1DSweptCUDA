@@ -7,6 +7,12 @@
 //The heat equation requires much more because of the boundary conditions.
 //Also, we could test putting the whole thing on the GPU here.  So it never leaves shared memory.
 
+//COMPILE LINE!
+// nvcc -o ./bin/KSOut KS1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -w -std=c++11
+
+//RUN LINE!
+// ./bin/KSOut 256 2048 .01 10 0
+
 
 #include <cuda.h>
 #include "cuda_runtime_api.h"
@@ -18,6 +24,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <fstream>
+
 
 #ifndef REAL
 #define REAL  float2
@@ -43,7 +50,7 @@ __host__ __device__ REAL initFun(float xnode)
 }
 
 
-__host__ __device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
+__device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
 {
 	REAL tempC;
 	REAL step; //step.x is conv .y is diff
@@ -52,13 +59,13 @@ __host__ __device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
 	tempC.y = (tLeft.x + tRight.x - 2.f * tCenter.x) / (disc.x*disc.x);
 	step.x = (tLeft.x*tLeft.x - tRight.x*tRight.x)/(4.f*disc.x);
 	step.y = ((tLeft.x + tLeft.y) + (tRight.x + tRight.y) - 2.f*(tCenter.x+tempC.y))/(disc.x*disc.x);
-	tempC.x = tCenter.x - 0.5 * disc.y * (step.y + step.x);
+	tempC.x = tCenter.x - 0.5f * disc.y * (step.y + step.x);
 
 	//Second step (Corrector)
 	tOut.y = (tLeft.x + tRight.x - 2.f * tempC.x) / (disc.x*disc.x);
 	step.x = (tLeft.x*tLeft.x - tRight.x*tRight.x)/(4.f*disc.x);
 	step.y = ((tLeft.x + tLeft.y) + (tRight.x + tRight.y) - 2.f*(tempC.x+tOut.y))/(disc.x*disc.x);
-	tOut.x = tCenter.x - 0.5 * disc.y * (step.y + step.x);
+	tOut.x = tCenter.x - 0.5f * disc.y * (step.y + step.x);
 
 	return tOut;
 
@@ -67,7 +74,7 @@ __host__ __device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
 //-----------For testing --------------
 
 //Up is the same.
-__global__ void upTriangle(const REAL *IC, REAL * __restrict__ right, REAL * __restrict__ left)
+__global__ void upTriangle(const REAL *IC, REAL *right, REAL *left)
 {
 	/*
 	Initialize shared variables.  Each node (warp) will store 32 values on the
@@ -110,10 +117,13 @@ __global__ void upTriangle(const REAL *IC, REAL * __restrict__ right, REAL * __r
 
 		//Each iteration the triangle narrows.  When k = 1, 30 points are
 		//computed, k = 2, 28 points.
-		if (tid <= k)
+		if (tid < k)
 		{
 			temper[tid + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
+			if (k == (blockDim.x-4)) printf("u[%d] = %.3f \n",gid, temper[tid]);
 		}
+
+
 
 		//Make sure the threads are synced
 		__syncthreads();
@@ -151,7 +161,7 @@ __global__ void upTriangle(const REAL *IC, REAL * __restrict__ right, REAL * __r
 //
 __global__
 void
-downTriangle(REAL *IC, REAL * __restrict__ right, REAL *__restrict__ left)
+downTriangle(REAL *IC, REAL *right, REAL *left)
 {
 
 	extern __shared__ REAL share[];
@@ -222,7 +232,7 @@ downTriangle(REAL *IC, REAL * __restrict__ right, REAL *__restrict__ left)
 }
 
 
-__global__ void wholeDiamond(REAL * __restrict__ right, REAL * __restrict__ left, int swap)
+__global__ void wholeDiamond(REAL *right, REAL *left, int swap)
 {
     //Swap is either -1 or 1.  Since it either passes back or forward.
     extern __shared__ REAL share[];
@@ -308,7 +318,7 @@ __global__ void wholeDiamond(REAL * __restrict__ right, REAL * __restrict__ left
 
 		//Each iteration the triangle narrows.  When k = 1, 30 points are
 		//computed, k = 2, 28 points.
-		if (tid <= k)
+		if (tid < k)
 		{
 			temper[tid + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
 		}
@@ -337,7 +347,7 @@ __global__ void wholeDiamond(REAL * __restrict__ right, REAL * __restrict__ left
 }
 
 //The host routine.
-void sweptWrapper(const int bks, const int tpb, const int dv, REAL dt, const int t_end, REAL *IC, REAL *T_f)
+double sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end, REAL *IC, REAL *T_f)
 {
 
 	REAL *d_IC, *d_right, *d_left;
@@ -360,7 +370,7 @@ void sweptWrapper(const int bks, const int tpb, const int dv, REAL dt, const int
 	// Call the kernels until you reach the iteration limit.
 	while(t_eq < t_end)
 	{
-
+		cout << t_eq << endl;
 		wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,1);
 		//So it always ends on a left pass since the down triangle is a right pass.
 		wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,-1);
@@ -402,6 +412,8 @@ void sweptWrapper(const int bks, const int tpb, const int dv, REAL dt, const int
 	cudaFree(d_right);
 	cudaFree(d_left);
 
+	return t_eq;
+
 }
 
 int main( int argc, char *argv[])
@@ -412,6 +424,7 @@ int main( int argc, char *argv[])
 		cout << "The Program takes four inputs, #Divisions, #Threads/block, dt, finish time, and test or not" << endl;
 		exit(-1);
 	}
+
 	// Choose the GPGPU.  This is device 0 in my machine which has 2 devices.
 	cudaSetDevice(0);
 
@@ -420,6 +433,8 @@ int main( int argc, char *argv[])
 	const int tf = atoi(argv[4]);
 	const int bks = dv/tpb; //The number of blocks since threads/block = 32.
 	const int tst = atoi(argv[5]);
+
+	cout << bks << endl;
 
 	//Conditions for main input.  Unit testing kinda.
 	//dv and tpb must be powers of two.  dv must be larger than tpb and divisible by
@@ -445,8 +460,7 @@ int main( int argc, char *argv[])
 	// function.
 	for (int k = 0; k<dv; k++)
 	{
-		IC[k] = initFun((float)k*dsc.x);
-		cout << (float) k * dsc.x << " ";
+		IC[k] = initFun((float)k*dsc.x-lx/2);
 	}
 
 	// Call out the file before the loop and write out the initial condition.
@@ -482,14 +496,18 @@ int main( int argc, char *argv[])
 	cudaEventRecord( start, 0);
 
 	// Call the kernels until you reach the iteration limit.
-	sweptWrapper(bks,tpb,dv,dsc,tf,IC_p,Tfin_p);
+	double tfm;
+
+	tfm = sweptWrapper(bks,tpb,dv,dsc,tf,IC_p,Tfin_p);
+
+	cout << dsc.x << " " << dsc.x*dsc.x << endl;
 
 	// Show the time and write out the final condition.
 	cudaEventRecord(stop, 0);
 	cudaEventSynchronize(stop);
 	cudaEventElapsedTime( &timed, start, stop);
 
-	timed = timed * 1.e-3;
+	timed *= 1.e-3;
 
 	cout << "That took: " << timed << " seconds" << endl;
 	if (tst)
@@ -498,7 +516,8 @@ int main( int argc, char *argv[])
 		ftime.close();
 	}
 
-	fwr << tf << " ";
+	int nn;
+	fwr << tfm << " ";
 	for (int k = 0; k<dv; k++)
 	{
 		fwr << Tfin_p[k].x << " ";
@@ -510,7 +529,7 @@ int main( int argc, char *argv[])
 
 	cudaDeviceReset();
 	cudaEventDestroy( start );
-	cudaEventDestroy( start );
+	cudaEventDestroy( stop );
 
 	return 0;
 

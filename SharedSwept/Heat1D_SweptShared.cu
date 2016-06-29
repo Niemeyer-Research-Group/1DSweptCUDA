@@ -16,13 +16,22 @@
 #define REAL  float
 #endif
 
+using namespace std;
+
+__constant__ REAL fo;
+
+const double PI = 3.141592653589793238463;
+
+const REAL lx = 50.0;
+
+const REAL th_diff = 8.418e-5;
 
 //-----------For testing --------------
 
-__host__ __device__ void initFun(int xnode, REAL ds, REAL lx,REAL result)
+__host__ __device__ REAL initFun(int xnode, REAL ds, REAL lx)
 {
 
-    result = 500.f*expf((-ds*(REAL)xnode)/lx);
+    return 500.f*expf((-ds*(REAL)xnode)/lx);
 
 }
 
@@ -68,7 +77,6 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 	temper[tid] = IC[gid];
 	__syncthreads(); // Then make sure each block of threads are synced.
 
-    #pragma unroll
 	//The initial conditions are timeslice 0 so start k at 1.
 	for (int k = (blockDim.x-2); k>1; k-=2)
 	{
@@ -80,7 +88,7 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 
 		//Each iteration the triangle narrows.  When k = 1, 30 points are
 		//computed, k = 2, 28 points.
-		if (tid <= k)
+		if (tid < k)
 		{
 			temper[tid + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
 		}
@@ -153,7 +161,7 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 	for (int k = 2; k < blockDim.x; k+=2)
 	{
 		logic_position = (k/2 & 1);
-		shft_wr = base*logic_position;
+		shft_wr = base * logic_position;
 
 		shft_rd = base*((logic_position+1) & 1);
 
@@ -381,10 +389,10 @@ __global__ void wholeDiamond(REAL *right, REAL *left, bool full)
     //-------------------TOP PART------------------------------------------
 
     int itr = 0;
-    int right_pick[4] = {2,1,-1,0}; //Template!
+    const int right_pick[4] = {2,1,-1,0}; //Template!
 
 	//The initial conditions are timeslice 0 so start k at 1.
-	for (int k = (blockDim-2); k>1 ; k-=2)
+	for (int k = (blockDim.x-2); k>1 ; k-=2)
 	{
 		//Bitwise even odd. On even iterations write to first row.
 		logic_position = (k/2 & 1);
@@ -394,7 +402,7 @@ __global__ void wholeDiamond(REAL *right, REAL *left, bool full)
 
 		//Each iteration the triangle narrows.  When k = 1, 30 points are
 		//computed, k = 2, 28 points.
-		if (tid <= k)
+		if (tid < k)
 		{
 			temper[tid + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
 		}
@@ -442,7 +450,6 @@ __global__ void splitDiamond(REAL *right, REAL *left)
 	int shft_rd; //Initialize the shift to the read row (opposite of written)
 	int logic_position;
     const int right_pick[4] = {2,1,-1,0}; //Template!
-    int itr = 0;
 	const int base = blockDim.x + 2;
 	const int height = blockDim.x/2;
 
@@ -487,11 +494,11 @@ __global__ void splitDiamond(REAL *right, REAL *left)
             }
             else
             {
-                if (tid2 == k)
+                if (tid2 == (k/2+1))
                 {
                     temper[tid2 + shft_wr] = execFunc(temper[tid + shft_rd], temper[tid+shft_rd], temper[tid1 + shft_rd]);
                 }
-                else if (tid2 == (k+1))
+                else if (tid2 == (k/2+2))
                 {
                     temper[tid2 + shft_wr] = execFunc(temper[tid2 + shft_rd], temper[tid2+shft_rd], temper[tid1 + shft_rd]);
                 }
@@ -581,7 +588,7 @@ __global__ void splitDiamond(REAL *right, REAL *left)
 
 
 //Do the split diamond on the CPU?
-__host__ void CPU_diamond(REAL right, REAL left, int tpb)
+__host__ void CPU_diamond(REAL *right, REAL *left, int tpb)
 {
     int idx;
     int ht = tpb/2;
@@ -627,16 +634,16 @@ __host__ void CPU_diamond(REAL right, REAL left, int tpb)
         //Double trailing index.
         if(n == ht-1)
         {
-            temper[ht][n] = execFunc(temper[k-1][n], temper[k-1][n+2], temper[k-1][n+1]);
+            temper[ht][n] = execFunc(temper[ht-1][n], temper[ht-1][n+2], temper[ht-1][n+1]);
         }
         //Double leading index.
         else if(n == ht)
         {
-            temper[ht][n] = execFunc(temper[k-1][n], temper[k-1][n], temper[k-1][n-1]);
+            temper[ht][n] = execFunc(temper[ht-1][n], temper[ht-1][n], temper[ht-1][n-1]);
         }
         else
         {
-            temper[ht][n] = execFunc(temper[k-1][n-2], temper[k-1][n], temper[k-1][n-1]);
+            temper[ht][n] = execFunc(temper[ht-1][n-2], temper[ht-1][n], temper[ht-1][n-1]);
         }
     }
 
@@ -675,7 +682,7 @@ __host__ void CPU_diamond(REAL right, REAL left, int tpb)
 }
 
 //The host routine.
-void sweptWrapper(const int bks, const int tpb, const int dv, REAL dt, const int t_end, const int cpu, REAL *IC, REAL *T_f)
+double sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end, const int cpu, REAL *IC, REAL *T_f)
 {
 
 	REAL *d_IC, *d_right, *d_left;
@@ -688,14 +695,14 @@ void sweptWrapper(const int bks, const int tpb, const int dv, REAL dt, const int
 	// Copy the initial conditions to the device array.
 	cudaMemcpy(d_IC,IC,sizeof(REAL)*dv,cudaMemcpyHostToDevice);
 	// Start the counter and start the clock.
-	const double t_fullstep = dt.y*(double)tpb;
+	const double t_fullstep = dt*(double)tpb;
 
 	const size_t smem1 = 4*tpb*sizeof(REAL);
 	const size_t smem2 = (4*tpb+4)*sizeof(REAL);
 
 	upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
 
-	double t_eq = t_fullstep;
+	double t_eq = t_fullstep/2;
 
 	// Call the kernels until you reach the iteration limit.
     if (cpu)
@@ -703,14 +710,14 @@ void sweptWrapper(const int bks, const int tpb, const int dv, REAL dt, const int
     	while(t_eq < t_end)
     	{
 
-            cudaMemcpy(right,d_right,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
-            cudaMemcpy(left,d_left,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
+            cudaMemcpy(&right,d_right,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
+            cudaMemcpy(&left,d_left,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
 
-            CPU_diamond(right, left, tpb);
+            CPU_diamond(&right, &left, tpb);
             wholeDiamond <<< bks-1,tpb,smem2 >>>(d_right,d_left,1);
 
-            cudaMemcpy(d_right, right, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
-            cudaMemcpy(d_left, left, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
+            cudaMemcpy(d_right, &right, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
+            cudaMemcpy(d_left, &left, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
 
             wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,-1);
 
@@ -793,6 +800,8 @@ void sweptWrapper(const int bks, const int tpb, const int dv, REAL dt, const int
 	cudaFree(d_right);
 	cudaFree(d_left);
 
+    return t_eq;
+
 }
 
 int main( int argc, char *argv[] )
@@ -805,20 +814,21 @@ int main( int argc, char *argv[] )
 	// Choose the GPGPU.  This is device 0 in my machine which has 2 devices.
 	cudaSetDevice(0);
 
-	const int dv = atoi(argv[1]); //Setting it to an int helps with arrays
+    int dv = atoi(argv[1]); //Setting it to an int helps with arrays
 	const int tpb = atoi(argv[2]);
 	const int tf = atoi(argv[4]);
 	const int bks = dv/tpb; //The number of blocks since threads/block = 32.
+	const int tst = atoi(argv[5]);
+    const REAL ds = lx/((float)dv-1.f);
+    REAL dt = atof(argv[3]);
+    REAL fou = dt*th_diff/(ds*ds);
+	cout << bks << endl;
 
 	//Conditions for main input.  Unit testing kinda.
 	//dv and tpb must be powers of two.  dv must be larger than tpb and divisible by
 	//tpb.
 
 	//if ((dv & (tpb-1) !=0) || tpb&31 != 0)
-
-	REAL dsc;
-	dsc.x = lx/(dv-1);
-	dsc.y = atof(argv[3]);
 
 	// Initialize arrays.
 	REAL IC[dv];
@@ -831,7 +841,7 @@ int main( int argc, char *argv[] )
 	// function.
 	for (int k = 0; k<dv; k++)
 	{
-		initFun((float)k*dsc.x,IC[k]);
+		IC[k] = initFun(k, ds, lx);
 	}
 
 	// Call out the file before the loop and write out the initial condition.
@@ -840,11 +850,11 @@ int main( int argc, char *argv[] )
 	ftime.open("Results/Heat1D_Timing.txt",ios::app);
 	// Write out x length and then delta x and then delta t.
 	// First item of each line is timestamp.
-	fwr << lx << " " << dv << " " << dsc.x << " " << endl << 0 << " ";
+	fwr << lx << " " << dv << " " << ds << " " << endl << 0 << " ";
 
 	for (int k = 0; k<dv; k++)
 	{
-		fwr << IC[k].x << " ";
+		fwr << IC[k] << " ";
 	}
 
 	fwr << endl;
@@ -852,9 +862,9 @@ int main( int argc, char *argv[] )
 	IC_p = IC;
 
 	// Transfer data to GPU.
-
+    cout << fou << endl;
 	// This puts the Fourier number in constant memory.
-	cudaMemcpyToSymbol(disc,&dsc,sizeof(REAL));
+	cudaMemcpyToSymbol(fo,&fou,sizeof(REAL));
 
 	// This initializes the device arrays on the device in global memory.
 	// They're all the same size.  Conveniently.
@@ -866,8 +876,10 @@ int main( int argc, char *argv[] )
 	cudaEventCreate( &stop );
 	cudaEventRecord( start, 0);
 
-	// Call the kernels until you reach the iteration limit.
-	sweptWrapper(bks,tpb,dv,dsc,tf,IC_p,Tfin_p);
+    // Call the kernels until you reach the iteration limit.
+	double tfm;
+
+	tfm = sweptWrapper(bks,tpb,dv,dt,tf,tst,IC_p,Tfin_p);
 
 	// Show the time and write out the final condition.
 	cudaEventRecord(stop, 0);
@@ -882,10 +894,10 @@ int main( int argc, char *argv[] )
 
 	ftime.close();
 
-	fwr << tf << " ";
+	fwr << tfm << " ";
 	for (int k = 0; k<dv; k++)
 	{
-		fwr << Tfin_p[k].x << " ";
+		fwr << Tfin_p[k] << " ";
 	}
 
 	fwr.close();

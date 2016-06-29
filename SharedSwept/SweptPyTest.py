@@ -73,12 +73,10 @@ fn.close()
 for k in blx:
     for n in div:
         print n,k
-        execut = Exec1 + ' {0} {1} {2} {3} {4}'.format(n,k,.01,10000,1)
+        execut = Exec1 + ' {0} {1} {2} {3} {4}'.format(n,k,.01,10000,0)
         exeStr = shlex.split(execut)
         proc = sp.Popen(exeStr)
         sp.Popen.wait(proc)
-
-
 
 rslt = Fname + rsltout
 rsltfile = os.path.abspath(os.path.join(basepath, rslt))
@@ -106,10 +104,9 @@ for k in range(1,len(data)):
     plt.plot(xax,data[k][1:])
     lbl.append("t = {} seconds".format(data[k][0]))
 
-
 plt.legend(lbl)
 plt.xlabel("Position on bar (m)")
 plt.ylabel("Velocity")
-plt.title("Kuramoto-Sivashinsky")
+plt.title(Fname + execut[len(Execl):])
 plt.grid()
 plt.show()

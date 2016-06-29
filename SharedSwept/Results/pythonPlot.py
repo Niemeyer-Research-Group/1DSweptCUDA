@@ -7,12 +7,58 @@ import matplotlib.pyplot as plt
 import numpy as np
 import subprocess as sp
 import shlex
+from Tkinter import *
 
-#We'll do the tKinter thing here too.
+OPTIONS = [
+    "KS",
+    "Heat",
+    "Euler"
+]
 
-fname = 'KS'
+master = Tk()
 
-fin = open(fname + "1D_Result.dat")
+master.geometry("400x400")
+
+variable = StringVar(master)
+variable.set(OPTIONS[0]) # default value
+
+w = apply(OptionMenu, (master, variable) + tuple(OPTIONS))
+w.pack()
+
+def ok():
+    master.destroy()
+
+def skip():
+    master.destroy()
+
+def on_closing():
+    raise SystemExit
+
+master.protocol("WM_DELETE_WINDOW", on_closing)
+button = Button(master, text="OK", command=ok)
+button.pack()
+button = Button(master, text="Skip Run", command=skip)
+button.pack()
+
+master.mainloop()
+
+fname = variable.get()
+
+execut = "./bin/"+fname+"Out"
+
+div = 2048
+bks = 256
+dt = .005
+tf = 2
+tst = 0
+
+execstr = execut +  ' {0} {1} {2} {3} {4}'.format(div,bks,dt,tf,tst)
+exeStr = shlex.split(execstr)
+proc = sp.Popen(exeStr)
+sp.Popen.wait(proc)
+
+
+fin = open("Results/" +fname + "1D_Result.dat")
 data = []
 
 for line in fin:
@@ -39,7 +85,7 @@ for k in range(1,len(data)):
 
 plt.legend(lbl)
 plt.xlabel("Position on bar (m)")
-plt.ylabel("Temperature (C)")
-plt.title("Numerical solution to temperature along 1-D bar")
+plt.ylabel("Vel")
+plt.title(fname+execstr[len(execut):])
 plt.grid()
 plt.show()
