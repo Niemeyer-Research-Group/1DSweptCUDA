@@ -120,7 +120,7 @@ __global__ void upTriangle(const REAL *IC, REAL *right, REAL *left)
 		if (tid < k)
 		{
 			temper[tid + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
-			if (k == (blockDim.x-4)) printf("u[%d] = %.3f \n",gid, temper[tid]);
+
 		}
 
 
