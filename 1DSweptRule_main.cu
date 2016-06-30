@@ -38,7 +38,7 @@ makes results easier to output at various points in the solution.
 #include <ostream>
 #include <cstring>
 #include <fstream>
-#include "SwR_1DShared.h"
+//#include "SwR_1DShared.h"
 
 using namespace std;
 
