@@ -4,43 +4,40 @@ Created on Wed Jun 29 15:36:46 2016
 
 @author: osumageed
 """
-
-from math import *
 import matplotlib.pyplot as plt
 import numpy as np
 
 def KS_disc(uL,uR,u,dx,dt):
     
-    u0 = u[0]
-    
+    u0 = np.copy(u[0])
     u[1] = (uL[0] + uR[0] - 2.0*u[0])/(dx**2)
     cv = (uL[0]**2 - uR[0]**2)/(4.0*dx)
-    diffs = (sum(uL)+sum(uR) - 2.0*sum(u))/(dx**2)
-    print cv, diffs
+    diffs = (np.sum(uL)+np.sum(uR) - 2.0*np.sum(u))/(dx**2)
     u[0] = u[0] - 0.5 * dt * (diffs + cv)
-    
+    print 'poop'
     
     
     u[1] = (uL[0] + uR[0] - 2.0*u[0])/(dx**2)
     cv = (uL[0]**2 - uR[0]**2)/(4.0*dx)
-    diffs = (sum(uL)+sum(uR) - 2.0*sum(u))/(dx**2)
+    diffs = (np.sum(uL)+np.sum(uR) - 2.0*np.sum(u))/(dx**2)
     u[0] = u0 - 0.5 * dt * (diffs + cv)
+    
     
     return u
 
 n= 2048
 k = np.arange(n)
-lx = 50.0
+lx = 128.0/19.0*2.0
 
-x = lx/float(n)*k-lx/2.0 
+x = np.linspace(-lx,lx,n)
 
-u1 = 2.0*np.cos(19.0*x*pi/128.0) 
-u2 = -361.0/8192.0*np.cos(19.0*x[k]*pi/128.0)
+u1 = 2.0*np.cos(19.0*x*np.pi/128.0) 
+u2 = -361.0/8192.0*np.cos(19.0*x[k]*np.pi/128.0)
 
 ulist = np.empty([2,n])
-for k in range(n):
-    ulist[0,k] = u1[k]
-    ulist[1,k] = u2[k]
+
+ulist[0,:] = u1
+ulist[1,:] = u2
     
 plt.subplot(211)
 plt.plot(x,ulist[0,:])
@@ -52,7 +49,7 @@ plt.show()
 
 dx = x[1]-x[0]
 dt = .005
-ut = ulist
+ut = np.copy(ulist)
 
 for k in range(20):
     
@@ -62,7 +59,7 @@ for k in range(20):
         
     ut[:,n-1] = KS_disc(ulist[:,n-2],ulist[:,0],ulist[:,n-1],dx,dt)
     
-    ulist = ut
+    ulist = np.copy(ut)
 
     plt.subplot(211)
     plt.plot(x,ulist[0,:])

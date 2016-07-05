@@ -34,35 +34,28 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 
 using namespace std;
 
-// Define Given Parameters.  Material is aluminum.
-//#define DIVISIONS  1024.
-#define TS         .01
 //#define ITERLIMIT  50000
+#ifndef REAL
 #define REAL       float
-#define TH_DIFF    8.418e-5
-#ifndef FINISH
-#define FINISH		1e4
 #endif
-
-#define THREADBLK  32
-
 // Declare constant Fourier number that will go in Device constant memory.
 __constant__ REAL fo;
 
+const REAL lx = 50.0;
+
+const REAL th_diff = 8.418e-5;
+
+_device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
+{
+
+    return fo*(tLeft+tRight) + (1.f-2.f*fo)*tCenter;
+
+}
 
 //FILLING POST LOOP AND GLOBAL ONLY EDGES.
 __global__ void upTriangle_GA(REAL *IC, REAL *right, REAL *left)
 {
-	/*
-	Initialize shared variables.  Each node (warp) will store 32 values on the
-	right and left sides of their triangle, 2 on each side for each timeslice.
-	Since the base of the triangle is 32 numbers for each node, 16 timeslices
-	are evaluated per kernel call.
-	Temper stores the temperatures at each timeslice.  Since only the current
-	and previous timeslice results need to be held at each iteration.  This
-	variable has 64 values, or two rows of 32, linearized.  The current and
-	previous value alternate rows at each timeslice.
-	*/
+
 	extern __shared__ REAL temper[];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
@@ -195,9 +188,159 @@ __global__ void downTriangle_GA(REAL *IC, REAL *right, REAL *left)
 
 }
 
-// OLDEST CODE.  GETS AND INSERTS EDGES INSIDE LOOP
-// SPLIT
+// MIDDLE CODE.  INSERTS EDGES IN LOOP BUT USES RIGHT TRIANGLES.
+__global__ void upTriangle_SRight(REAL *IC, REAL *right, REAL *left)
+{
 
+	extern __shared__ REAL share[];
+
+	REAL *temper = (REAL*) share;
+	REAL *shRight = (REAL*) &share[2*blockDim.x];
+	REAL *shLeft = (REAL*) &share[3*blockDim.x];
+
+	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
+	int tid = threadIdx.x; //Block Thread ID
+	int tid1 = tid + 1;
+	int tid2 = tid + 2;
+	//int height = blockDim.x/2;
+	int shft_wr; //Initialize the shift to the written row of temper.
+	int shft_rd; //Initialize the shift to the read row (opposite of written)
+	int logic_position;
+	int itr = 0;
+	const int right_pick[4] = {2,1,-1,0}; //Template!
+
+	//Assign the initial values to the first row in temper, each warp (in this
+	//case each block) has it's own version of temper shared among its threads.
+	temper[tid] = IC[gid];
+	__syncthreads(); // Then make sure each block of threads are synced.
+
+	//The initial conditions are timeslice 0 so start k at 1.
+	for (int k = (blockDim.x-2); k>1; k-=2)
+	{
+		//Bitwise even odd. On even iterations write to first row.
+		logic_position = (k/2 & 1);
+		shft_wr = blockDim.x*logic_position;
+		//On even iterations write to second row (starts at element 32)
+		shft_rd = blockDim.x*((logic_position+1) & 1);
+
+		//Each iteration the triangle narrows.  When k = 1, 30 points are
+		//computed, k = 2, 28 points.
+		if (tid < k)
+		{
+			temper[tid + shft_wr] = fo * (temper[tid+shft_rd] + temper[tid2+shft_rd]) + (1.f-2.f*fo) * temper[tid1+shft_rd];
+		}
+
+		//Make sure the threads are synced
+		__syncthreads();
+
+		//Really tricky to get unique values with threads.
+		if (shft_wr && tid < 4)
+		{
+			shLeft[tid+itr] = temper[(tid & 1) + (tid/2 * blockDim.x)]; // Still baroque.
+			shRight[tid+itr] = temper[(right_pick[tid] + k) + (tid/2 * blockDim.x)];
+			itr += 4;
+		}
+
+	}
+
+	//After the triangle has been computed, the right and left shared arrays are
+	//stored in global memory by the global thread ID since (conveniently),
+	//they're the same size as a warp!
+	right[gid] = shRight[tid];
+	left[gid] = shLeft[tid];
+
+}
+
+__global__ void downTriangle_SRight(REAL *IC, REAL *right, REAL *left)
+{
+
+	extern __shared__ REAL share[];
+
+	REAL *temper = (REAL*) share;
+	REAL *shRight = (REAL*) &share[2*blockDim.x+4];
+	REAL *shLeft = (REAL*) &share[3*blockDim.x+4];
+
+	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
+	int tid = threadIdx.x; //Block Thread ID
+	int tid1 = tid + 1;
+	int tid2 = tid + 2;
+	//int height = blockDim.x/2;
+	int shft_wr; //Initialize the shift to the written row of temper.
+	int shft_rd; //Initialize the shift to the read row (opposite of written)
+	int logic_position;
+	const int right_pick[4] = {2,1,-1,0}; //Template!
+	const int base = blockDim.x + 2;
+	const int height = blockDim.x/2;
+	int gidin = (gid - blockDim.x) & ((blockDim.x*gridDim.x)-1)
+	int gidout = (gid - blockDim.x/2) & ((blockDim.x*gridDim.x)-1)
+
+	shRight[tid] = left[gid];
+	shLeft[tid] = right[gidin]
+
+	// Initialize temper. Kind of an unrolled for loop.  This is actually at
+
+	if (tid < 2)
+	{
+		temper[tid] = shLeft[tid];
+		temper[tid2] = shRight[tid];
+	}
+	//Wind it up!
+
+	for (int k = 2; k < blockDim.x; k+=2)
+	{
+		logic_position = (k/2 & 1);
+		shft_wr = base * logic_position;
+		//On even iterations write to second row (starts at element 32)
+		shft_rd = base * ((logic_position+1) & 1);
+
+		if (tid < 2)
+		{
+			temper[tid + shft_wr] = shLeft[tid+k];
+			temper[tid2 + k + shft_wr] = shRight[tid+k];
+		}
+
+		if (tid < k)
+		{
+			if (blockIdx.x > 0)
+			{
+				temper[tid2 + shft_wr] = execFunc(temper[tid + shft_rd], temper[tid2+shft_rd], temper[tid1 + shft_rd]);
+			}
+			else
+			{
+				if (tid2 == (k/2+1))
+				{
+					temper[tid2 + shft_wr] = execFunc(temper[tid + shft_rd], temper[tid+shft_rd], temper[tid1 + shft_rd]);
+				}
+				else if (tid2 == (k/2+2))
+				{
+					temper[tid2 + shft_wr] = execFunc(temper[tid2 + shft_rd], temper[tid2+shft_rd], temper[tid1 + shft_rd]);
+				}
+				else
+				{
+					temper[tid2 + shft_wr] = execFunc(temper[tid + shft_rd], temper[tid2+shft_rd], temper[tid1 + shft_rd]);
+				}
+			}
+		}
+		__syncthreads();
+	}
+
+	if (gid == (height-1))
+	{
+		temper[tid] = execFunc(temper[tid+base], temper[tid+base], temper[tid1+base]);
+	}
+	else if (gid == height)
+	{
+		temper[tid] = execFunc(temper[tid2+base], temper[tid2+base], temper[tid1+base]);
+	}
+	else
+	{
+		temper[tid] = execFunc(temper[tid+base], temper[tid2+base], temper[tid1+base]);
+	}
+
+    IC[gidout] = temper[tid];
+}
+
+// OLDEST CODE.  GETS AND INSERTS EDGES INSIDE LOOP
 __global__ void upTriangle_SI(REAL *IC, REAL *right, REAL *left)
 {
 
@@ -405,7 +548,7 @@ int main( int argc, char *argv[])
 {
 	if (argc != 6)
 	{
-		cout << "The Program takes five inputs, #Divisions, #Threads/block, dt, finish time, and which algorithm" << endl;
+		cout << "The Program takes five inputs, #Divisions, #Threads/block, dt, finish time, and which algorithm. " << endl;
 		exit(-1);
 	}
 
@@ -416,9 +559,10 @@ int main( int argc, char *argv[])
 	const int tpb = atoi(argv[2]);
 	const int tf = atoi(argv[4]);
 	const int bks = dv/tpb; //The number of blocks since threads/block = 32.
-	const REAL lx = 5.0*DIVISIONS/1024;
-	const REAL ds = lx/((double)DIVISIONS-1.0); //The x division length.
-	REAL fou = TS*TH_DIFF/(ds*ds); //The Fourier number.
+    const REAL ds = lx/((float)dv-1.f);
+    REAL dt = atof(argv[3]);
+    const int ALG = atoi(argv[5])
+    REAL fou = dt*th_diff/(ds*ds);
 
 	//Initialize arrays.
 	REAL IC[dv];
@@ -436,8 +580,8 @@ int main( int argc, char *argv[])
 	// Call out the file before the loop and write out the initial condition.
 	ofstream fwr;
 	ofstream ftime;
-	ftime.open("1DSweptTiming.txt",ios::app);
-	fwr.open("1DHeatEQResult.dat",ios::trunc);
+	ftime.open("Result/TriangleAlgTestTime.txt",ios::app);
+	fwr.open("Result/1DHeatEQResult.dat",ios::trunc);
 	// Write out x length and then delta x and then delta t.
 	// First item of each line is timestamp.
 	fwr << lx << " " << DIVISIONS << " " << TS << " " << endl << 0 << " ";
@@ -464,8 +608,8 @@ int main( int argc, char *argv[])
 	cudaMemcpy(d_IC,IC,sizeof(REAL)*dv,cudaMemcpyHostToDevice);
 
 	// Start the counter and start the clock.
-	REAL t_eq = 0.;
-	REAL t_fullstep = TS*(THREADBLK);
+	REAL t_eq = 0.f;
+	REAL t_fullstep = dt*tpb;
 	cudaEvent_t start, stop;
 	float timed;
 	cudaEventCreate( &start );
@@ -473,13 +617,35 @@ int main( int argc, char *argv[])
 	cudaEventRecord( start, 0);
 
 	// Call the kernels until you reach the iteration limit.
-	while(t_eq < FINISH)
+	if (ALG == 0)
 	{
-		upTriangle <<< bks,THREADBLK >>>(d_IC,d_right,d_left);
-		downTriangle <<< bks,THREADBLK >>>(d_IC,d_right,d_left);
-		t_eq += t_fullstep;
+		while(t_eq < tf)
+		{
+			upTriangle_SI <<< bks,THREADBLK >>>(d_IC,d_right,d_left);
+			downTriangle_SI <<< bks,THREADBLK >>>(d_IC,d_right,d_left);
+			t_eq += t_fullstep;
+		}
 	}
 
+	else if (ALG == 1)
+	{
+		while(t_eq < tf)
+		{
+			upTriangle_SRight <<< bks,THREADBLK >>>(d_IC,d_right,d_left);
+			downTriangle_SRight <<< bks,THREADBLK >>>(d_IC,d_right,d_left);
+			t_eq += t_fullstep;
+		}
+	}
+
+	else
+	{
+		while(t_eq < tf)
+		{
+			upTriangle_GA <<< bks,THREADBLK >>>(d_IC,d_right,d_left);
+			downTriangle_GA <<< bks,THREADBLK >>>(d_IC,d_right,d_left);
+			t_eq += t_fullstep;
+		}
+	}
 	//Show the time and write out the final condition.
 	cudaEventRecord(stop, 0);
 	cudaEventSynchronize(stop);

@@ -41,65 +41,66 @@ __host__ __device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
     return fo*(tLeft+tRight) + (1.f-2.f*fo)*tCenter;
 
 }
-
 //-----------For testing --------------
 
+// I think we still need the shared memory.
+// We still need to get it into registers.
+// Aha!  It can only have a base of 32!  So we could do it at compile time!
+// Can't share values across warps!
 __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 {
-
 	extern __shared__ REAL share[];
 
-	REAL *temper = (REAL*) share;
-	REAL *shRight = (REAL*) &share[2*blockDim.x];
-	REAL *shLeft = (REAL*) &share[3*blockDim.x];
+    REAL *shRight = (REAL *) share;
+    REAL *shLeft = (REAL *) &share[32];
+
+    REAL temper_reg1, temper_reg2;
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tid = threadIdx.x; //Block Thread ID
-	int tid1 = tid + 1;
-	int tid2 = tid + 2;
-	//int height = blockDim.x/2;
-	int shft_wr; //Initialize the shift to the written row of temper.
-	int shft_rd; //Initialize the shift to the read row (opposite of written)
-	int logic_position;
-	int itr = 0;
-	int right_pick[4] = {2,1,-1,0}; //Template!
+    int tidp = tid + 2;
+
 	//Assign the initial values to the first row in temper, each warp (in this
 	//case each block) has it's own version of temper shared among its threads.
-	temper[tid] = IC[gid];
-	__syncthreads(); // Then make sure each block of threads are synced.
+	temper_reg1 = IC[gid];
+
+    temper_reg2 = execFunc(__shfl_down(temper_reg1,1), __shfl_up(temper_reg1,1), temper_reg1);
+
+    if (tid < 1)
+    {
+        shLeft[tid] = temper_reg1;
+        shLeft[tidp] = __shfl_up(temper_reg2,1);
+    }
+    if (tid > 29)
+    {
+        shRight[tid - 30] = temper_reg1;
+        shRight[tid - 28] = __shfl_down(temper_reg2,1);
+    }
 
 	//The initial conditions are timeslice 0 so start k at 1.
-	for (int k = (blockDim.x-2); k>1; k-=2)
+	for (int k = 2; k<16; k+=2)
 	{
-		//Bitwise even odd. On even iterations write to first row.
-		logic_position = (k/2 & 1);
-		shft_wr = blockDim.x*logic_position;
-		//On even iterations write to second row (starts at element 32)
-		shft_rd = blockDim.x*((logic_position+1) & 1);
+        temper_reg1 = execFunc(__shfl_down(temper_reg2,1), __shfl_up(temper_reg2,1), temper_reg2);
+		temper_reg2 = execFunc(__shfl_down(temper_reg1,1), __shfl_up(temper_reg1,1), temper_reg1);
 
-		//Each iteration the triangle narrows.  When k = 1, 30 points are
-		//computed, k = 2, 28 points.
-		if (tid < k)
-		{
-			temper[tid + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
-		}
-
-		//Make sure the threads are synced
-		__syncthreads();
-
-		//Really tricky to get unique values with threads.
-		if (shft_wr && tid < 4)
-		{
-			shLeft[tid+itr] = temper[(tid & 1) + (tid/2 * blockDim.x)]; // Still baroque.
-			shRight[tid+itr] = temper[(right_pick[tid] + k) + (tid/2 * blockDim.x)];
-			itr += 4;
-		}
-
+        //Really tricky to get unique values with threads.
+        //GET THE UNIQUE VALUES
+        if (tid >= k && tid < (k+2))
+        {
+            shLeft[tid] = temper_reg1;
+            shLeft[tidp] = __shfl_up(temper_reg2,1);
+        }
+        if (tid > (31-k) && tid < (29-k))
+        {
+            shRight[tid - 30] = temper_reg1;
+            shRight[tid - 28] = __shfl_down(temper_reg2,1);
+        }
 	}
 
-	//After the triangle has been computed, the right and left shared arrays are
-	//stored in global memory by the global thread ID since (conveniently),
+	//After the triangle has been computed, the right and left shared arrays
+	//are stored in global memory by the global thread ID since (conveniently),
 	//they're the same size as a warp!
+
 	right[gid] = shRight[tid];
 	left[gid] = shLeft[tid];
 
