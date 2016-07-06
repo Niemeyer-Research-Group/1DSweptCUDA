@@ -148,7 +148,6 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 
     __syncthreads();
 
-    #pragma unroll
 	for (int k = 2; k < blockDim.x; k+=2)
 	{
 		logic_position = (k/2 & 1);
@@ -792,6 +791,7 @@ double sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_e
 	cudaFree(d_left);
 
     return t_eq;
+{
 
 }
 
