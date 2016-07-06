@@ -49,10 +49,12 @@ __host__ __device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
 // Can't share values across warps!
 __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 {
+
 	extern __shared__ REAL share[];
 
     REAL *shRight = (REAL *) share;
     REAL *shLeft = (REAL *) &share[32];
+
 
     REAL temper_reg1, temper_reg2;
 
@@ -111,57 +113,32 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 {
 
-	extern __shared__ REAL share[];
+    extern __shared__ REAL share[];
 
-	REAL *temper = (REAL *) share;
-	REAL *shRight = (REAL *) &share[2*blockDim.x+4];
-	REAL *shLeft = (REAL *) &share[3*blockDim.x+4];
+    REAL *shRight = (REAL *) share;
+    REAL *shLeft = (REAL *) &share[32];
+    REAL *shLast = (REAL *) &share[64];
+
+    REAL temper_reg1, temper_reg2;
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tid = threadIdx.x; //Block Thread ID
-	int tid1 = tid + 1;
-	int tid2 = tid + 2;
-	//int height = blockDim.x/2;
-	int shft_wr; //Initialize the shift to the written row of temper.
-	int shft_rd; //Initialize the shift to the read row (opposite of written)
-	int logic_position;
-    int base = blockDim.x + 2;
+    int tid1 = tid + 1;
+    int tid2 = tid + 2;
+    int gidout = (gid - blockDim.x/2) & ((blockDim.x*gridDim.x)-1);
+    int gidin = (gid + blockDim.x) & ((blockDim.x*gridDim.x)-1);
 
-	//Assign the initial values to the first row in temper, each warp (in this
-	//case each block) has it's own version of temper shared among its threads.
+    shLeft[tid] = right[gid];
+	shRight[tid] = left[gidin];
 
-	shLeft[tid] = right[gid];
+    //Now you've got to put them right.
+    temper_reg1 = shLeft;
+    temper_reg1 = shRight;
 
-	if (blockIdx.x == (gridDim.x-1))
-	{
-		shRight[tid] = left[tid];
-	}
-	else
-	{
-		shRight[tid] = left[gid+blockDim.x];
-	}
+    temper_reg2 = execFunc(__shfl_down(temper_reg1,1), __shfl_up(temper_reg1,1), temper_reg1);
 
-	if (tid < 2)
-	{
-		temper[tid] = shLeft[tid];
-		temper[tid2] = shRight[tid];
-	}
-
-    __syncthreads();
-
-    #pragma unroll
 	for (int k = 2; k < blockDim.x; k+=2)
 	{
-		logic_position = (k/2 & 1);
-		shft_wr = base * logic_position;
-
-		shft_rd = base*((logic_position+1) & 1);
-
-		if (tid < 2)
-		{
-			temper[tid + shft_wr] = shLeft[tid+k];
-			temper[tid2 + k + shft_wr] = shRight[tid+k];
-		}
 
 		if (tid < k)
 		{

@@ -18,7 +18,10 @@ basepath = os.path.join(sourcepath,'Results')
 timepath = os.path.abspath(os.path.join(basepath,timingfile))
 rsltpath = os.path.abspath(os.path.join(basepath,outputf))
 
-typic = int(raw_input("Enter 1 to test output enter 0 to test timing: "))
+typic = int(raw_input("Enter 0 to test timing enter 1 to test output enter 2 for both:\n "))
+
+if (typic > 3) or (typic < 0):
+    os.exit(-1)
 
 if os.path.isfile(timepath):
     os.remove(timepath)
@@ -67,13 +70,14 @@ if typic:
 
 	plt.show()
 
-else:
+if (typic - 1):
+    from scipy.interpolate import griddata
     #Just start the file with some parser information rather than human text.
 	div = [2**k for k in range(10,20)]
 	blx = [32,64,128,256,512,1024]
 	for a in range(3):
 		fn = open(timepath,'a+')
-		fn.write(Algor[a]+"\nBlockSize\tXDimSize\tTime\n")
+		fn.write(Algor[a] + "\t" str(len(div)) "\t" str(len(blx)) "\n")
 		fn.close()
 		for k in blx:
 			for n in div:
@@ -82,6 +86,11 @@ else:
 				proc = sp.Popen(runc)
 				sp.Popen.wait(proc)
 
+rslt = np.genfromtxt(timepath)
+# OK We need to signal.  It's almost working.
 
 
-	#Somehow parse that text file?
+
+
+
+#HOLD ON HERE
