@@ -27,6 +27,7 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 #include "device_functions.h"
 
 //NEW EDGE COLLECTION ALGORITHM!!!!
+//SHINY!  IMPRESSIVE!  FASSST!
 
 #include <iostream>
 #include <cmath>
@@ -48,16 +49,12 @@ const REAL th_diff = 8.418e-5;
 
 __host__ REAL initFun(int xnode, REAL ds, REAL lx)
 {
-
     return 500.f*expf((-ds*(REAL)xnode)/lx ) + 50.f*sinf(-ds*2.f*(REAL)xnode);
-
 }
 
 __device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
 {
-
     return fo*(tLeft+tRight) + (1.f-2.f*fo)*tCenter;
-
 }
 
 //FILLING POST LOOP AND GLOBAL ONLY EDGES.
