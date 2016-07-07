@@ -49,7 +49,7 @@ const REAL th_diff = 8.418e-5;
 __host__ REAL initFun(int xnode, REAL ds, REAL lx)
 {
 
-    return 500.f*expf((-ds*(REAL)xnode)/lx);
+    return 500.f*expf((-ds*(REAL)xnode)/lx ) + 50.f*sinf(-ds*2.f*(REAL)xnode);
 
 }
 
@@ -133,7 +133,6 @@ __global__ void downTriangle_GA(REAL *IC, REAL *right, REAL *left)
 	// Initialize temper. Kind of an unrolled for loop.  This is actually at
 	// Timestep 0.
 
-	__syncthreads();
 	temper[leftidx] = right[gidin];
 	temper[rightidx] = left[gid];
 
@@ -182,7 +181,6 @@ __global__ void downTriangle_GA(REAL *IC, REAL *right, REAL *left)
 	}
 
 	IC[gidout] = temper[tid1];
-
 }
 
 // MIDDLE CODE.  INSERTS EDGES IN LOOP BUT USES RIGHT TRIANGLES.
@@ -363,7 +361,6 @@ __global__ void upTriangle_SI(REAL *IC, REAL *right, REAL *left)
 	temper[tid] = IC[gid];
 	__syncthreads(); // Then make sure each block of threads are synced.
 
-	int itr = -1;
 
 	//The initial conditions are timslice 0 so start k at 1.
 	for (int k = 1; k<(blockDim.x/2); k++)
@@ -377,21 +374,22 @@ __global__ void upTriangle_SI(REAL *IC, REAL *right, REAL *left)
 		//computed, k = 2, 28 points.
 		if (tid < (blockDim.x-k) && tid >= k)
 		{
-			temper[tid + shft_wr] = execFunc(temper[tidm+shft_rd], temper[tidp+shft_rd], temper[tid+shft_rd]);
+			temper[tid + shft_wr] = execFunc(temper[tidm + shft_rd], temper[tidp+shft_rd], temper[tid+shft_rd]);
 		}
 
 		//Make sure the threads are synced
 		__syncthreads();
 		if (shft_wr && tid < 4)
 		{
-			shLeft[k+itr+tid] = temper[(tid/2*(blockDim.x))+(tidm+k)];
-			shRight[k+itr+tid] = temper[((tid+2)/2*(blockDim.x-1))+(tid&1)-k];
-			itr += 2;
+			shLeft[2*(k-1)+tid] = temper[(tid/2*(blockDim.x))+(tidm+k)-tid/2];
+			shRight[2*(k-1)+tid] = temper[((tid+2)/2*(blockDim.x-1))+(tid&1)-k];
+
 		}
 
-		__syncthreads();
+        __syncthreads();
 
 	}
+
 
 	//After the triangle has been computed, the right and left shared arrays are
 	//stored in global memory by the global thread ID since (conveniently),
@@ -449,13 +447,13 @@ __global__ void downTriangle_SI(REAL *IC, REAL *right, REAL *left)
 		// This tells you if the current row is the first or second.
 		shft_wr = base*((k+1) & 1);
 		// Read and write are opposite rows.
-		shft_rd = base*((shft_wr+1) & 1);
+		shft_rd = base*(k & 1);
 
 		//Block 0 is split so it needs a different algorithm.  This algorithm
 		//is slightly different than top triangle as described in the note above.
 		if (blockIdx.x > 0)
 		{
-			if (tid1 <= ((blockDim.x+1)-k) && tid1 >= k)
+			if ((tid1 <= ((blockDim.x+1)-k)) && tid1 >= k)
 			{
 				temper[tid1 + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
 			}
@@ -467,13 +465,13 @@ __global__ void downTriangle_SI(REAL *IC, REAL *right, REAL *left)
 
 		else
 		{
-			if (tid1 <= ((blockDim.x+1)-k) && tid1 >= k)
+			if ((tid1 <= ((blockDim.x+1)-k)) && tid1 >= k)
 			{
-				if (tid == (height-1))
+				if (tid1 == (height))
 				{
 					temper[tid1 + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid+shft_rd], temper[tid1+shft_rd]);
 				}
-				else if (tid == height)
+				else if (tid1 == (height+1))
 				{
 					temper[tid1 + shft_wr] = execFunc(temper[tid2+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
 				}
@@ -502,11 +500,11 @@ __global__ void downTriangle_SI(REAL *IC, REAL *right, REAL *left)
 	}
 	else
 	{
-		if (tid == (height-1))
+		if (tid1 == (height))
 		{
 			temper[tid1] = execFunc(temper[tid+base], temper[tid+base], temper[tid1+base]);
 		}
-		else if (tid == height)
+		else if (tid1 == (height+1))
 		{
 			temper[tid1] = execFunc(temper[tid2+base], temper[tid2+base], temper[tid1+base]);
 		}
@@ -539,7 +537,7 @@ int main( int argc, char *argv[])
 	const int tpb = atoi(argv[2]);
 	const int tf = atoi(argv[4]);
 	const int bks = dv/tpb; //The number of blocks since threads/block = 32.
-    REAL fou = .1;
+    REAL fou = .05;
     REAL dt = atof(argv[3]);
     const int ALG = atoi(argv[5]);
     const REAL ds = sqrtf(dt*th_diff/fou);

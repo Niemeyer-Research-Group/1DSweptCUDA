@@ -20,14 +20,14 @@ def KS_disc(uL,uR,u,dx,dt):
     
     return ui
 
-n= 2048
+n= 8196
 k = np.arange(n)
-lx = 128.0/19.0*2.0
+lx = 128.0/19.0*12.0
 
 x = np.linspace(-lx/2.0,lx/2.0,n)
 
-x = x[:-1]
-n = n - 1
+x=x[:-1]
+n=n-1
 
 u1 = 2.0*np.cos(19.0*x*np.pi/128.0) 
 
@@ -52,13 +52,13 @@ for k in range(20):
     
     ut[1,0] = KS_doubleprime(ulist[:,n-1],ulist[:,1],ulist[:,0],dx,dt)
 
-    ut[1,1:n-2] = KS_doubleprime(ulist[:,0:n-3],ulist[:,2:n-1],ulist[:,1:n-2],dx,dt)
+    ut[1,1:n-1] = KS_doubleprime(ulist[:,0:n-2],ulist[:,2:n],ulist[:,1:n-1],dx,dt)
         
     ut[1,n-1] = KS_doubleprime(ulist[:,n-2],ulist[:,0],ulist[:,n-1],dx,dt)
     
     ut[0,0] = KS_disc(ulist[:,n-1],ulist[:,1],ulist[:,0],dx,dt)
 
-    ut[0,1:n-2] = KS_disc(ulist[:,0:n-3],ulist[:,2:n-1],ulist[:,1:n-2],dx,dt)
+    ut[0,1:n-1] = KS_disc(ulist[:,0:n-2],ulist[:,2:n],ulist[:,1:n-1],dx,dt)
         
     ut[0,n-1] = KS_disc(ulist[:,n-2],ulist[:,0],ulist[:,n-1],dx,dt)
     
@@ -66,7 +66,9 @@ for k in range(20):
 
     plt.subplot(211)
     plt.title(str(dt*(k+1)))
+    plt.hold()
     plt.plot(x,ulist[0,:])
+    plt.hold()
     plt.subplot(212)
     plt.plot(x,ulist[1,:])
     plt.show()
