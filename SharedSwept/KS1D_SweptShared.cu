@@ -13,6 +13,12 @@
 //RUN LINE!
 // ./bin/KSOut 256 2048 .01 10 0
 
+//DO:
+//Use malloc or cudaHostAlloc for all initial and final conditions.
+//Write the ability to pull out time snapshots.
+//The ability to feed in initial conditions.
+//Input paths to output as argc?  Input?
+//Ask about just making up my own conventions.  Like dat vs txt.  Use that as flag?
 
 #include <cuda.h>
 #include "cuda_runtime_api.h"
@@ -74,68 +80,42 @@ __device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
 //-----------For testing --------------
 
 //Up is the same.
-__global__ void upTriangle(const REAL *IC, REAL *right, REAL *left)
+__global__
+void
+upTriangle(REAL *IC, REAL *right, REAL *left)
 {
-	/*
-	Initialize shared variables.  Each node (warp) will store 32 values on the
-	right and left sides of their triangle, 2 on each side for each timeshLeftice.
-	Since the base of the triangle is 32 numbers for each node, 16 timeshLeftices
-	are evaluated per kernel call.
-	Temper stores the temperatures at each timeshLeftice.  Since only the current
-	and previous timeshLeftice results need to be held at each iteration.  This
-	variable has 64 values, or two rows of 32, linearized.  The current and
-	previous value alternate rows at each timeslice.
-	*/
-	extern __shared__ REAL share[];
 
-	REAL *temper = (REAL*) share;
-	REAL *shRight = (REAL*) &share[2*blockDim.x];
-	REAL *shLeft = (REAL*) &share[3*blockDim.x];
+	extern __shared__ REAL temper[];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tid = threadIdx.x; //Block Thread ID
-	int tid1 = tid + 1;
-	int tid2 = tid + 2;
-	//int height = blockDim.x/2;
+    int tidp = tid + 1;
+	int tidm = tid - 1;
 	int shft_wr; //Initialize the shift to the written row of temper.
 	int shft_rd; //Initialize the shift to the read row (opposite of written)
-	int logic_position;
-	int itr = 0;
-	int right_pick[4] = {2,1,-1,0}; //Template!
-	//Assign the initial values to the first row in temper, each warp (in this
+	int leftidx = tid/2 + ((tid/2 & 1) * blockDim.x) + (tid & 1);
+	int rightidx = (blockDim.x - 2) + ((tid/2 & 1) * blockDim.x) + (tid & 1) -  tid/2;
+
+    //Assign the initial values to the first row in temper, each warp (in this
 	//case each block) has it's own version of temper shared among its threads.
 	temper[tid] = IC[gid];
-	__syncthreads(); // Then make sure each block of threads are synced.
 
-	for (int k = (blockDim.x-2); k>1 ; k-=2)
+	//The initial conditions are timslice 0 so start k at 1.
+	for (int k = 1; k<(blockDim.x/2); k++)
 	{
 		//Bitwise even odd. On even iterations write to first row.
-		logic_position = (k/2 & 1);
-		shft_wr = blockDim.x*logic_position;
+		shft_wr = blockDim.x * (k & 1);
 		//On even iterations write to second row (starts at element 32)
-		shft_rd = blockDim.x*((logic_position+1) & 1);
+		shft_rd = blockDim.x * ((k + 1) & 1);
 
 		//Each iteration the triangle narrows.  When k = 1, 30 points are
 		//computed, k = 2, 28 points.
-		if (tid < k)
+		if (tid < (blockDim.x-k) && tid >= k)
 		{
-			temper[tid + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
-
+			temper[tid + shft_wr] = execFunc(temper[tidm+shft_rd], temper[tidp+shft_rd], temper[tid+shft_rd]);
 		}
-
-
 
 		//Make sure the threads are synced
-		__syncthreads();
-
-		//Really tricky to get unique values with threads.
-		if (shft_wr && tid < 4)
-		{
-			shLeft[tid+itr] = temper[(tid & 1) + (tid/2 * blockDim.x)]; // Still baroque.
-			shRight[tid+itr] = temper[(right_pick[tid] + k) + (tid/2 * blockDim.x)];
-			itr += 4;
-		}
-
 		__syncthreads();
 
 	}
@@ -143,211 +123,139 @@ __global__ void upTriangle(const REAL *IC, REAL *right, REAL *left)
 	//After the triangle has been computed, the right and left shared arrays are
 	//stored in global memory by the global thread ID since (conveniently),
 	//they're the same size as a warp!
-	right[gid] = shRight[tid];
-	left[gid] = shLeft[tid];
+	right[gid] = temper[rightidx];
+	left[gid] = temper[leftidx];
 
 }
 
-//The upside down triangle.  This function essentially takes right and left and
-//returns IC.
-
-//IMPORTANT note: k and tid were in sync in the first function, but here they're
-//out of sync in the loop.  This is because we can't use tid = 33 or 32 and the
-//shared temperature array is that long.  BUT in order to fill the arrays, these
-//elements must be accessed.  So each element in each row is shifted by +1.
-//For instance, thread tid = 16 refers to temper[17].  That being said, tid is
-//unique and k is NOT so the index must be referenced by tid.
-
-//
 __global__
 void
 downTriangle(REAL *IC, REAL *right, REAL *left)
 {
+	extern __shared__ REAL temper[];
 
-	extern __shared__ REAL share[];
-
-	REAL *temper = (REAL *) share;
-	REAL *shRight = (REAL *) &share[2*blockDim.x+4];
-	REAL *shLeft = (REAL *) &share[3*blockDim.x+4];
-
-	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
-	int tid = threadIdx.x; //Block Thread ID
-    //Something like this.
-    int gid_plus = (gid + blockDim.x) & (blockDim.x * gridDim.x - 1);
-
+	//Same as upTriangle
+	int gid = blockDim.x * blockIdx.x + threadIdx.x;
+	int tid = threadIdx.x;
 	int tid1 = tid + 1;
 	int tid2 = tid + 2;
-	//int height = blockDim.x/2;
-	int shft_wr; //Initialize the shift to the written row of temper.
-	int shft_rd; //Initialize the shift to the read row (opposite of written)
-	int logic_position;
 	int base = blockDim.x + 2;
+	int height = base/2;
+	int shft_rd;
+	int shft_wr;
+	int leftidx = height - tid/2 + ((tid/2 & 1) * base) + (tid & 1) - 2;
+	int rightidx = height + tid/2 + ((tid/2 & 1) * base) + (tid & 1);
+	int gidin = (gid + blockDim.x) & ((blockDim.x*gridDim.x)-1);
 
-	//Assign the initial values to the first row in temper, each warp (in this
-	//case each block) has it's own version of temper shared among its threads.
+	// Initialize temper. Kind of an unrolled for loop.  This is actually at
+	// Timestep 0.
 
-	shLeft[tid] = right[gid];
+	temper[leftidx] = right[gid];
+	temper[rightidx] = left[gidin];
 
-	if (blockIdx.x == (gridDim.x-1))
+    //k needs to insert the relevant left right values around the computed values
+	//every timestep.  Since it grows larger the loop is reversed.
+	for (int k = height-1; k>0; k--)
 	{
-		shRight[tid] = left[tid];
-	}
-	else
-	{
-		shRight[tid] = left[gid+blockDim.x];
-	}
+		// This tells you if the current row is the first or second.
+		shft_wr = base * ((k+1) & 1);
+		// Read and write are opposite rows.
+		shft_rd = base * (k & 1);
 
-	if (tid < 2)
-	{
-		temper[tid] = shLeft[tid];
-		temper[tid2] = shRight[tid];
-	}
-
-    __syncthreads();
-
-	for (int k = 2; k < blockDim.x; k+=2)
-	{
-		logic_position = (k/2 & 1);
-		shft_wr = base*logic_position;
-		//On even iterations write to second row (starts at element 32)
-		shft_rd = base*((logic_position+1) & 1);
-
-		if (tid < 2)
+		if (tid1 < (base-k) && tid1 >= k)
 		{
-			temper[tid + shft_wr] = shLeft[tid+k];
-			temper[tid2 + k + shft_wr] = shRight[tid+k];
-		}
-
-		if (tid < k)
-		{
-			temper[tid2 + shft_wr] = execFunc(temper[tid + shft_rd], temper[tid2 + shft_rd], temper[tid1 + shft_rd]);
+			temper[tid1 + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
 		}
         __syncthreads();
 	}
 
-
-    temper[tid] = execFunc(temper[tid+base], temper[tid2+base], temper[tid1+base]);
-
-    IC[gid] = temper[tid];
+    IC[gid] = temper[tid1];
 }
 
-
-__global__ void wholeDiamond(REAL *right, REAL *left, int swap)
+// Pass to split is false.  Pass to whole is true.
+__global__
+void
+wholeDiamond(REAL *right, REAL *left, int pass)
 {
-    //Swap is either -1 or 1.  Since it either passes back or forward.
-    extern __shared__ REAL share[];
+    extern __shared__ REAL temper[];
 
-	REAL *temper = (REAL*) share;
-	REAL *shRight = (REAL*) &share[2*blockDim.x+4];
-	REAL *shLeft = (REAL*) &share[3*blockDim.x+4];
-
-    int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
-	int tid = threadIdx.x; //Block Thread ID
-    //Something like this.
-    int gid_swap = (gid + swap*blockDim.x) & (blockDim.x * gridDim.x - 1);
-
+	//Same as downTriangle.
+	int gid = blockDim.x * blockIdx.x + threadIdx.x;
+	int tid = threadIdx.x;
+    int lastidx = ((blockDim.x*gridDim.x)-1);
 	int tid1 = tid + 1;
 	int tid2 = tid + 2;
-	//int height = blockDim.x/2;
-	int shft_wr; //Initialize the shift to the written row of temper.
-	int shft_rd; //Initialize the shift to the read row (opposite of written)
-	int logic_position;
-	int right_pick[4] = {2,1,-1,0}; //Template!
-	int itr = 0;
 	int base = blockDim.x + 2;
+	int height = base/2;
+	int shft_rd;
+	int shft_wr;
+	int leftidx = height - tid/2 + ((tid/2 & 1) * base) + (tid & 1) - 2;
+	int rightidx = height + tid/2 + ((tid/2 & 1) * base) + (tid & 1);
+	int gidin = (gid + pass*blockDim.x) & lastidx;
 
-	//int height = THREADBLK/2;
-	//
-	if (swap > 0)
+	if (pass < 0)
 	{
-
-		shLeft[tid] = right[gid];
-		shRight[tid] = left[gid_swap];
-
+    	temper[leftidx] = right[gidin];
+    	temper[rightidx] = left[gid];
 	}
 	else
 	{
-
-		shRight[tid] = left[gid];
-		shLeft[tid] = right[gid_swap];
-
-	}
-
-	if (tid < 2)
-	{
-		temper[tid] = shLeft[tid];
-		temper[tid2] = shRight[tid];
+		temper[leftidx] = right[gid];
+		temper[rightidx] = left[gidin];
 	}
 
 
-    for (int k = 2; k < blockDim.x; k+=2)
+	for (int k = (height-1); k>0; k--)
 	{
-		logic_position = (k/2 & 1);
-		shft_wr = base*logic_position;
-		//On even iterations write to second row (starts at element 32)
-		shft_rd = base*((logic_position+1) & 1);
+        // This tells you if the current row is the first or second.
+		shft_wr = base * ((k + 1) & 1);
+		// Read and write are opposite rows.
+		shft_rd = base * (k & 1);
 
-		if (tid < 2)
+        if (tid1 < (base-k) && tid1 >= k)
 		{
-			temper[tid + shft_wr] = shLeft[tid+k];
-			temper[tid2 + k + shft_wr] = shRight[tid+k];
-		}
-
-		if (tid < k)
-		{
-			temper[tid2 + shft_wr] = execFunc(temper[tid + shft_rd], temper[tid2+shft_rd], temper[tid1 + shft_rd]);
+			temper[tid1 + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
 		}
         __syncthreads();
 	}
 
-    temper[tid] = execFunc(temper[tid+base], temper[tid2+base], temper[tid1+base]);
-
-    __syncthreads(); // Then make sure each block of threads are synced.
-
+	//Shift the last row to justify it at 0.
+	temper[tid] = temper[tid1];
     //-------------------TOP PART------------------------------------------
 
+    leftidx = tid/2 + ((tid/2 & 1) * base) + (tid & 1);
+    rightidx = (base - 4) + ((tid/2 & 1) * base) + (tid & 1) -  tid/2;
+
+    int tidm = tid - 1;
 
 	//The initial conditions are timeslice 0 so start k at 1.
-	for (int k = (blockDim.x-2); k>1; k-=2)
+    for (int k = 1; k<(height-1); k++)
 	{
 		//Bitwise even odd. On even iterations write to first row.
-		logic_position = (k/2 & 1);
-		shft_wr = base*logic_position;
+		shft_wr = base * (k & 1);
 		//On even iterations write to second row (starts at element 32)
-		shft_rd = base*((logic_position+1) & 1);
+		shft_rd = base * ((k + 1) & 1);
 
 		//Each iteration the triangle narrows.  When k = 1, 30 points are
 		//computed, k = 2, 28 points.
-		if (tid < k)
+		if (tid < (blockDim.x-k) && tid >= k)
 		{
-			temper[tid + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
+			temper[tid + shft_wr] = execFunc(temper[tidm+shft_rd], temper[tid1+shft_rd], temper[tid+shft_rd]);
 		}
 
 		//Make sure the threads are synced
 		__syncthreads();
 
-		//Really tricky to get unique values with threads.
-		if (shft_wr && tid < 4)
-		{
-			shLeft[tid+itr] = temper[(tid & 1) + (tid/2 * base)]; // Still baroque.
-			shRight[tid+itr] = temper[(right_pick[tid] + k) + (tid/2 * base)];
-			itr += 4;
-		}
-
-		__syncthreads();
-
 	}
 
-	//After the triangle has been computed, the right and left shared arrays are
-	//stored in global memory by the global thread ID since (conveniently),
-	//they're the same size as a warp!
-	right[gid] = shRight[tid];
-	left[gid] = shLeft[tid];
+    right[gid] = temper[rightidx];
+	left[gid] = temper[leftidx];
 
 }
 
 //The host routine.
-double sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end, REAL *IC, REAL *T_f)
+double
+sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end, REAL *IC, REAL *T_f)
 {
 
 	REAL *d_IC, *d_right, *d_left;
@@ -360,8 +268,8 @@ double sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_e
 	// Start the counter and start the clock.
 	const double t_fullstep = dt.y*(double)tpb;
 
-	const size_t smem1 = 4*tpb*sizeof(REAL);
-	const size_t smem2 = (4*tpb+4)*sizeof(REAL);
+	const size_t smem1 = 2*tpb*sizeof(REAL);
+	const size_t smem2 = (2*tpb+4)*sizeof(REAL);
 
 	upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
 	wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,-1);
@@ -377,14 +285,7 @@ double sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_e
 
 		t_eq += t_fullstep;
 
-		/* Since the procedure does not store the temperature values, the user
-		could input some time interval for which they want the temperature
-		values and this loop could copy the values over from the device and
-		write them out.  This way the user could see the progression of the
-		solution over time, identify an area to be investigated and re-run a
-		shorter version of the simulation starting with those intiial conditions.
-
-		-------------------------------------
+		/*
 	 	if (true)
 		{
 			downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
@@ -442,19 +343,17 @@ int main( int argc, char *argv[])
 
 	//if ((dv & (tpb-1) !=0) || tpb&31 != 0)
 
-
 	REAL dsc;
 	dsc.x = lx/((float)dv-1.f);
 	dsc.y = atof(argv[3]);
 
-	// Initialize arrays.
+	// Initialize arrays.  Should malloc instead of stack.
 	REAL IC[dv];
 	REAL *IC_p;
 	REAL T_final[dv];
 	REAL *Tfin_p;
 
 	Tfin_p = T_final;
-
 
 	// Some initial condition for the bar temperature, an exponential decay
 	// function.
@@ -516,7 +415,6 @@ int main( int argc, char *argv[])
 		ftime.close();
 	}
 
-	int nn;
 	fwr << tfm << " ";
 	for (int k = 0; k<dv; k++)
 	{
@@ -526,7 +424,6 @@ int main( int argc, char *argv[])
 	fwr.close();
 
 	// Free the memory and reset the device.
-
 	cudaDeviceReset();
 	cudaEventDestroy( start );
 	cudaEventDestroy( stop );

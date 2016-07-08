@@ -1,4 +1,17 @@
 //HEAT Yo.
+
+//COMPILE LINE:
+// nvcc -o ./bin/HeatOut Heat1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -w -std=c++11
+
+//DO:
+//Profile and compile --ptaxs.  NEED TO KNOW ABOUT REGISTERS!
+//Use malloc or cudaHostAlloc for all initial and final conditions.
+//Set up streams and run Sharing version.
+//Write the ability to pull out time snapshots.
+//The ability to feed in initial conditions.
+//Input paths to output as argc?  Input?
+//Ask about just making up my own conventions.  Like dat vs txt.  Use that as flag?
+
 #include <cuda.h>
 #include "cuda_runtime_api.h"
 #include "device_functions.h"
@@ -9,11 +22,6 @@
 #include <cstdlib>
 #include <cmath>
 #include <fstream>
-
-//#include "SwR_1DShared.h"
-//
-//COMPILE LINE:
-// nvcc -o ./bin/HeatOut Heat1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -w -std=c++11
 
 #ifndef REAL
 #define REAL  float
@@ -41,7 +49,9 @@ __host__ __device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
 
 //-----------For testing --------------
 
-__global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
+__global__
+void
+upTriangle(REAL *IC, REAL *right, REAL *left)
 {
 
 	extern __shared__ REAL temper[];
@@ -89,7 +99,9 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 
 // Down triangle is only called at the end when data is passed left.  It's never split.
 // It returns IC which is a full 1D result at a certain time.
-__global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
+__global__
+void
+downTriangle(REAL *IC, REAL *right, REAL *left)
 {
 	extern __shared__ REAL temper[];
 
@@ -146,7 +158,9 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 }
 
 //Full refers to whether or not there is a node run on the CPU.
-__global__ void wholeDiamond(REAL *right, REAL *left, bool full)
+__global__
+void
+wholeDiamond(REAL *right, REAL *left, bool full)
 {
 
     extern __shared__ REAL temper[];
@@ -252,7 +266,9 @@ __global__ void wholeDiamond(REAL *right, REAL *left, bool full)
 
 //Split one is always first.  Passing left like the downTriangle.  downTriangle
 //should be rewritten so it isn't split.  Only write on a non split pass.
-__global__ void splitDiamond(REAL *right, REAL *left)
+__global__
+void
+splitDiamond(REAL *right, REAL *left)
 {
 
     extern __shared__ REAL temper[];
@@ -375,8 +391,10 @@ __global__ void splitDiamond(REAL *right, REAL *left)
 	left[gid] = temper[leftidx];
 }
 
-/*Do the split diamond on the CPU?
-__host__ void CPU_diamond(REAL *right, REAL *left, int tpb)
+//Do the split diamond on the CPU?
+__host__
+void
+CPU_diamond(REAL *right, REAL *left, int tpb)
 {
     int idx;
     int ht = tpb/2;
@@ -473,7 +491,7 @@ __host__ void CPU_diamond(REAL *right, REAL *left, int tpb)
 
     }
 }
-*/
+
 //The host routine.
 double
 sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
@@ -497,11 +515,12 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
 
 	upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
 
-	double t_eq = t_fullstep;
+
 
 	// Call the kernels until you reach the iteration limit.
     if (cpu)
     {
+        double t_eq = t_fullstep/2;
     	while(t_eq < t_end)
     	{
 
@@ -550,6 +569,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
     else
     {
         splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
+        double t_eq = t_fullstep;
 
         while(t_eq < t_end)
         {
