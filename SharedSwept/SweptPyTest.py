@@ -21,7 +21,7 @@ master = Tk()
 master.geometry("400x400")
 
 variable = StringVar(master)
-variable.set(OPTIONS[0]) # default value
+variable.set(OPTIONS[1]) # default value
 
 w = apply(OptionMenu, (master, variable) + tuple(OPTIONS))
 w.pack()
@@ -56,13 +56,13 @@ filepath = os.path.abspath(os.path.join(basepath, ofile))
 if os.path.isfile(filepath):
     os.remove(filepath)
 
-div = [2**k for k in range(10,18)]
+div = [2**k for k in range(11,14)]
 blx = [32,64,128,256,512,1024]
 fn = open(filepath,'a+')
 
-Exec1 = './bin/' + Fname + 'Out'
+ExecL = './bin/' + Fname + 'Out'
 
-compStr = 'nvcc -o ./bin/' + Fname + 'Out ' + Fname + sourcebase + ' -gencode arch=compute_35,code=sm_35 -lm -w -std=c++11'
+compStr = 'nvcc -o ' + ExecL + ' ' + Fname + sourcebase + ' -gencode arch=compute_35,code=sm_35 -lm -w -std=c++11'
 compArg = shlex.split(compStr)
 proc = sp.Popen(compArg)
 sp.Popen.wait(proc)
@@ -73,7 +73,7 @@ fn.close()
 for k in blx:
     for n in div:
         print n,k
-        execut = Exec1 + ' {0} {1} {2} {3} {4}'.format(n,k,.01,10000,0)
+        execut = ExecL + ' {0} {1} {2} {3} {4}'.format(n,k,.01,10000,0)
         exeStr = shlex.split(execut)
         proc = sp.Popen(exeStr)
         sp.Popen.wait(proc)
@@ -92,9 +92,7 @@ for line in fin:
         data.append(ar)
 
 
-print "Percent Difference in integrals:"
-df = 100*abs(np.trapz(data[0][1:],xax)-np.trapz(data[1][1:],xax))/np.trapz(data[0][1:],xax)
-print df
+
 
 lbl = ["Initial Condition"]
 
@@ -107,6 +105,6 @@ for k in range(1,len(data)):
 plt.legend(lbl)
 plt.xlabel("Position on bar (m)")
 plt.ylabel("Velocity")
-plt.title(Fname + execut[len(Execl):])
+plt.title(Fname + execut[len(ExecL):])
 plt.grid()
 plt.show()

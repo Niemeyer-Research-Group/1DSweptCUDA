@@ -20,7 +20,7 @@ master = Tk()
 master.geometry("400x400")
 
 variable = StringVar(master)
-variable.set(OPTIONS[0]) # default value
+variable.set(OPTIONS[1]) # default value
 
 w = apply(OptionMenu, (master, variable) + tuple(OPTIONS))
 w.pack()
@@ -48,8 +48,8 @@ execut = "./bin/"+fname+"Out"
 
 div = 2048
 bks = 256
-dt = .005
-tf = 2
+dt = .01
+tf = 10000
 tst = 0
 
 execstr = execut +  ' {0} {1} {2} {3} {4}'.format(div,bks,dt,tf,tst)

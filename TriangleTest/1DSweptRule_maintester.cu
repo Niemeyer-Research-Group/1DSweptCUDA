@@ -70,7 +70,7 @@ __global__ void upTriangle_GA(REAL *IC, REAL *right, REAL *left)
 	int shft_wr; //Initialize the shift to the written row of temper.
 	int shft_rd; //Initialize the shift to the read row (opposite of written)
 	int leftidx = tid/2 + ((tid/2 & 1) * blockDim.x) + (tid & 1);
-	int rightidx = (blockDim.x - 1) + ((tid/2 & 1) * blockDim.x) + (tid & 1) -  tid/2 - 1;
+	int rightidx = (blockDim.x - 2) + ((tid/2 & 1) * blockDim.x) + (tid & 1) -  tid/2;
 
 	//Assign the initial values to the first row in temper, each warp (in this
 	//case each block) has it's own version of temper shared among its threads.
@@ -116,16 +116,17 @@ __global__ void downTriangle_GA(REAL *IC, REAL *right, REAL *left)
 	//Same as upTriangle
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
 	int tid = threadIdx.x;
+    int lastidx = ((blockDim.x*gridDim.x)-1);
 	int tid1 = tid + 1;
 	int tid2 = tid + 2;
 	int base = blockDim.x + 2;
 	int height = base/2;
 	int shft_rd;
 	int shft_wr;
-	int leftidx = base/2 - tid/2 + ((tid/2 & 1) * base) + (tid & 1) - 2;
-	int rightidx = base/2 + tid/2 + ((tid/2 & 1) * base) + (tid & 1);
-	int gidout = (gid - blockDim.x/2) & ((blockDim.x*gridDim.x)-1);
-	int gidin = (gid - blockDim.x) & ((blockDim.x*gridDim.x)-1);
+	int leftidx = height - tid/2 + ((tid/2 & 1) * base) + (tid & 1) - 2;
+	int rightidx = height + tid/2 + ((tid/2 & 1) * base) + (tid & 1);
+	int gidout = (gid - blockDim.x/2) & lastidx;
+	int gidin = (gid - blockDim.x) & lastidx;
 
 	// Initialize temper. Kind of an unrolled for loop.  This is actually at
 	// Timestep 0.
@@ -548,7 +549,7 @@ int main( int argc, char *argv[])
 	REAL *d_IC, *d_right, *d_left;
 
 	// Some initial condition for the bar temperature, an exponential decay
-	// function.
+	// function.py
 	for (int k = 0; k<dv; k++)
 	{
 		IC[k] = initFun(k, ds, lx);
@@ -586,8 +587,8 @@ int main( int argc, char *argv[])
 	cudaMemcpy(d_IC,IC,sizeof(REAL)*dv,cudaMemcpyHostToDevice);
 
 	// Start the counter and start the clock.
-	REAL t_eq = 0.f;
-	REAL t_fullstep = dt*tpb;
+	REAL t_eq = dt;
+	REAL t_fullstep = dt*tpb/2;
 	cudaEvent_t start, stop;
 	float timed;
 	cudaEventCreate( &start );

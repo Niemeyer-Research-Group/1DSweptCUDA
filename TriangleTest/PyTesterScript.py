@@ -86,15 +86,16 @@ if (typic - 1):
 
     rslt = np.genfromtxt(timepath)
     vr = np.where(np.isnan(rslt))
-    vr = vr[0]
+    vr = vr[0][0]
 
-    arslt1 = rslt[vr[0]+1:vr[1],2]
-    arslt2 = rslt[vr[1]+1:vr[2],2]
-    arslt3 = rslt[vr[2]+1:,2]
-    
+    leng = len(div)*len(blx)
+
+    arslt1 = rslt[vr+1:vr+leng+1,2]
+    arslt2 = rslt[vr+leng+2:vr+2*leng+2,2]
+    arslt3 = rslt[vr+2*leng+3:vr+3*leng+3,2]
+
     mx = np.max(np.ravel(np.concatenate((arslt1,arslt2,arslt3))))+.25
 
-    divg,blxg = np.meshgrid(div,blx)
 
     brslt1 = np.reshape(arslt1,(len(blx),len(div)))
     brslt2 = np.reshape(arslt2,(len(blx),len(div)))
@@ -121,7 +122,7 @@ if (typic - 1):
     plt.ylabel('Seconds to completion')
     plt.ylim((0,mx))
     plt.subplot(1,3,2)
-    plt.grid()    
+    plt.grid()
     plt.title(Algor[1])
     plt.legend(leg,loc = 2)
     plt.xlabel('Number of spatial points')
