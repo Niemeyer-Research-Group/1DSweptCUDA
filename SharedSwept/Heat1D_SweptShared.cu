@@ -70,6 +70,7 @@ upTriangle(REAL *IC, REAL *right, REAL *left)
 	temper[tid] = IC[gid];
 
 	//The initial conditions are timslice 0 so start k at 1.
+
 	for (int k = 1; k<(blockDim.x/2); k++)
 	{
 		//Bitwise even odd. On even iterations write to first row.
@@ -127,6 +128,7 @@ downTriangle(REAL *IC, REAL *right, REAL *left)
 
     //k needs to insert the relevant left right values around the computed values
 	//every timestep.  Since it grows larger the loop is reversed.
+
 	for (int k = height-1; k>1; k--)
 	{
 		// This tells you if the current row is the first or second.
@@ -240,6 +242,7 @@ wholeDiamond(REAL *right, REAL *left, bool full)
     int tidm = tid - 1;
 
 	//The initial conditions are timeslice 0 so start k at 1.
+
     for (int k = 1; k<(height-1); k++)
 	{
 		//Bitwise even odd. On even iterations write to first row.
@@ -295,6 +298,7 @@ splitDiamond(REAL *right, REAL *left)
     //Wind it up!
     //k needs to insert the relevant left right values around the computed values
     //every timestep.  Since it grows larger the loop is reversed.
+
     for (int k = (height-1); k>0; k--)
     {
         // This tells you if the current row is the first or second.
@@ -345,6 +349,7 @@ splitDiamond(REAL *right, REAL *left)
     int tidm = tid - 1;
 
     //The initial conditions are timslice 0 so start k at 1.
+
 	for (int k = 1; k<(height-1); k++)
 	{
 		//Bitwise even odd. On even iterations write to first row.
@@ -392,22 +397,16 @@ splitDiamond(REAL *right, REAL *left)
 }
 
 //Do the split diamond on the CPU?
+// What's the idea?  Say malloc the pointers in the wrapper.
+// Calculate left and right idxs in wrapper too, why continually recalculate.
+//
+
 __host__
 void
-CPU_diamond(REAL *right, REAL *left, int tpb)
+CPU_diamond(REAL *right, REAL *left, int *idxes[][4], int *temper, int tpb)
 {
     int idx;
     int ht = tpb/2;
-    int *temper;
-    int *leftidx, *rightidx;
-
-    //malloc these!
-
-    for (int k = 0; k<tpb; k++)
-    {
-        leftidx[k] = k/2 + ((k/2 & 1) * tpb) + (k & 1);
-        rightidx[k] = (tpb - 1) + ((k/2 & 1) * tpb) + (k & 1) -  k/2 - 1;
-    }
 
     //Splitting it is the whole point!
 
@@ -497,6 +496,16 @@ double
 sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
     const int cpu, REAL *IC, REAL *T_f)
 {
+    int indices[4][tpb];
+    for (int k = 0; k<tpb; k++)
+    {
+        indices[0][k] = k/2 + ((k/2 & 1) * tpb) + (k & 1);
+        indices[1][k] = (tpb - 2) + ((k/2 & 1) * tpb) + (k & 1) -  k/2;
+        indices[2][k] = k/2 + ((k/2 & 1) * tpb) + (k & 1);
+        indices[3][k] = (tpb - 1) + ((k/2 & 1) * tpb) + (k & 1) -  k/2;
+    }
+
+    REAL *tmpr;
 
 	REAL *d_IC, *d_right, *d_left;
     REAL right, left;
@@ -513,27 +522,34 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
 	const size_t smem1 = 2*tpb*sizeof(REAL);
 	const size_t smem2 = (2*tpb+4)*sizeof(REAL);
 
+    tmpr = (REAL*)malloc(smem2);
+
 	upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
+
+    double t_eq;
 
 
 
 	// Call the kernels until you reach the iteration limit.
     if (cpu)
     {
-        double t_eq = t_fullstep/2;
+        t_eq = t_fullstep/2;
     	while(t_eq < t_end)
     	{
 
             cudaMemcpy(&right,d_right,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
             cudaMemcpy(&left,d_left,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
 
-            //CPU_diamond(&right, &left, tpb);
+            CPU_diamond(&right, &left, &indices, tmpr, tpb);
+
             wholeDiamond <<< bks-1,tpb,smem2 >>>(d_right,d_left,false);
 
             cudaMemcpy(d_right, &right, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
             cudaMemcpy(d_left, &left, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
 
             wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,true);
+
+            tmpr = NULL;
 
 		    //So it always ends on a left pass since the down triangle is a right pass.
 
@@ -569,7 +585,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
     else
     {
         splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
-        double t_eq = t_fullstep;
+        t_eq = t_fullstep;
 
         while(t_eq < t_end)
         {

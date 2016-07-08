@@ -28,16 +28,11 @@ w.pack()
 def ok():
     master.destroy()
 
-def skip():
-    master.destroy()
-
 def on_closing():
     raise SystemExit
 
 master.protocol("WM_DELETE_WINDOW", on_closing)
 button = Button(master, text="OK", command=ok)
-button.pack()
-button = Button(master, text="Skip Run", command=skip)
 button.pack()
 
 master.mainloop()

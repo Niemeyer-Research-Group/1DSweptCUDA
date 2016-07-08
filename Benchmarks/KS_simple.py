@@ -6,71 +6,90 @@ Created on Wed Jun 29 15:36:46 2016
 """
 import matplotlib.pyplot as plt
 import numpy as np
+import sys
 
-def KS_doubleprime(uL,uR,u,dx,dt):
+def KS_doubleprime(uL,uR,u,dx):
     
-    u1 = (uL[0] + uR[0] - 2.0*u[0])/(dx**2)
+    u1 = (uL + uR - 2.0*u)/(dx**2)
     
     return u1
     
-def KS_disc(uL,uR,u,dx,dt):
-    cv = (uL[0]**2 - uR[0]**2)/(4.0*dx)
-    diffs = (np.sum(uL)+np.sum(uR) - 2.0*np.sum(u))/(dx**2)
-    ui = u[0] - dt * (diffs + cv)
+def KS_disc(uL,uR,u,uRxx,uLxx,uxx,dx,dt):
+    cv = (uL**2 - uR**2)/(4.0*dx)
+    diffs = ((uL+uLxx)+(uR+uRxx) - 2.0*(u+uxx))/(dx**2)
+    ui = u - dt * (diffs + cv)
     
     return ui
 
 n= 8196
-k = np.arange(n)
+k = np.arange(n+4)
 lx = 128.0/19.0*12.0
 
 x = np.linspace(-lx/2.0,lx/2.0,n)
 
-x=x[:-1]
-n=n-1
+u = 2.0*np.cos(19.0*x*np.pi/128.0) 
 
-u1 = 2.0*np.cos(19.0*x*np.pi/128.0) 
+u1 = u[0]
+u2 = u[-1]
 
-ulist = np.empty([2,n])
+u = np.append(u,u1)
 
-ulist[0,:] = u1
-ulist[1,:] = np.zeros([1,n])
+u = np.insert(u,0,u2)
+
+uxx = np.empty(n+2)
+dx = x[1]-x[0]
+dt = .005
+
+for k in range(1,n+1):
+    uxx[k] = KS_doubleprime(u[k-1],u[k+1],u[k],dx)
+
+uxx[-1] = uxx[1]
+uxx[0] = uxx[-2]
+
+
     
 plt.subplot(211)
-plt.plot(x,ulist[0,:])
+plt.plot(x,u[1:-1])
+plt.title('U')
 plt.hold()  
 plt.subplot(212)
-plt.plot(x,ulist[1,:])
+plt.plot(x,uxx[1:-1])
+plt.title('Uxx')
 plt.hold()
 plt.show()
 
-dx = x[1]-x[0]
-dt = .005
-ut = np.copy(ulist)
+g = int(raw_input("Enter 0 to break: "))
+if g == 0:
+   sys.exit(0)
 
-for k in range(20):
+
+for b in range(20):
+    ut = np.copy(u)
     
-    ut[1,0] = KS_doubleprime(ulist[:,n-1],ulist[:,1],ulist[:,0],dx,dt)
-
-    ut[1,1:n-1] = KS_doubleprime(ulist[:,0:n-2],ulist[:,2:n],ulist[:,1:n-1],dx,dt)
+    for k in range(1,n+1):
         
-    ut[1,n-1] = KS_doubleprime(ulist[:,n-2],ulist[:,0],ulist[:,n-1],dx,dt)
-    
-    ut[0,0] = KS_disc(ulist[:,n-1],ulist[:,1],ulist[:,0],dx,dt)
-
-    ut[0,1:n-1] = KS_disc(ulist[:,0:n-2],ulist[:,2:n],ulist[:,1:n-1],dx,dt)
+        u[k] = KS_disc(ut[k-1],ut[k+1],ut[k],uxx[k-1],uxx[k+1],uxx[k],dx,dt)\
         
-    ut[0,n-1] = KS_disc(ulist[:,n-2],ulist[:,0],ulist[:,n-1],dx,dt)
+    u[-1] = u[1]
+    u[0] = u[-2]
+        
+    for k in range(1,n+1):  
+        uxx[k] = KS_doubleprime(u[k-1],u[k+1],u[k],dx)
+        
+
+
+    uxx[-1] = uxx[1]
+    uxx[0] = uxx[-2]
     
-    ulist = np.copy(ut)
 
     plt.subplot(211)
-    plt.title(str(dt*(k+1)))
-    plt.hold()
-    plt.plot(x,ulist[0,:])
-    plt.hold()
+    plt.plot(x,u[1:-1])
+    plt.title('U')
+    plt.hold()  
     plt.subplot(212)
-    plt.plot(x,ulist[1,:])
+    plt.plot(x,uxx[1:-1])
+    plt.title('Uxx')
+    plt.hold()
     plt.show()
     g = int(raw_input("Enter 0 to break: "))
     if g == 0:
