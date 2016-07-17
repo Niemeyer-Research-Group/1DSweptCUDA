@@ -60,7 +60,7 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tid = threadIdx.x; //Block Thread ID
-    int tidp = tid + 2;
+    int tid2 = tid + 2;
 
 	//Assign the initial values to the first row in temper, each warp (in this
 	//case each block) has it's own version of temper shared among its threads.
@@ -71,14 +71,14 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
     if (tid < 1)
     {
         shLeft[tid] = temper_reg1;
-        shLeft[tidp] = __shfl_up(temper_reg2,1);
+        shLeft[tid2] = __shfl_up(temper_reg2,1);
     }
     if (tid > 29)
     {
         shRight[tid - 30] = temper_reg1;
         shRight[tid - 28] = __shfl_down(temper_reg2,1);
     }
-
+    __syncthreads();
 	//The initial conditions are timeslice 0 so start k at 1.
 	for (int k = 2; k<16; k+=2)
 	{
@@ -90,13 +90,14 @@ __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
         if (tid >= k && tid < (k+2))
         {
             shLeft[tid] = temper_reg1;
-            shLeft[tidp] = __shfl_up(temper_reg2,1);
+            shLeft[tid2] = __shfl_up(temper_reg2,1);
         }
         if (tid > (31-k) && tid < (29-k))
         {
             shRight[tid - 30] = temper_reg1;
             shRight[tid - 28] = __shfl_down(temper_reg2,1);
         }
+        __syncthreads();
 	}
 
 	//After the triangle has been computed, the right and left shared arrays
@@ -117,16 +118,18 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 
     REAL *shRight = (REAL *) share;
     REAL *shLeft = (REAL *) &share[32];
-    REAL *shLast = (REAL *) &share[64];
 
     REAL temper_reg1, temper_reg2;
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tid = threadIdx.x; //Block Thread ID
+    int lastidx = ((blockDim.x*gridDim.x)-1);
     int tid1 = tid + 1;
     int tid2 = tid + 2;
-    int gidout = (gid - blockDim.x/2) & ((blockDim.x*gridDim.x)-1);
-    int gidin = (gid + blockDim.x) & ((blockDim.x*gridDim.x)-1);
+    int gidout = (gid - blockDim.x/2) & lastidx;
+    int gidin = (gid + blockDim.x) & lastidx;
+
+    REAL tmp = temper_reg;
 
     shLeft[tid] = right[gid];
 	shRight[tid] = left[gidin];
@@ -137,22 +140,27 @@ __global__ void downTriangle(REAL *IC, REAL *right, REAL *left)
 
     temper_reg2 = execFunc(__shfl_down(temper_reg1,1), __shfl_up(temper_reg1,1), temper_reg1);
 
-	for (int k = 2; k < blockDim.x; k+=2)
+	for (int k = 15; k < 1; k+=2)
 	{
 
-		if (tid < k)
-		{
-			temper[tid2 + shft_wr] = execFunc(temper[tid + shft_rd], temper[tid2+shft_rd], temper[tid1 + shft_rd]);
-		}
+		temper_reg1 = execFunc(__shfl_down(temper_reg2,1), __shfl_up(temper_reg2,1), temper_reg2);
+        temper_reg2 = execFunc(__shfl_down(temper_reg1,1), __shfl_up(temper_reg1,1), temper_reg1);
+
         __syncthreads();
 	}
 
-    if (gid == 0) temper[base] = temper[base+2];
-    if (gid == (blockDim.x*gridDim.x-1)) temper[2*blockDim.x+3] = temper[2*blockDim.x+1];
+    if (gid == 0 || gid == lstidx) tmp = temper_reg;
+    else if (tid == 0) ;
+    else if (tid == 31 )
+
+    if (tid == 0)
+    if (tid == 31)
+
+
 
     temper[tid] = execFunc(temper[tid+base], temper[tid2+base], temper[tid1+base]);
 
-    IC[gid] = temper[tid];
+    IC[gid] = temper_reg1;
 }
 
 

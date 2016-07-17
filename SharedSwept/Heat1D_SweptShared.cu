@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <fstream>
+#include "omp.h"
 
 #ifndef REAL
 #define REAL  float
@@ -403,91 +404,69 @@ splitDiamond(REAL *right, REAL *left)
 
 __host__
 void
-CPU_diamond(REAL *right, REAL *left, int *idxes[][4], int *temper, int tpb)
+CPU_diamond(REAL *temper, int tpb)
 {
-    int idx;
+    int bck, fwd, shft_rd, shft_wr;
+    int base = tpb + 2;
     int ht = tpb/2;
 
     //Splitting it is the whole point!
-
-    for (int k = 1; k < ht; k++)
+    for (int k = ht; k>0; k--)
     {
+        // This tells you if the current row is the first or second.
+        shft_wr = base * ((k+1) & 1);
+        // Read and write are opposite rows.
+        shft_rd = base * (k & 1);
 
-        temper[k][0] = left[2*k];
-        temper[k][1] = left[2*(k+1)];
-        temper[k][(k+1)*2] = right[2*k];
-        temper[k][(k+1)*2+1] = right[2*(k+1)];
-
-        for(int n = 2; n<(k+1)*2; n++)
+        for(int n = k; n<(base-k); n++)
         {
+            bck = n - 1;
+            fwd = n + 1;
             //Double trailing index.
-            if(n == k+1)
+            if(n == ht)
             {
-                temper[k][n] = execFunc(temper[k-1][n-2], temper[k-1][n-2], temper[k-1][n-1]);
+                temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[bck+shft_rd], temper[n+shft_rd);
             }
             //Double leading index.
-            else if(n==k+2)
+            else if(n == ht+1)
             {
-                temper[k][n] = execFunc(temper[k-1][n], temper[k-1][n], temper[k-1][n-1]);
+                temper[n + shft_wr] = execFunc(temper[fwd+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd);
             }
             else
             {
-                temper[k][n] = execFunc(temper[k-1][n-2], temper[k-1][n], temper[k-1][n-1]);
+                temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd);
             }
-
-        }
-
-    }
-
-    for(int n = 0; n < tpb; n++)
-    {
-        //Double trailing index.
-        if(n == ht-1)
-        {
-            temper[ht][n] = execFunc(temper[ht-1][n], temper[ht-1][n+2], temper[ht-1][n+1]);
-        }
-        //Double leading index.
-        else if(n == ht)
-        {
-            temper[ht][n] = execFunc(temper[ht-1][n], temper[ht-1][n], temper[ht-1][n-1]);
-        }
-        else
-        {
-            temper[ht][n] = execFunc(temper[ht-1][n-2], temper[ht-1][n], temper[ht-1][n-1]);
         }
     }
 
-    left[0] = temper[ht][0];
-    left[1] = temper[ht][1];
-    right[0] = temper[ht][tpb-2];
-    right[1] = temper[ht][tpb-1];
-
+    for (k = 0; k<tpb; k++) temper[k] = temper[k+1];
     //Top part.
-    for (int k = 1; k<ht; k++)
+    for (int k = 1; k>ht; k++)
     {
+        // This tells you if the current row is the first or second.
+        shft_wr = base * (k & 1);
+        // Read and write are opposite rows.
+        shft_rd = base * ((k+1) & 1);
 
-        for (int n = 0; n<(tpb-2*k); n++)
+        for(int n = k; n<(tpb-k); n++)
         {
-            if(n == ht-1)
+            bck = n - 1;
+            fwd = n + 1;
+            //Double trailing index.
+            if(n == ht)
             {
-                temper[k+ht][n] = execFunc(temper[k-1+ht][n], temper[k-1+ht][n+2], temper[k-1+ht][n+1]);
+                temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[bck+shft_rd], temper[n+shft_rd);
             }
             //Double leading index.
-            else if(n == ht)
+            else if(n == ht+1)
             {
-                temper[k+ht][n] = execFunc(temper[k-1+ht][n], temper[k-1+ht][n+2], temper[k-1+ht][n+1]);
+                temper[n + shft_wr] = execFunc(temper[fwd+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd);
             }
             else
             {
-                temper[k+ht][n] = execFunc(temper[k-1+ht][n], temper[k-1+ht][n+2], temper[k-1+ht][n+1]);
+                temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd);
             }
         }
-
-        right[2*k] = temper[k+ht][0];
-        right[2*k+1] = temper[k+ht][1];
-        left[2*k] = temper[k+ht][(tpb-2) - 2*k];
-        left[2*k+1] = temper[k+ht][(tpb-2) - 2*k + 1];
-
     }
 }
 
@@ -506,9 +485,9 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
     }
 
     REAL *tmpr;
-
+    tmpr = (REAL*)malloc(smem2);
 	REAL *d_IC, *d_right, *d_left;
-    REAL right, left;
+    REAL right[tpb], left[tpb];
 
 	cudaMalloc((void **)&d_IC, sizeof(REAL)*dv);
 	cudaMalloc((void **)&d_right, sizeof(REAL)*dv);
@@ -522,34 +501,48 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
 	const size_t smem1 = 2*tpb*sizeof(REAL);
 	const size_t smem2 = (2*tpb+4)*sizeof(REAL);
 
-    tmpr = (REAL*)malloc(smem2);
-
 	upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
 
     double t_eq;
 
-
-
 	// Call the kernels until you reach the iteration limit.
+    // Done now juse use streams or omp to optimize.
+
+    #pragma omp parallel sections num_threads( 2 )
     if (cpu)
     {
         t_eq = t_fullstep/2;
     	while(t_eq < t_end)
     	{
 
-            cudaMemcpy(&right,d_right,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
-            cudaMemcpy(&left,d_left,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
+            #pragma omp sections
+            {
+            cudaMemcpy(right,d_left,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
+            cudaMemcpy(left,d_right+dv-tpb,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
 
-            CPU_diamond(&right, &left, &indices, tmpr, tpb);
+            for (int k = 0; k<tpb; k++)
+            {
+                tmpr[indices[0][k]] = right[k];
+                tmpr[indices[1][k]] = left[k];
+            }
 
+            CPU_diamond(tmpr, tpb);
+            }
+            #pragma omp section
+            {
             wholeDiamond <<< bks-1,tpb,smem2 >>>(d_right,d_left,false);
+            }
 
-            cudaMemcpy(d_right, &right, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
-            cudaMemcpy(d_left, &left, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
+            for (int k = 0; k<tpb; k++)
+            {
+                right[k] = tmpr[indices[2][k]];
+                left[k] = tmpr[indices[3][k]];
+            }
+
+            cudaMemcpy(d_right, right, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
+            cudaMemcpy(d_left, left, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
 
             wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,true);
-
-            tmpr = NULL;
 
 		    //So it always ends on a left pass since the down triangle is a right pass.
 
