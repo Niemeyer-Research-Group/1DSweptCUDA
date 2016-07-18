@@ -425,21 +425,21 @@ CPU_diamond(REAL *temper, int tpb)
             //Double trailing index.
             if(n == ht)
             {
-                temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[bck+shft_rd], temper[n+shft_rd);
+                temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[bck+shft_rd], temper[n+shft_rd]);
             }
             //Double leading index.
             else if(n == ht+1)
             {
-                temper[n + shft_wr] = execFunc(temper[fwd+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd);
+                temper[n + shft_wr] = execFunc(temper[fwd+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd]);
             }
             else
             {
-                temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd);
+                temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd]);
             }
         }
     }
 
-    for (k = 0; k<tpb; k++) temper[k] = temper[k+1];
+    for (int k = 0; k<tpb; k++) temper[k] = temper[k+1];
     //Top part.
     for (int k = 1; k>ht; k++)
     {
@@ -455,16 +455,16 @@ CPU_diamond(REAL *temper, int tpb)
             //Double trailing index.
             if(n == ht)
             {
-                temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[bck+shft_rd], temper[n+shft_rd);
+                temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[bck+shft_rd], temper[n+shft_rd]);
             }
             //Double leading index.
             else if(n == ht+1)
             {
-                temper[n + shft_wr] = execFunc(temper[fwd+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd);
+                temper[n + shft_wr] = execFunc(temper[fwd+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd]);
             }
             else
             {
-                temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd);
+                temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd]);
             }
         }
     }
@@ -475,6 +475,9 @@ double
 sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
     const int cpu, REAL *IC, REAL *T_f)
 {
+    const size_t smem1 = 2*tpb*sizeof(REAL);
+    const size_t smem2 = (2*tpb+4)*sizeof(REAL);
+
     int indices[4][tpb];
     for (int k = 0; k<tpb; k++)
     {
@@ -498,8 +501,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
 	// Start the counter and start the clock.
 	const double t_fullstep = dt*(double)tpb;
 
-	const size_t smem1 = 2*tpb*sizeof(REAL);
-	const size_t smem2 = (2*tpb+4)*sizeof(REAL);
+
 
 	upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
 
@@ -508,39 +510,42 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
 	// Call the kernels until you reach the iteration limit.
     // Done now juse use streams or omp to optimize.
 
-    #pragma omp parallel sections num_threads( 2 )
     if (cpu)
     {
         t_eq = t_fullstep/2;
+        omp_set_num_threads( 2 );
+
     	while(t_eq < t_end)
     	{
 
-            #pragma omp sections
+            #pragma omp parallel sections
             {
-            cudaMemcpy(right,d_left,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
-            cudaMemcpy(left,d_right+dv-tpb,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
-
-            for (int k = 0; k<tpb; k++)
+            #pragma omp section
             {
-                tmpr[indices[0][k]] = right[k];
-                tmpr[indices[1][k]] = left[k];
-            }
+                cudaMemcpy(right,d_left,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
+                cudaMemcpy(left,d_right+dv-tpb,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
 
-            CPU_diamond(tmpr, tpb);
+                for (int k = 0; k<tpb; k++)
+                {
+                    tmpr[indices[0][k]] = right[k];
+                    tmpr[indices[1][k]] = left[k];
+                }
+
+                CPU_diamond(tmpr, tpb);
+
+                for (int k = 0; k<tpb; k++)
+                {
+                    right[k] = tmpr[indices[2][k]];
+                    left[k] = tmpr[indices[3][k]];
+                }
             }
             #pragma omp section
             {
-            wholeDiamond <<< bks-1,tpb,smem2 >>>(d_right,d_left,false);
+                wholeDiamond <<< bks-1,tpb,smem2 >>>(d_right,d_left,false);
+                cudaMemcpy(d_right, right, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
+                cudaMemcpy(d_left, left, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
             }
-
-            for (int k = 0; k<tpb; k++)
-            {
-                right[k] = tmpr[indices[2][k]];
-                left[k] = tmpr[indices[3][k]];
             }
-
-            cudaMemcpy(d_right, right, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
-            cudaMemcpy(d_left, left, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
 
             wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,true);
 

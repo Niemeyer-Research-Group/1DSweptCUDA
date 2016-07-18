@@ -43,8 +43,8 @@ execut = "./bin/"+fname+"Out"
 
 div = 2048
 bks = 256
-dt = .01
-tf = 10000
+dt = .005
+tf = 10
 tst = 0
 
 execstr = execut +  ' {0} {1} {2} {3} {4}'.format(div,bks,dt,tf,tst)

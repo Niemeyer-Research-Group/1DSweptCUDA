@@ -29,30 +29,21 @@
 
 using namespace std;
 
-struct Boundary{
-
-    REAL rho;
-    REAL press;
-    REAL vel;
-
-};
-
-__constant__  Boundary bound[2];
-
 // 0 is left, 1 is right.
-const Boundary bd[2];
-bd.rho[0] = 1.f;
-bd.rho[1] = 0.125;
-bd.press[0] = 1.f;
-bd.press[1] = 0.1;
-bd.vel[0] = 0.0;
-bd.vel[1] = 0.0;
+//
 
-const double PI = 3.141592653589793238463;
+const REAL3 bd[2];
+bd[0].x = 1.0;
+bd[1].x = 0.125;
+bd[0].y = 0.0;
+bd[1].y = 0.0;
+bd[0].z = 1.0;
+bd[1].z = 0.1;
 
-const REAL lx = 50.0;
+const REAL2 dimz;
+dimz.x = 0.5; dimz.y = 0.02; //x is dx, y is dt
 
-const REAL th_diff = 8.418e-5;
+__constant__ REAL3 dbd;
 
 //-----------For testing --------------
 
@@ -685,8 +676,8 @@ int main( int argc, char *argv[] )
 
 	// Call out the file before the loop and write out the initial condition.
 	ofstream fwr, ftime;
-	fwr.open("Results/Heat1D_Result.dat",ios::trunc);
-	ftime.open("Results/Heat1D_Timing.txt",ios::app);
+	fwr.open("Results/Euler1D_Result.dat",ios::trunc);
+	ftime.open("Results/Euler1D_Timing.txt",ios::app);
 	// Write out x length and then delta x and then delta t.
 	// First item of each line is timestamp.
 	fwr << lx << " " << dv << " " << ds << " " << endl << 0 << " ";

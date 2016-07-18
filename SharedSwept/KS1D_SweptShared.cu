@@ -43,15 +43,13 @@ using namespace std;
 // disc.x is dx, disc.y is dt.
 __constant__ REAL disc;
 
-const double PI = 3.141592653589793238463;
-
-const float lx = 50.0;
+const float dx = .5;
 
 __host__ __device__ REAL initFun(float xnode)
 {
 	REAL result;
-	result.x = 2.f * cos(19.f*xnode*PI/128.f);
-	result.y = -361.f/8192.f * cos(19.f*xnode*PI/128.f);
+	result.x = 2.f * cos(19.f*xnode*M_PI/128.f);
+	result.y = -361.f/4096.f*M_PI * cos(19.f*xnode*M_PI/128.f);
 	return result;
 }
 
@@ -278,7 +276,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end, REA
 	// Call the kernels until you reach the iteration limit.
 	while(t_eq < t_end)
 	{
-		cout << t_eq << endl;
+
 		wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,1);
 		//So it always ends on a left pass since the down triangle is a right pass.
 		wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,-1);
@@ -335,7 +333,7 @@ int main( int argc, char *argv[])
 	const int bks = dv/tpb; //The number of blocks since threads/block = 32.
 	const int tst = atoi(argv[5]);
 
-	cout << bks << endl;
+	const float lx = dv*dx;
 
 	//Conditions for main input.  Unit testing kinda.
 	//dv and tpb must be powers of two.  dv must be larger than tpb and divisible by
@@ -344,7 +342,7 @@ int main( int argc, char *argv[])
 	//if ((dv & (tpb-1) !=0) || tpb&31 != 0)
 
 	REAL dsc;
-	dsc.x = lx/((float)dv-1.f);
+	dsc.x = dx;
 	dsc.y = atof(argv[3]);
 
 	// Initialize arrays.  Should malloc instead of stack.
@@ -359,7 +357,7 @@ int main( int argc, char *argv[])
 	// function.
 	for (int k = 0; k<dv; k++)
 	{
-		IC[k] = initFun((float)k*dsc.x-lx/2);
+		IC[k] = initFun((float)k*dsc.x/2);
 	}
 
 	// Call out the file before the loop and write out the initial condition.

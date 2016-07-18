@@ -46,7 +46,7 @@ master.mainloop()
 Fname = variable.get()
 
 timeout = '1D_Timing.txt'
-rsltout = '1D_Result.dat'
+rsltout = '1D_Result.dt'
 sourcebase = '1D_SweptShared.cu'
 
 sourcepath = os.path.dirname(__file__)
@@ -62,11 +62,11 @@ fn = open(filepath,'a+')
 
 ExecL = './bin/' + Fname + 'Out'
 
-compStr = 'nvcc -o ' + ExecL + ' ' + Fname + sourcebase + ' -gencode arch=compute_35,code=sm_35 -lm -w -std=c++11'
+compStr = 'nvcc -o ' + ExecL + ' ' + Fname + sourcebase + ' -gencode arch=compute_35,code=sm_35 -lm -Xcompiler -fopenmp -w -std=c++11'
 compArg = shlex.split(compStr)
 proc = sp.Popen(compArg)
 sp.Popen.wait(proc)
-print "Compiled"
+print "Compiled ", proc
 fn.write("BlockSize\tXDimSize\tTime\n")
 fn.close()
 
@@ -90,8 +90,6 @@ for line in fin:
         xax = np.linspace(0,ar[0],ar[1])
     else:
         data.append(ar)
-
-
 
 
 lbl = ["Initial Condition"]
