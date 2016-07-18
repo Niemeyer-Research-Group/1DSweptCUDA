@@ -30,9 +30,7 @@ const REAL th_diff = 8.418e-5;
 
 __host__ __device__ REAL initFun(int xnode, REAL ds, REAL lx)
 {
-
     return 500.f*expf((-ds*(REAL)xnode)/lx);
-
 }
 
 __host__ __device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
@@ -50,55 +48,24 @@ __host__ __device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
 __global__ void upTriangle(REAL *IC, REAL *right, REAL *left)
 {
 
-	extern __shared__ REAL share[];
-
-    REAL *shRight = (REAL *) share;
-    REAL *shLeft = (REAL *) &share[32];
-
-
-    REAL temper_reg1, temper_reg2;
+    REAL temper_reg[16];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tid = threadIdx.x; //Block Thread ID
+    // ?? You need to give them the indexes.  This is hairy.
+    int leftidx = tid/2 + ((tid/2 & 1) * blockDim.x) + (tid & 1);
+    int rightidx = (blockDim.x - 2) + ((tid/2 & 1) * blockDim.x) + (tid & 1) -  tid/2;
     int tid2 = tid + 2;
 
 	//Assign the initial values to the first row in temper, each warp (in this
 	//case each block) has it's own version of temper shared among its threads.
-	temper_reg1 = IC[gid];
+	temper_reg[0] = IC[gid];
 
-    temper_reg2 = execFunc(__shfl_down(temper_reg1,1), __shfl_up(temper_reg1,1), temper_reg1);
-
-    if (tid < 1)
-    {
-        shLeft[tid] = temper_reg1;
-        shLeft[tid2] = __shfl_up(temper_reg2,1);
-    }
-    if (tid > 29)
-    {
-        shRight[tid - 30] = temper_reg1;
-        shRight[tid - 28] = __shfl_down(temper_reg2,1);
-    }
-    __syncthreads();
-	//The initial conditions are timeslice 0 so start k at 1.
-	for (int k = 2; k<16; k+=2)
+    #pragma unroll
+	for (int k = 1; k<17; k++)
 	{
-        temper_reg1 = execFunc(__shfl_down(temper_reg2,1), __shfl_up(temper_reg2,1), temper_reg2);
-		temper_reg2 = execFunc(__shfl_down(temper_reg1,1), __shfl_up(temper_reg1,1), temper_reg1);
-
-        //Really tricky to get unique values with threads.
-        //GET THE UNIQUE VALUES
-        if (tid >= k && tid < (k+2))
-        {
-            shLeft[tid] = temper_reg1;
-            shLeft[tid2] = __shfl_up(temper_reg2,1);
-        }
-        if (tid > (31-k) && tid < (29-k))
-        {
-            shRight[tid - 30] = temper_reg1;
-            shRight[tid - 28] = __shfl_down(temper_reg2,1);
-        }
-        __syncthreads();
-	}
+        temper_reg[k] = execFunc(__shfl_down(temper_reg[k-1],1), __shfl_up(temper_reg2[k-1],1), temper_reg2);
+    }
 
 	//After the triangle has been computed, the right and left shared arrays
 	//are stored in global memory by the global thread ID since (conveniently),
