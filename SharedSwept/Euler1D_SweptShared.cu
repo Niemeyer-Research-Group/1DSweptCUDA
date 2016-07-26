@@ -9,8 +9,12 @@
 // nvcc -o ./bin/EulerOut Euler1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -w -std=c++11
 
 #include <cuda.h>
-#include "cuda_runtime_api.h"
-#include "device_functions.h"
+#include <cuda_runtime_api.h>
+#include <cuda_runtime.h>
+#include <device_functions.h>
+#include <vector_types.h>
+#include <helper_math.h>
+#include <math_functions.h>
 
 #include <ostream>
 #include <iostream>
@@ -18,59 +22,34 @@
 #include <cstdlib>
 #include <cmath>
 #include <fstream>
+#include <omp.h>
 
 //#include "SwR_1DShared.h"
 
 
-#define REAL  float
-#define REAL4 float4
-#define REAL3 float3
+#define REAL        float
+#define REALfour    float4
+#define REALthree   float3
 
-using namespace std;
+const REAL gam = 1.4f;
+const REAL m_gamma = .4;
+const REAL dx = .5;
 
-const REAL gamma = 1.4f;
-const REAL m_gamma = .4f;
-const REAL dx = .5f;
-
-REAL4 bd[2];
-bd[0].x = 1.0; //Density
-bd[1].x = 0.125;
-bd[0].y = 0.0; //Velocity
-bd[1].y = 0.0;
-bd[0].w = 1.0; //Pressure
-bd[1].w = 0.1;
-bd[0].z = bd[0].w/m_gamma; //Energy
-bd[1].z = bd[1].w/m_gamma;
-
-__constant__ REAL4 dbd[2];
-__constant__ REAL4 dimens;
-
-__host__
-__device__
-void
-initFun(int x, int dv, REAL4 out)
-{
-    if (x<dv/2)
-    {
-        out = bd[0];
-    }
-    else
-    {
-        out = bd[1];
-    }
-}
+__constant__ REALfour dbd[2];
+__constant__ REALthree dimens;
 
 __device__
 void
-pressure(REAL4 current)
+pressure(REALfour current)
 {
-    current.w = dimens.z * (current.z- (0.5 * current.y * current.y/current.x);
+    current.w = dimens.z * (current.z - (0.5 * current.y * current.y/current.x));
 }
 
 //This will need to return the ratio to the execFunc
+
 __device__
 REAL
-pressureRatio(REAL4 cvLeft, REAL4 cvRight, REAL4 cvCenter)
+pressureRatio(REALfour cvLeft, REALfour cvRight, REALfour cvCenter)
 {
     pressure(cvCenter);
     pressure(cvRight);
@@ -79,19 +58,20 @@ pressureRatio(REAL4 cvLeft, REAL4 cvRight, REAL4 cvCenter)
     return (cvRight.w - cvCenter.w)/(cvCenter.w - cvLeft.w);
 }
 
+
 __device__
-REAL3
-limitor(REAL3 cvCurrent, REAL3 cvOther, REAL pRatio)
+REALfour
+limitor(REALthree cvCurrent, REALthree cvOther, REAL pRatio)
 {
-    if (isfinite(pRatio) && pRatio > 0)
+    if (isfinite(pRatio) && pRatio > 0) //If it's finite and positive
     {
-        REAL fact = (pRatio < 1) ? pRatio : 1;
-        return cvCurrent + 0.5* fact * (cvOther - cvCurrent);
+        REAL fact = (pRatio < 1) ? pRatio : 1.f;
+        return make_float4(cvCurrent + 0.5* fact * (cvOther - cvCurrent));
 
     }
-    else
+    else //If it's nan, inf, negative or zero.
     {
-        return cvCurrent;
+        return make_float4(cvCurrent);
     }
 
 }
@@ -99,9 +79,11 @@ limitor(REAL3 cvCurrent, REAL3 cvOther, REAL pRatio)
 
 
 //Left and Center then Left and right.
+
+
 __device__
 void
-eulerFlux(REAL4 cvLeft, REAL4 cvRight, REAl3 flux)
+eulerFlux(REALfour cvLeft, REALfour cvRight, REALthree flux)
 {
     REAL uLeft = cvLeft.y/cvLeft.x;
     REAL uRight = cvRight.y/cvRight.x;
@@ -112,66 +94,99 @@ eulerFlux(REAL4 cvLeft, REAL4 cvRight, REAl3 flux)
     flux.y = 0.5 * (cvLeft.x*uLeft*uLeft + cvRight.x*uRight*uRight + cvLeft.w + cvRight.w);
     flux.z = 0.5 * (cvLeft.x*uLeft*eLeft + cvRight.x*uRight*eRight + uLeft*cvLeft.w + uRight*cvRight.w);
 
-    REAL4 halfState;
-    halfState.w = 0.0;
-    REAL rhoLeftsqrt = sqrt(cvLeft.x); REAL rhoRightsqrt = sqrt(cvRight.x);
+    printf("FluxL: %.8f %.8f %.8f \n",flux.x,flux.y, flux.z);
+
+    REALfour halfState;
+    REAL rhoLeftsqrt = sqrtf(cvLeft.x); REAL rhoRightsqrt = sqrtf(cvRight.x);
     halfState.x = rhoLeftsqrt * rhoRightsqrt;
     halfState.y = (rhoLeftsqrt*uLeft + rhoRightsqrt*uRight)/(rhoLeftsqrt+rhoRightsqrt);
     halfState.z = (rhoLeftsqrt*eLeft + rhoRightsqrt*eRight)/(rhoLeftsqrt+rhoRightsqrt);
     pressure(halfState);
 
-    REAL spectreRadius = sqrt(dimens.y * halfState.w/halfState.x) + fabs(halfState.y);
+    REAL spectreRadius = sqrtf(dimens.y * halfState.w/halfState.x) + fabs(halfState.y);
 
-    flux += 0.5 * spectreRadius * (cvLeft.xyz - cvRight.xyz);
+    flux += 0.5 * spectreRadius * (make_float3(cvLeft) - make_float3(cvRight));
 
 }
 
-__device__ eulerStep(REAL4 stateLeft, REAL4 stateRight, REAL4 stateCenter)
-{
-    REAL3 fluxL, fluxR;
-    REAL pR = pressureRatio(stateLeft,stateRight,stateCenter);
-    REAL4 tempStateLeft, tempStateRight;
-    tempStateLeft.xyz = limitor(stateLeft.xyz, stateCenter.xyz, pR);
-    tempStateRight.xyz = limitor(stateCenter.xyz, stateLeft.xyz, 1.0/pR);
-    pressure(tempStateLeft);
-    pressure(tempStateRight);
-    eulerFlux(tempstateLeft,tempStateRight,fluxL);
-    tempStateLeft.xyz = limitor(stateCenter.xyz, stateRight.xyz, pR);
-    tempStateRight.xyz = limitor(stateRight.xyz, stateCenter.xyz, 1.0/pR);
-    pressure(tempStateLeft);
-    pressure(tempStateRight);
-    eulerFlux(tempstateLeft,tempStateRight,fluxR);
 
-    stateCenter.xyz += 0.5 * dimens.z * (fluxR-fluxL);
+__device__
+ void
+ eulerStep(REALfour stateLeft, REALfour stateRight, REALfour stateCenter)
+{
+    REALthree fluxL, fluxR;
+    REAL pR = pressureRatio(stateLeft,stateRight,stateCenter);
+    REALfour tempStateLeft, tempStateRight;
+
+    tempStateLeft = limitor(make_float3(stateLeft), make_float3(stateCenter), pR);
+    tempStateRight = limitor(make_float3(stateCenter), make_float3(stateLeft), 1.0/pR);
+    pressure(tempStateLeft);
+    pressure(tempStateRight);
+    eulerFlux(tempStateLeft,tempStateRight,fluxL);
+
+    tempStateLeft = limitor(make_float3(stateCenter), make_float3(stateRight), pR);
+    tempStateRight = limitor(make_float3(stateRight), make_float3(stateCenter), 1.0/pR);
+    pressure(tempStateLeft);
+    pressure(tempStateRight);
+    eulerFlux(tempStateLeft,tempStateRight,fluxR);
+
+
+    //printf("FluxL: %.8f %.8f %.8f \t FluxR: %.8f %.8f %.8f \n",fluxL.x,fluxL.y, fluxL.z, fluxR.x, fluxR.y, fluxR.z);
+
+    stateCenter += make_float4(0.5 * dimens.x * (fluxL-fluxR));
     pressure(stateCenter);
 
 }
 
-//-----------For testing --------------
 
-
-
-__host__
 __device__
-REAL4
-execFunc(REAL4 stateLeft, REAL4 stateRight, REAL4 stateCenter)
+REALfour
+execFunc(REALfour stateLeft, REALfour stateRight, REALfour stateCenter)
 {
 
     eulerStep(stateLeft,stateRight,stateCenter);
-    __syncthreads()
+    __syncthreads();
     eulerStep(stateLeft,stateRight,stateCenter);
     return stateCenter;
 
 }
 
 //-----------For testing --------------
+//
+__global__
+void
+classicDisc(REALfour *IC, REALfour *temp)
+{
+
+    int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
+    int lastidx = ((blockDim.x*gridDim.x)-1);
+    int gidp = gid + 1;
+    int gidm = gid - 1;
+
+    if (gid == 0)
+    {
+        temp[gid] = execFunc(IC[gidp], IC[gidp], IC[gid]);
+        printf("IM HERE!\n");
+    }
+    else if (gid == lastidx)
+    {
+
+        temp[gid] = execFunc(IC[gidm], IC[gidm], IC[gid]);
+    }
+    else
+    {
+        temp[gid] = execFunc(IC[gidm], IC[gidp], IC[gid]);
+    }
+
+    IC[gid] = temp[gid];
+}
 
 __global__
 void
-upTriangle(REAL4 *IC, REAL4 *right, REAL4 *left)
+upTriangle(REALfour *IC, REALfour *right, REALfour *left)
 {
 
-	extern __shared__ REAL4 temper[];
+	extern __shared__ REALfour temper[];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tid = threadIdx.x; //Block Thread ID
@@ -219,9 +234,9 @@ upTriangle(REAL4 *IC, REAL4 *right, REAL4 *left)
 // It returns IC which is a full 1D result at a certain time.
 __global__
 void
-downTriangle(REAL4 *IC, REAL4 *right, REAL4 *left)
+downTriangle(REALfour *IC, REALfour *right, REALfour *left)
 {
-	extern __shared__ REAL4 temper[];
+	extern __shared__ REALfour temper[];
 
 	//Same as upTriangle
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
@@ -279,10 +294,10 @@ downTriangle(REAL4 *IC, REAL4 *right, REAL4 *left)
 //Full refers to whether or not there is a node run on the CPU.
 __global__
 void
-wholeDiamond(REAL4 *right, REAL4 *left, bool full)
+wholeDiamond(REALfour *right, REALfour *left, bool full)
 {
 
-    extern __shared__ REAL4 temper[];
+    extern __shared__ REALfour temper[];
 
 	//Same as upTriangle
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
@@ -388,10 +403,10 @@ wholeDiamond(REAL4 *right, REAL4 *left, bool full)
 //should be rewritten so it isn't split.  Only write on a non split pass.
 __global__
 void
-splitDiamond(REAL4 *right, REAL4 *left)
+splitDiamond(REALfour *right, REALfour *left)
 {
 
-    extern __shared__ REAL4 temper[];
+    extern __shared__ REALfour temper[];
 
 	//Same as upTriangle
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
@@ -518,81 +533,82 @@ splitDiamond(REAL4 *right, REAL4 *left)
 // Calculate left and right idxs in wrapper too, why continually recalculate.
 //
 
-__host__
-void
-CPU_diamond(REAL4 *temper, int tpb)
-{
-    int bck, fwd, shft_rd, shft_wr;
-    int base = tpb + 2;
-    int ht = tpb/2;
-
-    //Splitting it is the whole point!
-    for (int k = ht; k>0; k--)
-    {
-        // This tells you if the current row is the first or second.
-        shft_wr = base * ((k+1) & 1);
-        // Read and write are opposite rows.
-        shft_rd = base * (k & 1);
-
-        for(int n = k; n<(base-k); n++)
-        {
-            bck = n - 1;
-            fwd = n + 1;
-            //Double trailing index.
-            if(n == ht)
-            {
-                temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[bck+shft_rd], temper[n+shft_rd]);
-            }
-            //Double leading index.
-            else if(n == ht+1)
-            {
-                temper[n + shft_wr] = execFunc(temper[fwd+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd]);
-            }
-            else
-            {
-                temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd]);
-            }
-        }
-    }
-
-    for (int k = 0; k<tpb; k++) temper[k] = temper[k+1];
-    //Top part.
-    for (int k = 1; k>ht; k++)
-    {
-        // This tells you if the current row is the first or second.
-        shft_wr = base * (k & 1);
-        // Read and write are opposite rows.
-        shft_rd = base * ((k+1) & 1);
-
-        for(int n = k; n<(tpb-k); n++)
-        {
-            bck = n - 1;
-            fwd = n + 1;
-            //Double trailing index.
-            if(n == ht)
-            {
-                temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[bck+shft_rd], temper[n+shft_rd]);
-            }
-            //Double leading index.
-            else if(n == ht+1)
-            {
-                temper[n + shft_wr] = execFunc(temper[fwd+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd]);
-            }
-            else
-            {
-                temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd]);
-            }
-        }
-    }
-}
-
-//The host routine.
+// __host__
+// void
+// CPU_diamond(REALfour *temper, int tpb)
+// {
+//     int bck, fwd, shft_rd, shft_wr;
+//     int base = tpb + 2;
+//     int ht = tpb/2;
+//
+//     //Splitting it is the whole point!
+//     for (int k = ht; k>0; k--)
+//     {
+//         // This tells you if the current row is the first or second.
+//         shft_wr = base * ((k+1) & 1);
+//         // Read and write are opposite rows.
+//         shft_rd = base * (k & 1);
+//
+//         for(int n = k; n<(base-k); n++)
+//         {
+//             bck = n - 1;
+//             fwd = n + 1;
+//             //Double trailing index.
+//             if(n == ht)
+//             {
+//                 temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[bck+shft_rd], temper[n+shft_rd]);
+//             }
+//             //Double leading index.
+//             else if(n == ht+1)
+//             {
+//                 temper[n + shft_wr] = execFunc(temper[fwd+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd]);
+//             }
+//             else
+//             {
+//                 temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd]);
+//             }
+//         }
+//     }
+//
+//     for (int k = 0; k<tpb; k++) temper[k] = temper[k+1];
+//     //Top part.
+//     for (int k = 1; k>ht; k++)
+//     {
+//         // This tells you if the current row is the first or second.
+//         shft_wr = base * (k & 1);
+//         // Read and write are opposite rows.
+//         shft_rd = base * ((k+1) & 1);
+//
+//         for(int n = k; n<(tpb-k); n++)
+//         {
+//             bck = n - 1;
+//             fwd = n + 1;
+//             //Double trailing index.
+//             if(n == ht)
+//             {
+//                 temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[bck+shft_rd], temper[n+shft_rd]);
+//             }
+//             //Double leading index.
+//             else if(n == ht+1)
+//             {
+//                 temper[n + shft_wr] = execFunc(temper[fwd+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd]);
+//             }
+//             else
+//             {
+//                 temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd]);
+//             }
+//         }
+//     }
+// }
+//
+// //The host routine.
 double
 sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
-    const int cpu, REAL4 *IC, REAL4 *T_f)
+    const int cpu, REALfour *IC, REALfour *T_f)
 {
-    const size_t smem1 = 2*tpb*sizeof(REAL4);
-    const size_t smem2 = (2*tpb+4)*sizeof(REAL4);
+
+    const size_t smem1 = 2*tpb*sizeof(REALfour);
+    const size_t smem2 = (2*tpb+4)*sizeof(REALfour);
 
     int indices[4][tpb];
     for (int k = 0; k<tpb; k++)
@@ -603,17 +619,17 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
         indices[3][k] = (tpb - 1) + ((k/2 & 1) * tpb) + (k & 1) -  k/2;
     }
 
-    REAL *tmpr;
-    tmpr = (REAL*)malloc(smem2);
-	REAL *d_IC, *d_right, *d_left;
-    REAL right[tpb], left[tpb];
+    REALfour *tmpr;
+    tmpr = (REALfour*)malloc(smem2);
+	REALfour *d_IC, *d_right, *d_left;
+    REALfour right[tpb], left[tpb];
 
-	cudaMalloc((void **)&d_IC, sizeof(REAL4)*dv);
-	cudaMalloc((void **)&d_right, sizeof(REAL4)*dv);
-	cudaMalloc((void **)&d_left, sizeof(REAL4)*dv);
+	cudaMalloc((void **)&d_IC, sizeof(REALfour)*dv);
+	cudaMalloc((void **)&d_right, sizeof(REALfour)*dv);
+	cudaMalloc((void **)&d_left, sizeof(REALfour)*dv);
 
 	// Copy the initial conditions to the device array.
-	cudaMemcpy(d_IC,IC,sizeof(REAL4)*dv,cudaMemcpyHostToDevice);
+	cudaMemcpy(d_IC,IC,sizeof(REALfour)*dv,cudaMemcpyHostToDevice);
 	// Start the counter and start the clock.
 	const double t_fullstep = dt*(double)tpb;
 
@@ -624,78 +640,78 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
 	// Call the kernels until you reach the iteration limit.
     // Done now juse use streams or omp to optimize.
 
-    if (cpu)
-    {
-        t_eq = t_fullstep/2;
-        omp_set_num_threads( 2 );
-
-    	while(t_eq < t_end)
-    	{
-
-            #pragma omp parallel sections
-            {
-            #pragma omp section
-            {
-                cudaMemcpy(right,d_left,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
-                cudaMemcpy(left,d_right+dv-tpb,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
-
-                for (int k = 0; k<tpb; k++)
-                {
-                    tmpr[indices[0][k]] = right[k];
-                    tmpr[indices[1][k]] = left[k];
-                }
-
-                CPU_diamond(tmpr, tpb);
-
-                for (int k = 0; k<tpb; k++)
-                {
-                    right[k] = tmpr[indices[2][k]];
-                    left[k] = tmpr[indices[3][k]];
-                }
-            }
-            #pragma omp section
-            {
-                wholeDiamond <<< bks-1,tpb,smem2 >>>(d_right,d_left,false);
-                cudaMemcpy(d_right, right, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
-                cudaMemcpy(d_left, left, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
-            }
-            }
-
-            wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,true);
-
-		    //So it always ends on a left pass since the down triangle is a right pass.
-
-		    t_eq += t_fullstep;
-
-    		/* Since the procedure does not store the temperature values, the user
-    		could input some time interval for which they want the temperature
-    		values and this loop could copy the values over from the device and
-    		write them out.  This way the user could see the progression of the
-    		solution over time, identify an area to be investigated and re-run a
-    		shorter version of the simulation starting with those intiial conditions.
-
-    		-------------------------------------
-    	 	if (true)
-    		{
-    			downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
-    			cudaMemcpy(T_final, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
-    			fwr << t_eq << " ";
-
-    			for (int k = 0; k<dv; k++)
-    			{
-    					fwr << T_final.x[k] << " ";
-    			}
-    				fwr << endl;
-
-    			upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
-    			wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,-1);
-    		}
-    		-------------------------------------
-    		*/
-        }
-	}
-    else
-    {
+    // if (cpu)
+    // {
+    //     t_eq = t_fullstep/2;
+    //     omp_set_num_threads( 2 );
+    //
+    // 	while(t_eq < t_end)
+    // 	{
+    //
+    //         #pragma omp parallel sections
+    //         {
+    //         #pragma omp section
+    //         {
+    //             cudaMemcpy(right,d_left,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
+    //             cudaMemcpy(left,d_right+dv-tpb,tpb*sizeof(REAL),cudaMemcpyDeviceToHost);
+    //
+    //             for (int k = 0; k<tpb; k++)
+    //             {
+    //                 tmpr[indices[0][k]] = right[k];
+    //                 tmpr[indices[1][k]] = left[k];
+    //             }
+    //
+    //             CPU_diamond(tmpr, tpb);
+    //
+    //             for (int k = 0; k<tpb; k++)
+    //             {
+    //                 right[k] = tmpr[indices[2][k]];
+    //                 left[k] = tmpr[indices[3][k]];
+    //             }
+    //         }
+    //         #pragma omp section
+    //         {
+    //             wholeDiamond <<< bks-1,tpb,smem2 >>>(d_right,d_left,false);
+    //             cudaMemcpy(d_right, right, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
+    //             cudaMemcpy(d_left, left, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
+    //         }
+    //         }
+    //
+    //         wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,true);
+    //
+	// 	    //So it always ends on a left pass since the down triangle is a right pass.
+    //
+	// 	    t_eq += t_fullstep;
+    //
+    // 		/* Since the procedure does not store the temperature values, the user
+    // 		could input some time interval for which they want the temperature
+    // 		values and this loop could copy the values over from the device and
+    // 		write them out.  This way the user could see the progression of the
+    // 		solution over time, identify an area to be investigated and re-run a
+    // 		shorter version of the simulation starting with those intiial conditions.
+    //
+    // 		-------------------------------------
+    // 	 	if (true)
+    // 		{
+    // 			downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
+    // 			cudaMemcpy(T_final, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+    // 			fwr << t_eq << " ";
+    //
+    // 			for (int k = 0; k<dv; k++)
+    // 			{
+    // 					fwr << T_final.x[k] << " ";
+    // 			}
+    // 				fwr << endl;
+    //
+    // 			upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
+    // 			wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,-1);
+    // 		}
+    // 		-------------------------------------
+    // 		*/
+    //     }
+	// }
+    // else
+    // {
         splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
         t_eq = t_fullstep;
 
@@ -728,11 +744,11 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
             -------------------------------------
             */
         }
-    }
+    //}
 
 	downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
 
-	cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+	cudaMemcpy(T_f, d_IC, sizeof(REALfour)*dv, cudaMemcpyDeviceToHost);
 
 	cudaFree(d_IC);
 	cudaFree(d_right);
@@ -743,6 +759,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
 
 int main( int argc, char *argv[] )
 {
+    using namespace std;
 	if (argc != 6)
 	{
 		cout << "The Program takes five inputs: #Divisions, #Threads/block, dt, finish time, and GPU/CPU or all GPU" << endl;
@@ -751,19 +768,29 @@ int main( int argc, char *argv[] )
 	// Choose the GPGPU.  This is device 0 in my machine which has 2 devices.
 	cudaSetDevice(0);
 
-
+    REALfour bd[2];
+    bd[0].x = 1.0; //Density
+    bd[1].x = 0.125;
+    bd[0].y = 0.0; //Velocity
+    bd[1].y = 0.0;
+    bd[0].w = 1.0; //Pressure
+    bd[1].w = 0.1;
+    bd[0].z = bd[0].w/m_gamma; //Energy
+    bd[1].z = bd[1].w/m_gamma;
 
     //Declare the dimensions in constant memory.
-    REAL3 dimz;
-    dimz.x = atof(argv[3])/dx; // dt/dx
-    dimz.y = gamma; dimz.z = m_gamma;
 
-    int dv = atoi(argv[1]); //Number of spatial points
+    const REAL dt = atof(argv[3]);
+    const int dv = atoi(argv[1]); //Number of spatial points
 	const int tpb = atoi(argv[2]); //Threads per Blocks
-	const int tf = atoi(argv[4]); //Finish time
+	const float tf = atof(argv[4]); //Finish time
 	const int bks = dv/tpb; //The number of blocks
 	const int tst = atoi(argv[5]);
     REAL lx = dx*((float)dv-1.f);
+
+    REALthree dimz;
+    dimz.x = dt/dx; // dt/dx
+    dimz.y = gam; dimz.z = m_gamma;
 
 	//Conditions for main input.  Unit testing kinda.
 	//dv and tpb must be powers of two.  dv must be larger than tpb and divisible by
@@ -777,14 +804,21 @@ int main( int argc, char *argv[] )
     }
 
 	// Initialize arrays.
-    IC = (REAL4*)malloc(dv*sizeof(float4));
-	T_final = (REAL4*)malloc(dv*sizeof(float4));
+    REALfour *IC = (REALfour*)malloc(dv*sizeof(float4));
+	REALfour *T_final = (REALfour*)malloc(dv*sizeof(float4));
 
 	// Some initial condition for the bar temperature, an exponential decay
 	// function.
 	for (int k = 0; k<dv; k++)
 	{
-		initFun(k, dv, IC[k]);
+        if (k<dv/2)
+        {
+            IC[k] = bd[0];
+        }
+        else
+        {
+            IC[k] = bd[1];
+        }
 	}
 
 	// Call out the file before the loop and write out the initial condition.
@@ -793,19 +827,20 @@ int main( int argc, char *argv[] )
 	ftime.open("Results/Euler1D_Timing.txt",ios::app);
 	// Write out x length and then delta x and then delta t.
 	// First item of each line is timestamp.
-	fwr << lx << " " << dv << " " << ds << " " << endl << 0 << " ";
+	fwr << lx << " " << dv << " " << dx << " " << endl << 0 << " ";
 
 	for (int k = 0; k<dv; k++)
 	{
-		fwr << IC[k] << " ";
+		fwr << IC[k].x << " ";
+
 	}
 
 	fwr << endl;
 
     //Transfer data to GPU.
 	// This puts the Fourier number in constant memory.
-	cudaMemcpyToSymbol(dimens,&dimz,sizeof(REAL3));
-    cudaMemcpyToSymbol(dbd,&bd,2*sizeof(REAL4));
+	cudaMemcpyToSymbol(dimens,&dimz,sizeof(REALthree));
+    cudaMemcpyToSymbol(dbd,&bd,2*sizeof(REALfour));
 
 	// This initializes the device arrays on the device in global memory.
 	// They're all the same size.  Conveniently.
@@ -820,7 +855,33 @@ int main( int argc, char *argv[] )
     // Call the kernels until you reach the iteration limit.
 	double tfm;
 
-	tfm = sweptWrapper(bks,tpb,dv,dt,tf,tst,IC,T_final);
+    //--------TEST-----------
+
+     REALfour *d_IC, *d_temp;
+
+    cudaMalloc((void **)&d_IC, sizeof(REALfour)*dv);
+	cudaMalloc((void **)&d_temp, sizeof(REALfour)*dv);
+
+	// Copy the initial conditions to the device array.
+	cudaMemcpy(d_IC,IC,sizeof(REALfour)*dv,cudaMemcpyHostToDevice);
+
+    tfm = 0.0;
+
+    while (tfm < tf)
+    {
+
+        classicDisc <<< bks,tpb >>> (d_IC,d_temp);
+        tfm += dt;
+
+    }
+
+    cudaMemcpy(T_final, d_IC, sizeof(REALfour)*dv, cudaMemcpyDeviceToHost);
+    cudaFree(d_IC);
+    cudaFree(d_temp);
+
+    //--------TEST-----------
+
+	//tfm = sweptWrapper(bks,tpb,dv,dt,tf,tst,IC,T_final);
 
 	// Show the time and write out the final condition.
 	cudaEventRecord(stop, 0);
@@ -838,16 +899,28 @@ int main( int argc, char *argv[] )
 	fwr << tfm << " ";
 	for (int k = 0; k<dv; k++)
 	{
-		fwr << Tfin_p[k] << " ";
+		fwr << T_final[k].x << " ";
 	}
+
+    fwr << endl;
+
+    fwr << tfm << " ";
+	for (int k = 0; k<dv; k++)
+	{
+		fwr << T_final[k].w << " ";
+	}
+
 
 	fwr.close();
 
 	// Free the memory and reset the device.
+	cudaDeviceSynchronize();
 
 	cudaEventDestroy( start );
 	cudaEventDestroy( stop );
     cudaDeviceReset();
+    free(IC);
+    free(T_final);
 
 	return 0;
 
