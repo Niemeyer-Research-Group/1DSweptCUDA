@@ -20,7 +20,7 @@ master = Tk()
 master.geometry("400x400")
 
 variable = StringVar(master)
-variable.set(OPTIONS[2]) # default value
+variable.set(OPTIONS[0]) # default value
 
 w = apply(OptionMenu, (master, variable) + tuple(OPTIONS))
 w.pack()
@@ -41,13 +41,18 @@ fname = variable.get()
 
 execut = "./bin/"+fname+"Out"
 
-div = 128
-bks = 64
-dt = .02
-tf = .04
+div = 1024
+bks = 128
+dt = .005
+tf = 1000
 tst = 0
 
 execstr = execut +  ' {0} {1} {2} {3} {4}'.format(div,bks,dt,tf,tst)
+
+if fname[0] == 'K':
+    tfreq = tf/2.5
+    execstr = execstr + ' {}'.format(tfreq)
+
 exeStr = shlex.split(execstr)
 proc = sp.Popen(exeStr)
 sp.Popen.wait(proc)
@@ -60,22 +65,21 @@ for line in fin:
     ar = [float(n) for n in line.split()]
 
     if len(ar)<50:
-        xax = np.linspace(0,ar[0],ar[1])
+        xax = np.linspace(0,1,ar[1])
     else:
         data.append(ar)
 
-
-print "Percent Difference in integrals:"
-df = 100*abs(np.trapz(data[0][1:],xax)-np.trapz(data[1][1:],xax))/np.trapz(data[0][1:],xax)
-print df
+df = 100*abs(np.trapz(data[0][1:],xax)-np.trapz(data[-1][1:],xax))/abs(np.trapz(data[0][1:],xax))
+print "Percent Difference in integrals: {}".format(df)
 
 lbl = ["Initial Condition"]
 
 plt.plot(xax,data[0][1:])
-plt.hold
+plt.hold(True)
 for k in range(1,len(data)):
     plt.plot(xax,data[k][1:])
     lbl.append("t = {} seconds".format(data[k][0]))
+    plt.hold(True)
 
 
 plt.legend(lbl)
