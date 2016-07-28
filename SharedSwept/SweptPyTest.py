@@ -8,7 +8,8 @@ import numpy as np
 import subprocess as sp
 import shlex
 import os
-from Tkinter import *
+import Tkinter as Tk
+import pandas as pd
 
 OPTIONS = [
     "KS",
@@ -16,14 +17,14 @@ OPTIONS = [
     "Euler"
 ]
 
-master = Tk()
+master = Tk.Tk()
 
 master.geometry("400x400")
 
-variable = StringVar(master)
+variable = Tk.StringVar(master)
 variable.set(OPTIONS[0]) # default value
 
-w = apply(OptionMenu, (master, variable) + tuple(OPTIONS))
+w = apply(Tk.OptionMenu, (master, variable) + tuple(OPTIONS))
 w.pack()
 
 def ok():
@@ -36,9 +37,9 @@ def on_closing():
     raise SystemExit
 
 master.protocol("WM_DELETE_WINDOW", on_closing)
-button = Button(master, text="OK", command=ok)
+button = Tk.Button(master, text="OK", command=ok)
 button.pack()
-button = Button(master, text="Skip Run", command=skip)
+button = Tk.Button(master, text="Skip Run", command=skip)
 button.pack()
 
 master.mainloop()
@@ -51,14 +52,16 @@ sourcebase = '1D_SweptShared.cu'
 
 sourcepath = os.path.dirname(__file__)
 basepath = os.path.join(sourcepath,'Results')
-ofile = Fname + timeout
-filepath = os.path.abspath(os.path.join(basepath, ofile))
-if os.path.isfile(filepath):
-    os.remove(filepath)
+tfile = Fname + timeout
+t_filepath = os.path.abspath(os.path.join(basepath, tfile))
+
+#Reset timing file.
+if os.path.isfile(t_filepath):
+    os.remove(t_filepath)
 
 div = [2**k for k in range(11,20)]
 blx = [2**k for k in range(5,11)]
-fn = open(filepath,'a+')
+t_fn = open(t_filepath,'a+')
 
 dt = .005
 tf = 1000
@@ -71,8 +74,8 @@ compArg = shlex.split(compStr)
 proc = sp.Popen(compArg)
 sp.Popen.wait(proc)
 print "Compiled ", proc
-fn.write("BlockSize\tXDimSize\tTime\t{0} {1}\n".format(tf,dt))
-fn.close()
+t_fn.write("BlockSize\tXDimSize\tTime\n")
+t_fn.close()
 
 for k in blx:
     for n in div:
@@ -110,3 +113,7 @@ plt.ylabel("Velocity")
 plt.title(Fname + execut[len(ExecL):])
 plt.grid()
 plt.show()
+
+#Timing Show
+times = pd.read_table(t_filepath)
+ 

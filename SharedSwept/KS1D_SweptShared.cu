@@ -84,10 +84,8 @@ REAL convect(REAL tLeft, REAL tRight)
 __host__ __device__
 REAL stutterStep(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tRight, REAL tfarRight)
 {
-
 	return tCenter - disc.dt_half * (convect(tLeft, tRight) + secondDer(tLeft, tRight, tCenter) +
 		fourthDer(tfarLeft, tLeft, tCenter, tRight, tfarRight));
-
 }
 
 __host__ __device__
@@ -216,6 +214,7 @@ downTriangle(REAL *IC, REAL *right, REAL *left)
 
     IC[gid] = temper[tididx];
 }
+
 
 // Pass to split is false.  Pass to whole is true.
 __global__
