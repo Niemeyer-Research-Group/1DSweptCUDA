@@ -66,7 +66,6 @@ limitor(REALthree cvCurrent, REALthree cvOther, REAL pRatio)
     {
         return make_float4(cvCurrent);
     }
-
 }
 
 //Left and Center then Left and right.

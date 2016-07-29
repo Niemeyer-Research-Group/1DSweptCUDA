@@ -11,6 +11,7 @@ import os
 import Tkinter as Tk
 import pandas as pd
 
+
 OPTIONS = [
     "KS",
     "Heat",
@@ -44,6 +45,8 @@ button.pack()
 
 master.mainloop()
 
+## -------Tkinter End----------
+
 Fname = variable.get()
 
 timeout = '1D_Timing.txt'
@@ -69,11 +72,14 @@ tst = 1
 
 ExecL = './bin/' + Fname + 'Out'
 
-compStr = 'nvcc -o ' + ExecL + ' ' + Fname + sourcebase + ' -gencode arch=compute_35,code=sm_35 -lm -Xcompiler -fopenmp -w -std=c++11'
-compArg = shlex.split(compStr)
-proc = sp.Popen(compArg)
-sp.Popen.wait(proc)
-print "Compiled ", proc
+# There will be a button for compile it or not.
+if False:
+    compStr = 'nvcc -o ' + ExecL + ' ' + Fname + sourcebase + ' -gencode arch=compute_35,code=sm_35 -lm -Xcompiler -fopenmp -w -std=c++11'
+    compArg = shlex.split(compStr)
+    proc = sp.Popen(compArg)
+    sp.Popen.wait(proc)
+    print "Compiled "
+
 t_fn.write("BlockSize\tXDimSize\tTime\n")
 t_fn.close()
 
@@ -115,5 +121,9 @@ plt.grid()
 plt.show()
 
 #Timing Show
-times = pd.read_table(t_filepath)
- 
+times = pd.read_table(t_filepath, delim_whitespace = True)
+headers = times.columns.values.tolist()
+time_split = times.pivot(headers[0],headers[1],headers[2])
+time_split.plot(logx = True, grid = True)
+plt.ylabel('Time (s)')
+plt.title(Fname + 'for ' + str(tf/dt) + ' timesteps')
