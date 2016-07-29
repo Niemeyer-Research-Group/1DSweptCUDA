@@ -39,6 +39,7 @@ __constant__ REALfour dbd[2];
 __constant__ REALthree dimens;
 
 __device__
+__forceinline__
 void
 pressure(REALfour current)
 {
@@ -48,14 +49,11 @@ pressure(REALfour current)
 //This will need to return the ratio to the execFunc
 
 __device__
+__forceinline__
 REAL
-pressureRatio(REALfour cvLeft, REALfour cvRight, REALfour cvCenter)
+pressureRatio(REAL cvLeft, REAL cvCenter, REAL cvRight)
 {
-    pressure(cvCenter);
-    pressure(cvRight);
-    pressure(cvLeft);
-
-    return (cvRight.w - cvCenter.w)/(cvCenter.w - cvLeft.w);
+    return (cvRight- cvCenter)/(cvCenter- cvLeft);
 }
 
 
@@ -76,11 +74,7 @@ limitor(REALthree cvCurrent, REALthree cvOther, REAL pRatio)
 
 }
 
-
-
 //Left and Center then Left and right.
-
-
 __device__
 void
 eulerFlux(REALfour cvLeft, REALfour cvRight, REALthree flux)
@@ -111,48 +105,60 @@ eulerFlux(REALfour cvLeft, REALfour cvRight, REALthree flux)
 
 
 __device__
- void
- eulerStep(REALfour stateLeft, REALfour stateRight, REALfour stateCenter)
+REALfour
+eulerStutterStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfour stateRight, REAL pfarRight)
 {
-    REALthree fluxL, fluxR;
-    REAL pR = pressureRatio(stateLeft,stateRight,stateCenter);
+    REALthree fluxL, fluxR, pR;
     REALfour tempStateLeft, tempStateRight;
 
-    tempStateLeft = limitor(make_float3(stateLeft), make_float3(stateCenter), pR);
-    tempStateRight = limitor(make_float3(stateCenter), make_float3(stateLeft), 1.0/pR);
+    pR = make_float3(pressureRatio(pfarLeft,stateLeft.w,stateCenter.w),
+        pressureRatio(stateLeft.w,stateCenter.w,stateRight.w),
+        pressureRatio(stateCenter.w,stateRight.w,pfarRight));
+
+    tempStateLeft = limitor(make_float3(stateLeft), make_float3(stateCenter), pR.x);
+    tempStateRight = limitor(make_float3(stateCenter), make_float3(stateLeft), 1.0/pR.y);
     pressure(tempStateLeft);
     pressure(tempStateRight);
     eulerFlux(tempStateLeft,tempStateRight,fluxL);
 
-    tempStateLeft = limitor(make_float3(stateCenter), make_float3(stateRight), pR);
-    tempStateRight = limitor(make_float3(stateRight), make_float3(stateCenter), 1.0/pR);
+    tempStateLeft = limitor(make_float3(stateCenter), make_float3(stateRight), pR.y);
+    tempStateRight = limitor(make_float3(stateRight), make_float3(stateCenter), 1.0/pR.z);
     pressure(tempStateLeft);
     pressure(tempStateRight);
     eulerFlux(tempStateLeft,tempStateRight,fluxR);
 
-
-    //printf("FluxL: %.8f %.8f %.8f \t FluxR: %.8f %.8f %.8f \n",fluxL.x,fluxL.y, fluxL.z, fluxR.x, fluxR.y, fluxR.z);
-
     stateCenter += make_float4(0.5 * dimens.x * (fluxL-fluxR));
-    pressure(stateCenter);
+    return pressure(stateCenter);
 
 }
 
-
-__device__
-REALfour
-execFunc(REALfour stateLeft, REALfour stateRight, REALfour stateCenter)
+eulerFinalStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REAL stateCenter_orig REALfour stateRight, REAL pfarRight)
 {
+    REALthree fluxL, fluxR, pR;
+    REALfour tempStateLeft, tempStateRight;
 
-    eulerStep(stateLeft,stateRight,stateCenter);
-    __syncthreads();
-    eulerStep(stateLeft,stateRight,stateCenter);
-    return stateCenter;
+    pR = make_float3(pressureRatio(pfarLeft,stateLeft.w,stateCenter.w),
+        pressureRatio(stateLeft.w,stateCenter.w,stateRight.w),
+        pressureRatio(stateCenter.w,stateRight.w,pfarRight));
+
+    tempStateLeft = limitor(make_float3(stateLeft), make_float3(stateCenter), pR.x);
+    tempStateRight = limitor(make_float3(stateCenter), make_float3(stateLeft), 1.0/pR.y);
+    pressure(tempStateLeft);
+    pressure(tempStateRight);
+    eulerFlux(tempStateLeft,tempStateRight,fluxL);
+
+    tempStateLeft = limitor(make_float3(stateCenter), make_float3(stateRight), pR.y);
+    tempStateRight = limitor(make_float3(stateRight), make_float3(stateCenter), 1.0/pR.z);
+    pressure(tempStateLeft);
+    pressure(tempStateRight);
+    eulerFlux(tempStateLeft,tempStateRight,fluxR);
+
+    stateCenter_orig += make_float4(dimens.x * (fluxL-fluxR));
+    return pressure(stateCenter_orig);
 
 }
 
-//-----------For testing --------------
-//
+
 __global__
 void
 classicDisc(REALfour *IC, REALfour *temp)
@@ -190,31 +196,49 @@ upTriangle(REALfour *IC, REALfour *right, REALfour *left)
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tid = threadIdx.x; //Block Thread ID
-    int tidp = tid + 1;
-	int tidm = tid - 1;
-	int shft_wr; //Initialize the shift to the written row of temper.
-	int shft_rd; //Initialize the shift to the read row (opposite of written)
-	int leftidx = tid/2 + ((tid/2 & 1) * blockDim.x) + (tid & 1);
-	int rightidx = (blockDim.x - 2) + ((tid/2 & 1) * blockDim.x) + (tid & 1) -  tid/2;
 
-    //Assign the initial values to the first row in temper, each warp (in this
-	//case each block) has it's own version of temper shared among its threads.
+    int tid_top[5], tid_bottom[5];
+	#pragma unroll
+	for (int k = -2; k<3; k++)
+	{
+		tid_top[k+2] = tid + k + blockDim.x;
+		tid_bottom[k+2] = tid + k;
+	}
+
+	int leftidx = ((tid/4 & 1) * blockDim.x) + (tid/4)*2 + (tid & 3);
+	int rightidx = (blockDim.x - 4) + ((tid/4 & 1) * blockDim.x) + (tid & 3) - (tid/4)*2;
+
+	int step2;
+
+    //Assign the initial values to the first row in temper, each block
+    //has it's own version of temper shared among its threads.
 	temper[tid] = IC[gid];
 
-	//The initial conditions are timslice 0 so start k at 1.
-
-	for (int k = 1; k<(blockDim.x/2); k++)
+	if (tid > 1 && tid <(blockDim.x-2))
 	{
-		//Bitwise even odd. On even iterations write to first row.
-		shft_wr = blockDim.x * (k & 1);
-		//On even iterations write to second row (starts at element 32)
-		shft_rd = blockDim.x * ((k + 1) & 1);
+		temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w, temper[tid_bottom[1]], temper[tid_bottom[2]],
+			temper[tid_bottom[3]], temper[tid_bottom[4]].w);
+	}
 
-		//Each iteration the triangle narrows.  When k = 1, 30 points are
-		//computed, k = 2, 28 points.
+	__syncthreads();
+
+	//The initial conditions are timslice 0 so start k at 1.
+	for (int k = 4; k<(blockDim.x/2); k+=4)
+	{
 		if (tid < (blockDim.x-k) && tid >= k)
 		{
-			temper[tid + shft_wr] = execFunc(temper[tidm+shft_rd], temper[tidp+shft_rd], temper[tid+shft_rd]);
+			temper[tid] = eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
+				temper[tid], temper[tid_top[3]], temper[tid_top[4]].w);
+
+		}
+
+		step2 = k + 2;
+		__syncthreads();
+
+		if (tid < (blockDim.x-step2) && tid >= step2)
+		{
+			temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w, temper[tid_bottom[1]], temper[tid_bottom[2]],
+				temper[tid_bottom[3]], temper[tid_bottom[4]].w);
 		}
 
 		//Make sure the threads are synced
@@ -228,6 +252,7 @@ upTriangle(REALfour *IC, REALfour *right, REALfour *left)
 	right[gid] = temper[rightidx];
 	left[gid] = temper[leftidx];
 
+
 }
 
 // Down triangle is only called at the end when data is passed left.  It's never split.
@@ -238,58 +263,52 @@ downTriangle(REALfour *IC, REALfour *right, REALfour *left)
 {
 	extern __shared__ REALfour temper[];
 
-	//Same as upTriangle
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
 	int tid = threadIdx.x;
-    int lastidx = ((blockDim.x*gridDim.x)-1);
-	int tid1 = tid + 1;
-	int tid2 = tid + 2;
-	int base = blockDim.x + 2;
+	int tididx = tid + 2;
+	int base = blockDim.x + 4;
 	int height = base/2;
-	int shft_rd;
-	int shft_wr;
-	int leftidx = base/2 - tid/2 + ((tid/2 & 1) * base) + (tid & 1) - 2;
-	int rightidx = base/2 + tid/2 + ((tid/2 & 1) * base) + (tid & 1);
-	int gidin = (gid + blockDim.x) & lastidx;
+	int step2;
 
-	// Initialize temper. Kind of an unrolled for loop.  This is actually at
-	// Timestep 0.
+	int tid_top[5], tid_bottom[5];
+	#pragma unroll
+	for (int k = -2; k<3; k++)
+	{
+		tid_top[k+2] = tididx + k + base;
+		tid_bottom[k+2] = tididx + k;
+	}
+
+	int leftidx = height + ((tid/4 & 1) * base) + (tid & 3) - (4 + (tid/4) * 2);
+	int rightidx = height + ((tid/4 & 1) * base) + (tid/4)*2 + (tid & 3);
+	int gidin = (gid + blockDim.x) & ((blockDim.x*gridDim.x)-1);
 
 	temper[leftidx] = right[gid];
 	temper[rightidx] = left[gidin];
 
-    //k needs to insert the relevant left right values around the computed values
-	//every timestep.  Since it grows larger the loop is reversed.
-
-	for (int k = height-1; k>1; k--)
+	for (int k = (height-2); k>0; k-=4)
 	{
-		// This tells you if the current row is the first or second.
-		shft_wr = base * ((k+1) & 1);
-		// Read and write are opposite rows.
-		shft_rd = base * (k & 1);
-
-		if (tid1 < (base-k) && tid1 >= k)
+		if (tididx < (base-k) && tididx >= k)
 		{
-			temper[tid1 + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
+			temper[tid_top[2]] = stutterStep(temper[tid_bottom[0]].x, temper[tid_bottom[1]], temper[tid_bottom[2]],
+				temper[tid_bottom[3]], temper[tid_bottom[4]].x);
+
 		}
-        __syncthreads();
+
+		step2 = k-2;
+
+		if (tididx < (base-step2) && tididx >= step2)
+		{
+			temper[tididx] = finalStep(temper[tid_top[0]].x, temper[tid_top[1]], temper[tid_top[2]],
+				temper[tididx], temper[tid_top[3]], temper[tid_top[4]].x);
+		}
+
+		//Make sure the threads are synced
+		__syncthreads();
 	}
 
-    if (gid == 0)
-    {
-        temper[tid1] = execFunc(temper[tid2+base], temper[tid2+base], temper[tid1+base]);
-    }
-    else if (gid == lastidx)
-    {
-        temper[tid1] = execFunc(temper[tid+base], temper[tid+base], temper[tid1+base]);
-    }
-    else
-    {
-        temper[tid1] = execFunc(temper[tid+base], temper[tid2+base], temper[tid1+base]);
-    }
-
-    IC[gid] = temper[tid1];
+    IC[gid] = temper[tididx];
 }
+
 
 //Full refers to whether or not there is a node run on the CPU.
 __global__
@@ -299,18 +318,23 @@ wholeDiamond(REALfour *right, REALfour *left, bool full)
 
     extern __shared__ REALfour temper[];
 
-	//Same as upTriangle
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
 	int tid = threadIdx.x;
-    int lastidx = ((blockDim.x*gridDim.x)-1);
-	int tid1 = tid + 1;
-	int tid2 = tid + 2;
-	int base = blockDim.x + 2;
+	int tididx = tid + 2;
+	int base = blockDim.x + 4;
 	int height = base/2;
-	int shft_rd;
-	int shft_wr;
-	int leftidx = height - tid/2 + ((tid/2 & 1) * base) + (tid & 1) - 2;
-	int rightidx = height + tid/2 + ((tid/2 & 1) * base) + (tid & 1);
+	int step2;
+
+	int tid_top[5], tid_bottom[5];
+	#pragma unroll
+	for (int k = -2; k<3; k++)
+	{
+		tid_top[k+2] = tididx + k + base;
+		tid_bottom[k+2] = tididx + k;
+	}
+
+	int leftidx = height + ((tid/4 & 1) * base) + (tid & 3) - (4 + (tid/4) * 2);
+	int rightidx = height + ((tid/4 & 1) * base) + (tid/4)*2 + (tid & 3);
 	// Initialize temper. Kind of an unrolled for loop.  This is actually at
 	// Timestep 0.
 
@@ -327,21 +351,28 @@ wholeDiamond(REALfour *right, REALfour *left, bool full)
         temper[rightidx] = left[gid];
     }
 
-	for (int k = (height-1); k>1; k--)
+    for (int k = (height-2); k>0; k-=4)
 	{
-        // This tells you if the current row is the first or second.
-		shft_wr = base * ((k+1) & 1);
-		// Read and write are opposite rows.
-		shft_rd = base * (k & 1);
-
-        if (tid1 < (base-k) && tid1 >= k)
+		if (tididx < (base-k) && tididx >= k)
 		{
-			temper[tid1 + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
+			temper[tid_top[2]] = stutterStep(temper[tid_bottom[0]].x, temper[tid_bottom[1]], temper[tid_bottom[2]],
+				temper[tid_bottom[3]], temper[tid_bottom[4]].x);
+
 		}
-        __syncthreads();
+
+		step2 = k-2;
+
+		if (tididx < (base-step2) && tididx >= step2)
+		{
+			temper[tididx] = finalStep(temper[tid_top[0]].x, temper[tid_top[1]], temper[tid_top[2]],
+				temper[tididx], temper[tid_top[3]], temper[tid_top[4]].x);
+		}
+
+		//Make sure the threads are synced
+		__syncthreads();
 	}
 
-    //Boundary Conditions!
+    //Boundary Conditions! This justifies it.
     if (full)
     {
         if (gid == 0)
@@ -366,12 +397,20 @@ wholeDiamond(REALfour *right, REALfour *left, bool full)
 
     // Then make sure each block of threads are synced.
 
-    //-------------------TOP PART------------------------------------------
+    // -------------------TOP PART------------------------------------------
 
-    leftidx = tid/2 + ((tid/2 & 1) * base) + (tid & 1);
-    rightidx = (base - 4) + ((tid/2 & 1) * base) + (tid & 1) -  tid/2;
 
-    int tidm = tid - 1;
+
+    int leftidx = ((tid/4 & 1) * blockDim.x) + (tid/4)*2 + (tid & 3);
+	int rightidx = (blockDim.x - 4) + ((tid/4 & 1) * blockDim.x) + (tid & 3) - (tid/4)*2;
+
+    #pragma unroll
+    for (int k = -2; k<3; k++)
+    {
+        tid_top[k+2] = tid + k + blockDim.x;
+        tid_bottom[k+2] = tid + k;
+    }
+
 
 	//The initial conditions are timeslice 0 so start k at 1.
 
@@ -608,7 +647,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
 {
 
     const size_t smem1 = 2*tpb*sizeof(REALfour);
-    const size_t smem2 = (2*tpb+4)*sizeof(REALfour);
+    const size_t smem2 = (2*tpb+8)*sizeof(REALfour);
 
     int indices[4][tpb];
     for (int k = 0; k<tpb; k++)
