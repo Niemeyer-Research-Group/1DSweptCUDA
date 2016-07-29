@@ -18,7 +18,7 @@
 //Write the ability to pull out time snapshots.
 //The ability to feed in initial conditions.
 //Input paths to output as argc?  Input?
-//Ask about just making up my own conventions.  Like dat vs txt.  Use that as flag?
+//Ask about just making up my own conventions.  Like .dat vs txt.  Use that as flag?
 
 #include <cuda.h>
 #include <cuda_runtime_api.h>
@@ -214,7 +214,6 @@ downTriangle(REAL *IC, REAL *right, REAL *left)
 
     IC[gid] = temper[tididx];
 }
-
 
 // Pass to split is false.  Pass to whole is true.
 __global__

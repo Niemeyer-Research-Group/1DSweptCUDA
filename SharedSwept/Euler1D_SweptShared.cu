@@ -12,9 +12,6 @@
 #include <cuda_runtime_api.h>
 #include <cuda_runtime.h>
 #include <device_functions.h>
-#include <vector_types.h>
-#include <helper_math.h>
-#include <math_functions.h>
 
 #include <ostream>
 #include <iostream>
@@ -26,14 +23,13 @@
 
 //#include "SwR_1DShared.h"
 
-
 #define REAL        float
 #define REALfour    float4
 #define REALthree   float3
 
-const REAL gam = 1.4f;
-const REAL m_gamma = .4;
-const REAL dx = .5;
+const REAL gam = 1.4;
+const REAL m_gamma = 0.4;
+const REAL dx = 0.5;
 
 __constant__ REALfour dbd[2];
 __constant__ REALthree dimens;
@@ -55,7 +51,6 @@ pressureRatio(REAL cvLeft, REAL cvCenter, REAL cvRight)
 {
     return (cvRight- cvCenter)/(cvCenter- cvLeft);
 }
-
 
 __device__
 REALfour
@@ -309,7 +304,6 @@ downTriangle(REALfour *IC, REALfour *right, REALfour *left)
     IC[gid] = temper[tididx];
 }
 
-
 //Full refers to whether or not there is a node run on the CPU.
 __global__
 void
@@ -351,13 +345,24 @@ wholeDiamond(REALfour *right, REALfour *left, bool full)
         temper[rightidx] = left[gid];
     }
 
+    __syncthreads();
+
+    //Well it can't JUST be 0.  I don't know how to do the boundary conditions.
+    if (gid == 0)
+    {
+        temper[base] = 0;
+    }
+    else if (gid == lastidx)
+    {
+        temper[2*base-1] = 0;
+    }
+
     for (int k = (height-2); k>0; k-=4)
 	{
 		if (tididx < (base-k) && tididx >= k)
 		{
 			temper[tid_top[2]] = stutterStep(temper[tid_bottom[0]].x, temper[tid_bottom[1]], temper[tid_bottom[2]],
 				temper[tid_bottom[3]], temper[tid_bottom[4]].x);
-
 		}
 
 		step2 = k-2;
@@ -372,34 +377,12 @@ wholeDiamond(REALfour *right, REALfour *left, bool full)
 		__syncthreads();
 	}
 
-    //Boundary Conditions! This justifies it.
-    if (full)
-    {
-        if (gid == 0)
-        {
-            temper[tid] = execFunc(temper[tid2+base], temper[tid2+base], temper[tid1+base]);
-        }
-        else if (gid == lastidx)
-        {
-            temper[tid] = execFunc(temper[tid+base], temper[tid+base], temper[tid1+base]);
-        }
-        else
-        {
-            temper[tid] = execFunc(temper[tid+base], temper[tid2+base], temper[tid1+base]);
-        }
-    }
-    else
-    {
-        temper[tid] = execFunc(temper[tid+base], temper[tid2+base], temper[tid1+base]);
-    }
 
     __syncthreads();
 
     // Then make sure each block of threads are synced.
 
     // -------------------TOP PART------------------------------------------
-
-
 
     int leftidx = ((tid/4 & 1) * blockDim.x) + (tid/4)*2 + (tid & 3);
 	int rightidx = (blockDim.x - 4) + ((tid/4 & 1) * blockDim.x) + (tid & 3) - (tid/4)*2;
@@ -444,7 +427,6 @@ __global__
 void
 splitDiamond(REALfour *right, REALfour *left)
 {
-
     extern __shared__ REALfour temper[];
 
 	//Same as upTriangle
