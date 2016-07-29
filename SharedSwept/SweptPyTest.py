@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
-# Just writing a plotting script for the Swept rule CUDA.
-# Perhaps this will also be the calling script.
+# A script to test the performance of the algorithm with various
+# x dimension and block sizes
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -21,7 +21,7 @@ master = Tk()
 master.geometry("400x400")
 
 variable = StringVar(master)
-variable.set(OPTIONS[1]) # default value
+variable.set(OPTIONS[0]) # default value
 
 w = apply(OptionMenu, (master, variable) + tuple(OPTIONS))
 w.pack()
@@ -46,7 +46,7 @@ master.mainloop()
 Fname = variable.get()
 
 timeout = '1D_Timing.txt'
-rsltout = '1D_Result.dt'
+rsltout = '1D_Result.dat'
 sourcebase = '1D_SweptShared.cu'
 
 sourcepath = os.path.dirname(__file__)
@@ -56,9 +56,13 @@ filepath = os.path.abspath(os.path.join(basepath, ofile))
 if os.path.isfile(filepath):
     os.remove(filepath)
 
-div = [2**k for k in range(11,14)]
-blx = [32,64,128,256,512,1024]
+div = [2**k for k in range(11,20)]
+blx = [2**k for k in range(5,11)]
 fn = open(filepath,'a+')
+
+dt = .005
+tf = 1000
+tst = 1
 
 ExecL = './bin/' + Fname + 'Out'
 
@@ -67,13 +71,13 @@ compArg = shlex.split(compStr)
 proc = sp.Popen(compArg)
 sp.Popen.wait(proc)
 print "Compiled ", proc
-fn.write("BlockSize\tXDimSize\tTime\n")
+fn.write("BlockSize\tXDimSize\tTime\t{0} {1}\n".format(tf,dt))
 fn.close()
 
 for k in blx:
     for n in div:
         print n,k
-        execut = ExecL + ' {0} {1} {2} {3} {4}'.format(n,k,.01,10000,0)
+        execut = ExecL + ' {0} {1} {2} {3} {4} {5}'.format(n,k,dt,tf,tst,tf*2)
         exeStr = shlex.split(execut)
         proc = sp.Popen(exeStr)
         sp.Popen.wait(proc)
