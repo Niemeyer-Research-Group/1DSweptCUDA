@@ -20,7 +20,7 @@ master = Tk()
 master.geometry("400x400")
 
 variable = StringVar(master)
-variable.set(OPTIONS[0]) # default value
+variable.set(OPTIONS[1]) # default value
 
 w = apply(OptionMenu, (master, variable) + tuple(OPTIONS))
 w.pack()
@@ -45,13 +45,9 @@ div = 1024
 bks = 128
 dt = .005
 tf = 1000
-tst = 0
+tst = 1
 
-execstr = execut +  ' {0} {1} {2} {3} {4}'.format(div,bks,dt,tf,tst)
-
-if fname[0] == 'K':
-    tfreq = tf/2.5
-    execstr = execstr + ' {}'.format(tfreq)
+execstr = execut +  ' {0} {1} {2} {3} {4} {5}'.format(div,bks,dt,tf,tst,tf*2)
 
 exeStr = shlex.split(execstr)
 proc = sp.Popen(exeStr)

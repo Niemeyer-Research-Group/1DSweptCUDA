@@ -6,7 +6,7 @@
 
 
 //COMPILE LINE:
-// nvcc -o ./bin/EulerOut Euler1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -w -std=c++11
+// nvcc -o ./bin/EulerOut Euler1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -w -std=c++11 -Xcompiler -fopenmp
 
 #include <cuda.h>
 #include <cuda_runtime_api.h>

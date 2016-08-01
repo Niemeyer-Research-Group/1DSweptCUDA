@@ -8,7 +8,7 @@
 //Also, we could test putting the whole thing on the GPU here.  So it never leaves shared memory.
 
 //COMPILE LINE!
-// nvcc -o ./bin/KSOut KS1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -w -std=c++11
+// nvcc -o ./bin/KSOut KS1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -w -std=c++11 -Xcompiler -fopenmp
 
 //RUN LINE!
 // ./bin/KSOut 256 2048 .01 10 0
@@ -331,7 +331,8 @@ wholeDiamond(REAL *right, REAL *left, int pass)
 
 //The host routine.
 double
-sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end, REAL *IC, REAL *T_f, const float freq, ofstream &fwr)
+sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
+	REAL *IC, REAL *T_f, const float freq, ofstream &fwr)
 {
 
 	REAL *d_IC, *d_right, *d_left;
