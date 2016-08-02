@@ -43,16 +43,15 @@ execut = "./bin/"+fname+"Out"
 
 div = 1024
 bks = 128
-dt = .005
-tf = 1000
-tst = 1
+dt = 0.02
+tf = 100
+tst = 0
 
 execstr = execut +  ' {0} {1} {2} {3} {4} {5}'.format(div,bks,dt,tf,tst,tf*2)
 
 exeStr = shlex.split(execstr)
 proc = sp.Popen(exeStr)
 sp.Popen.wait(proc)
-
 
 fin = open("Results/" +fname + "1D_Result.dat")
 data = []

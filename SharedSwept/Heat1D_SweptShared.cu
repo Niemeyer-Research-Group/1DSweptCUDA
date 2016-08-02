@@ -741,9 +741,7 @@ int main( int argc, char *argv[] )
     // Call the kernels until you reach the iteration limit.
 	double tfm;
 
-
-    	tfm = sweptWrapper(bks, tpb, dv, dt, tf, tst, IC, T_final, freq, fwr);
-
+    tfm = sweptWrapper(bks, tpb, dv, dt, tf, tst, IC, T_final, freq, fwr);
 
 	// Show the time and write out the final condition.
 	cudaEventRecord(stop, 0);

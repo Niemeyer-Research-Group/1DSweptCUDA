@@ -304,7 +304,6 @@ wholeDiamond(REAL *right, REAL *left, int pass)
 		{
 			temper[tid] = finalStep(temper[tid_top[0]], temper[tid_top[1]], temper[tid_top[2]],
 				temper[tid], temper[tid_top[3]], temper[tid_top[4]]);
-
 		}
 
 		step2 = k+2;
