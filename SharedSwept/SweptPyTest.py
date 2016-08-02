@@ -22,11 +22,41 @@ master = Tk.Tk()
 
 master.geometry("400x400")
 
-variable = Tk.StringVar(master)
-variable.set(OPTIONS[0]) # default value
+problem = Tk.StringVar(master)
+problem.set(OPTIONS[0]) # default value
 
-w = apply(Tk.OptionMenu, (master, variable) + tuple(OPTIONS))
-w.pack()
+comp = Tk.BooleanVar(master)
+comp.set(False)
+
+shared_proc = Tk.BooleanVar(master)
+shared_proc.set(False)
+
+#Should I enter a range for div and blocks?
+arg1 = Tk.IntVar(master)
+arg1.set()
+
+#A Boolean variable for test or not test.
+
+#final time, tf
+arg2 = Tk.IntVar(master)
+arg2.set()
+
+#dt
+arg3 = Tk.DoubleVar(master)
+arg3.set()
+
+#freq
+arg4 = Tk.DoubleVar(master)
+arg4.set()
+
+drop = apply(Tk.OptionMenu, (master, problem) + tuple(OPTIONS))
+drop.pack()
+
+check_one = Tk.Checkbutton(master, text = "Compile? ", variable = comp)
+check_one.pack()
+
+check_two = Tk.Checkbutton(master, text = "CPU/GPU sharing", variable = shared_proc)
+check_two.pack()
 
 def ok():
     master.destroy()
