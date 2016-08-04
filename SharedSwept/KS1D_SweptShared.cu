@@ -1,9 +1,5 @@
-//I just really need to do these versions in one file before I really try to modularize
-//the code.
-
 //K-S involves no splitting.  And clearly a CPU diamond would be a waste.
 //But it does need to pass it back and forth so it needs different passing versions.
-//It would also be fruitful to test out streams on this one.
 //The heat equation requires much more because of the boundary conditions.
 //Also, we could test putting the whole thing on the GPU here.  So it never leaves shared memory.
 

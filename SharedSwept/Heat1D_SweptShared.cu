@@ -191,7 +191,6 @@ wholeDiamond(REAL *right, REAL *left, bool full)
     }
     else
     {
-
         temper[leftidx] = right[gid];
         gid += blockDim.x;
         temper[rightidx] = left[gid];
