@@ -1,53 +1,64 @@
 #Just working on the GUI.
 
 import os
+import sys
 import Tkinter as Tk
 
-OPTIONS = [
-    "KS",
+
+OPTIONS_A = [
+    "Shared",
+    "Registers"
+]
+
+OPTIONS_O = [
+    "Plot Result",
+    "Performance Test"
+]
+
+OPTIONS_P = [
+    "K-S",
     "Heat",
     "Euler"
 ]
 
-master = Tk.Tk()
+def algorithm_choice(alg_sel):
 
-master.geometry("400x400")
+    op_sel = Tk.StringVar(master)
+    op_sel.set(OPTIONS_O[0]) # default value
 
-problem = Tk.StringVar(master)
-problem.set(OPTIONS[0]) # default value
 
-comp = Tk.BooleanVar(master)
-comp.set(False)
 
-shared_proc = Tk.BooleanVar(master)
-shared_proc.set(False)
+    def operation_choice(op_sel):
 
-#Should I enter a range for div and blocks?
-arg1 = Tk.IntVar(master)
-arg1.set(1)
+        prob_sel = Tk.StringVar(master)
+        prob_sel.set(OPTIONS_P[0]) # default value
+        problem_choice(prob_sel)
 
-#A Boolean variable for test or not test.
+        def problem_choice(prob_sel):
 
-#final time, tf
-arg2 = Tk.IntVar(master)
-arg2.set(2)
+            shared_proc = Tk.BooleanVar(master)
+            shared_proc.set(False)
 
-#dt
-arg3 = Tk.DoubleVar(master)
-arg3.set(2.0)
+            if prob_sel == "K-S":
+                checkme = "Hi"
 
-#freq
-arg4 = Tk.DoubleVar(master)
-arg4.set(2.0)
+            elif prob_sel == "Heat":
+                check_two = Tk.Checkbutton(master, text = "CPU/GPU sharing", variable = shared_proc)
+                check_two.pack(side = 'left')
 
-drop = apply(Tk.OptionMenu, (master, problem) + tuple(OPTIONS))
-drop.pack()
+            else:
+                check_two = Tk.Checkbutton(master, text = "CPU/GPU sharing", variable = shared_proc)
+                check_two.pack(side = 'left')
 
-check_one = Tk.Checkbutton(master, text = "Compile? ", variable = comp)
-check_one.pack(side = 'left')
+            print prob_sel, alg_sel, op_sel
 
-check_two = Tk.Checkbutton(master, text = "CPU/GPU sharing", variable = shared_proc)
-check_two.pack(side = 'right')
+        problem_choice(prob_sel)
+
+        problem_menu = Tk.OptionMenu(master, prob_sel , *OPTIONS_P, command = problem_choice)
+        problem_menu.pack()
+
+    op_menu = Tk.OptionMenu(master, op_sel, *OPTIONS_O, command = operation_choice)
+    op_menu.pack()
 
 def ok():
     master.destroy()
@@ -57,6 +68,29 @@ def skip():
 
 def on_closing():
     raise SystemExit
+
+master = Tk.Tk()
+
+alg_sel = Tk.StringVar(master)
+alg_sel.set(OPTIONS_A[0]) # default value
+
+algol_menu = Tk.OptionMenu(master, alg_sel, *OPTIONS_A, command = algorithm_choice)
+algol_menu.pack()
+
+plt_only = Tk.IntVar(master)
+plt_only.set(0)
+
+#Should I enter a range for div and blocks?
+arg1 = Tk.IntVar(master)
+arg1.set(1)
+
+#dt
+arg3 = Tk.DoubleVar(master)
+arg3.set(2.0)
+
+#freq
+arg4 = Tk.DoubleVar(master)
+arg4.set(2.0)
 
 master.protocol("WM_DELETE_WINDOW", on_closing)
 button = Tk.Button(master, text="OK", command=ok)

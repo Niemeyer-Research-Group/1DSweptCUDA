@@ -77,7 +77,7 @@ master.mainloop()
 
 ## -------Tkinter End----------
 
-Fname = variable.get()
+Fname = problem.get()
 
 timeout = '1D_Timing.txt'
 rsltout = '1D_Result.dat'
