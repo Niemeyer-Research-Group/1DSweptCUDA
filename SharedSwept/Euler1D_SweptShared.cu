@@ -32,9 +32,12 @@ const REAL gam = 1.4;
 const REAL m_gamma = 0.4;
 const REAL dx = 0.5;
 
+//dbd is the boundary condition
 __constant__ REALfour dbd[2]; //0 is left 1 is right.
+//dimens has three fields x is dt/dx, y is gamma, z is gamma-1
 __constant__ REALthree dimens;
 
+//Calculates the pressure at the current node with the rho, u, e state variables.
 __device__
 __forceinline__
 REAL
@@ -43,7 +46,8 @@ pressure(REALfour current)
     return dimens.z * (current.z - (0.5 * current.y * current.y/current.x));
 }
 
-//This will need to return the ratio to the execFunc
+//Calculates the pressure ratio between the right and left side pressure differences.
+//(pRight-pCurrent)/(pCurrent-pLeft)
 
 __device__
 __forceinline__
@@ -53,6 +57,8 @@ pressureRatio(REAL cvLeft, REAL cvCenter, REAL cvRight)
     return (cvRight- cvCenter)/(cvCenter- cvLeft);
 }
 
+//Reconstructs the state variables if the pressure ratio is finite and positive.
+//I think it's that internal boundary condition.
 __device__
 REALfour
 limitor(REALthree cvCurrent, REALthree cvOther, REAL pRatio)
@@ -70,11 +76,13 @@ limitor(REALthree cvCurrent, REALthree cvOther, REAL pRatio)
 }
 
 //Left and Center then Left and right.
+//This is the meat of the flux calculation.  Fields: x is rho, y is u, z is e, w is p.
 __device__
 REALthree
 eulerFlux(REALfour cvLeft, REALfour cvRight)
 {
 
+    //For the first calculation rho and p remain the same.
     REALthree flux;
     REAL uLeft = cvLeft.y/cvLeft.x;
     REAL uRight = cvRight.y/cvRight.x;
@@ -89,7 +97,7 @@ eulerFlux(REALfour cvLeft, REALfour cvRight)
     REAL rhoLeftsqrt = sqrtf(cvLeft.x); REAL rhoRightsqrt = sqrtf(cvRight.x);
     halfState.x = rhoLeftsqrt * rhoRightsqrt;
     halfState.y = (rhoLeftsqrt*uLeft + rhoRightsqrt*uRight)/(rhoLeftsqrt+rhoRightsqrt);
-    halfState.z = (rhoLeftsqrt*eLeft + rhoRightsqrt*eRight)/(rhoLeftsqrt+rhoRightsqrt);
+    halfState.z = (rhoLeftsqrt*eLeft + rhoRightsqrt*eRight)/(rhoLeftsqrt+rhoRightsqrt); //Seems to be unnecessary.
     halfState.w = pressure(halfState);
 
     REAL spectreRadius = sqrtf(dimens.y * halfState.w/halfState.x) + fabs(halfState.y);
@@ -100,7 +108,7 @@ eulerFlux(REALfour cvLeft, REALfour cvRight)
 
 }
 
-
+//This is the predictor step of the finite volume scheme.
 __device__
 REALfour
 eulerStutterStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfour stateRight, REAL pfarRight)
@@ -108,28 +116,36 @@ eulerStutterStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfo
     REALthree fluxL, fluxR, pR;
     REALfour tempStateLeft, tempStateRight;
 
+    //Get the pressure ratios as a structure.
     pR = make_float3(pressureRatio(pfarLeft,stateLeft.w,stateCenter.w),
         pressureRatio(stateLeft.w,stateCenter.w,stateRight.w),
         pressureRatio(stateCenter.w,stateRight.w,pfarRight));
 
+    //This is the temporary state bounded by the limitor function.
     tempStateLeft = limitor(make_float3(stateLeft), make_float3(stateCenter), pR.x);
     tempStateRight = limitor(make_float3(stateCenter), make_float3(stateLeft), 1.0/pR.y);
+
+    //Pressure needs to be recalculated for the new limited state variables.
     tempStateLeft.w = pressure(tempStateLeft);
     tempStateRight.w = pressure(tempStateRight);
     fluxL = eulerFlux(tempStateLeft,tempStateRight);
 
+    //Do the same thing with the right side.
     tempStateLeft = limitor(make_float3(stateCenter), make_float3(stateRight), pR.y);
     tempStateRight = limitor(make_float3(stateRight), make_float3(stateCenter), 1.0/pR.z);
     tempStateLeft.w = pressure(tempStateLeft);
     tempStateRight.w = pressure(tempStateRight);
     fluxR = eulerFlux(tempStateLeft,tempStateRight);
 
+    //Add the change back to the node in question.
     stateCenter += make_float4(0.5 * dimens.x * (fluxL-fluxR));
     stateCenter.w = pressure(stateCenter);
 
     return stateCenter;
 }
 
+//Same thing as the predictor step, but this final step adds the result to the original state variables to advance to the next timestep.
+//But the predictor variables to find the fluxes.
 __device__
 REALfour
 eulerFinalStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfour stateCenter_orig, REALfour stateRight, REAL pfarRight)
@@ -159,7 +175,7 @@ eulerFinalStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfour
     return stateCenter_orig;
 }
 
-
+//Simple scheme with dirchlet boundary condition.
 __global__
 void
 classicDisc(REALfour *IC, REALfour *halfresult)
