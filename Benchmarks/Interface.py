@@ -2,6 +2,8 @@
 #This is not the best way to do this, but Parts are working
 import os
 import sys
+import subprocess as sp
+import shlex
 import Tkinter as Tk
 
 #It's closer but a certain combination of them should make a certain menu appear.
@@ -43,7 +45,7 @@ def algorithm_choice(alg_sel):
 
         problem_menu = Tk.OptionMenu(dropframe, prob_sel, *OPTIONS_P, command = problem_choice)
         problem_menu.pack(side = 'left')
-        
+
 
     op_menu = Tk.OptionMenu(dropframe, op_sel, *OPTIONS_O, command = operation_choice)
     op_menu.pack(side = 'left')
@@ -63,7 +65,7 @@ entryframe = Tk.Frame(master)
 endframe = Tk.Frame(master)
 dropframe.pack()
 endframe.pack(side = 'bottom')
-entryframe.pack(side = 'bottom')              
+entryframe.pack(side = 'bottom')
 
 alg_sel = Tk.StringVar(master)
 alg_sel.set(OPTIONS_A[0]) # default value

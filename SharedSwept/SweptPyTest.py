@@ -22,46 +22,13 @@ master = Tk.Tk()
 
 master.geometry("400x400")
 
-problem = Tk.StringVar(master)
-problem.set(OPTIONS[0]) # default value
+variable = Tk.StringVar(master)
+variable.set(OPTIONS[1]) # default value
 
-comp = Tk.BooleanVar(master)
-comp.set(False)
-
-shared_proc = Tk.BooleanVar(master)
-shared_proc.set(False)
-
-#Should I enter a range for div and blocks?
-arg1 = Tk.IntVar(master)
-arg1.set()
-
-#A Boolean variable for test or not test.
-
-#final time, tf
-arg2 = Tk.IntVar(master)
-arg2.set()
-
-#dt
-arg3 = Tk.DoubleVar(master)
-arg3.set()
-
-#freq
-arg4 = Tk.DoubleVar(master)
-arg4.set()
-
-drop = apply(Tk.OptionMenu, (master, problem) + tuple(OPTIONS))
-drop.pack()
-
-check_one = Tk.Checkbutton(master, text = "Compile? ", variable = comp)
-check_one.pack()
-
-check_two = Tk.Checkbutton(master, text = "CPU/GPU sharing", variable = shared_proc)
-check_two.pack()
+w = apply(Tk.OptionMenu, (master, variable) + tuple(OPTIONS))
+w.pack()
 
 def ok():
-    master.destroy()
-
-def skip():
     master.destroy()
 
 def on_closing():
@@ -70,14 +37,14 @@ def on_closing():
 master.protocol("WM_DELETE_WINDOW", on_closing)
 button = Tk.Button(master, text="OK", command=ok)
 button.pack()
-button = Tk.Button(master, text="Skip Run", command=skip)
-button.pack()
 
 master.mainloop()
 
+Fname = variable.get()
+
 ## -------Tkinter End----------
 
-Fname = problem.get()
+Fname = variable.get()
 
 timeout = '1D_Timing.txt'
 rsltout = '1D_Result.dat'
@@ -92,7 +59,7 @@ t_filepath = os.path.abspath(os.path.join(basepath, tfile))
 if os.path.isfile(t_filepath):
     os.remove(t_filepath)
 
-div = [2**k for k in range(11,20)]
+div = [2**k for k in range(11,14)]
 blx = [2**k for k in range(5,11)]
 t_fn = open(t_filepath,'a+')
 
@@ -102,15 +69,9 @@ tst = 1
 
 ExecL = './bin/' + Fname + 'Out'
 
-# There will be a button for compile it or not.
-if False:
-    compStr = 'nvcc -o ' + ExecL + ' ' + Fname + sourcebase + ' -gencode arch=compute_35,code=sm_35 -lm -Xcompiler -fopenmp -w -std=c++11'
-    compArg = shlex.split(compStr)
-    proc = sp.Popen(compArg)
-    sp.Popen.wait(proc)
-    print "Compiled "
+sp.call("make")
 
-t_fn.write("BlockSize\tXDimSize\tTime\n")
+t_fn.write("XDimSize\tBlockSize\tTime\n")
 t_fn.close()
 
 for k in blx:
@@ -135,20 +96,19 @@ for line in fin:
         data.append(ar)
 
 
-lbl = ["Initial Condition"]
-
-plt.plot(xax,data[0][1:])
-plt.hold
-for k in range(1,len(data)):
-    plt.plot(xax,data[k][1:])
-    lbl.append("t = {} seconds".format(data[k][0]))
-
-plt.legend(lbl)
-plt.xlabel("Position on bar (m)")
-plt.ylabel("Velocity")
-plt.title(Fname + execut[len(ExecL):])
-plt.grid()
-plt.show()
+# lbl = ["Initial Condition"]
+#
+# plt.plot(xax,data[0][1:])
+# plt.hold
+# for k in range(1,len(data)):
+#     plt.plot(xax,data[k][1:])
+#     lbl.append("t = {} seconds".format(data[k][0]))
+#
+# plt.legend(lbl)
+# plt.xlabel("Position on bar (m)")
+# plt.ylabel("Velocity")
+# plt.title(Fname + execut[len(ExecL):])
+# plt.grid()
 
 #Timing Show
 times = pd.read_table(t_filepath, delim_whitespace = True)
@@ -156,4 +116,5 @@ headers = times.columns.values.tolist()
 time_split = times.pivot(headers[0],headers[1],headers[2])
 time_split.plot(logx = True, grid = True)
 plt.ylabel('Time (s)')
-plt.title(Fname + 'for ' + str(tf/dt) + ' timesteps')
+plt.title(Fname + ' for ' + str(tf/dt) + ' timesteps')
+plt.show()
