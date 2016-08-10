@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import subprocess as sp
 import shlex
+import os
 from Tkinter import *
 
 OPTIONS = [
@@ -20,7 +21,7 @@ master = Tk()
 master.geometry("400x400")
 
 variable = StringVar(master)
-variable.set(OPTIONS[1]) # default value
+variable.set(OPTIONS[2]) # default value
 
 w = apply(OptionMenu, (master, variable) + tuple(OPTIONS))
 w.pack()
@@ -37,23 +38,28 @@ button.pack()
 
 master.mainloop()
 
-fname = variable.get()
+Fname = variable.get()
 
-execut = "./bin/"+fname+"Out"
+execut = "./bin/"+ Fname+ "Out"
 
 div = 1024
 bks = 128
 dt = 0.02
 tf = 100
+swept = 1
 tst = 0
 
-execstr = execut +  ' {0} {1} {2} {3} {4} {5}'.format(div,bks,dt,tf,tst,tf*2)
+sourcepath = os.path.abspath(os.path.dirname(__file__))
+
+Varfile = os.path.join(sourcepath, Fname + "1D_Result.dat")
+
+execstr = execut +  ' {0} {1} {2} {3} {4} {5} {6} {7}'.format(div,bks,dt,tf,tf*2,swept,tst,Varfile)
 
 exeStr = shlex.split(execstr)
 proc = sp.Popen(exeStr)
 sp.Popen.wait(proc)
 
-fin = open("Results/" +fname + "1D_Result.dat")
+fin = open(Varfile)
 data = []
 
 for line in fin:
@@ -80,6 +86,6 @@ for k in range(1,len(data)):
 plt.legend(lbl)
 plt.xlabel("Position on bar (m)")
 plt.ylabel("Vel")
-plt.title(fname+execstr[len(execut):])
+plt.title(Fname)
 plt.grid()
 plt.show()

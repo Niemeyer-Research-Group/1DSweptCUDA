@@ -36,7 +36,6 @@ const double PI = 3.141592653589793238463;
 
 const REAL th_diff = 8.418e-5;
 
-//-----------For testing --------------
 
 __host__ __device__ REAL initFun(int xnode, REAL ds, REAL lx)
 {
@@ -48,7 +47,25 @@ __host__ __device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
     return fo*(tLeft+tRight) + (1.f-2.f*fo)*tCenter;
 }
 
-//-----------For testing --------------
+__global__
+void
+classicHeat(REAL *heat_in, REAL *heat_out)
+{
+    int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
+    int lastidx = ((blockDim.x*gridDim.x)-1);
+    if (gid == 0)
+    {
+        heat_out[gid] = execFunc(heat_in[gid+1],heat_in[gid+1],heat_in[gid]);
+    }
+    else if (gid == lastidx)
+    {
+        heat_out[gid] = execFunc(heat_in[gid-1],heat_in[gid-1],heat_in[gid]);
+    }
+    else
+    {
+        heat_out[gid] = execFunc(heat_in[gid-1],heat_in[gid+1],heat_in[gid]);
+    }
+}
 
 __global__
 void
@@ -465,16 +482,61 @@ CPU_diamond(REAL *temper, int tpb)
     }
 }
 
-//The host routine.
+//Classic Discretization wrapper.
 double
-sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end, const int cpu,
+classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_end,
     REAL *IC, REAL *T_f, const float freq, ofstream &fwr)
 {
+    REAL *dheat_in, *dheat_out;
 
+    cudaMalloc((void **)&dheat_in, sizeof(REAL)*dv);
+    cudaMalloc((void **)&dheat_out, sizeof(REAL)*dv);
+
+    // Copy the initial conditions to the device array.
+    cudaMemcpy(dheat_in,IC,sizeof(REAL)*dv,cudaMemcpyHostToDevice);
+
+    double t_eq = 0.0;
+    double twrite = freq;
+
+    while (t_eq < t_end)
+    {
+        classicHeat <<< bks,tpb >>> (dheat_in, dheat_out);
+        classicHeat <<< bks,tpb >>> (dheat_out, dheat_in);
+        t_eq += 2*dt;
+
+        if (t_eq > twrite)
+        {
+            cudaMemcpy(T_f, dheat_in, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+            fwr << t_eq << " ";
+
+            for (int k = 0; k<dv; k++)
+            {
+                fwr << T_f[k] << " ";
+            }
+            fwr << endl;
+
+            twrite += freq;
+        }
+    }
+
+    cudaMemcpy(T_f, dheat_in, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+
+    cudaFree(dheat_in);
+    cudaFree(dheat_out);
+
+    return t_eq;
+
+}
+
+//The Swept Rule wrapper.
+double
+sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_end, const int cpu,
+    REAL *IC, REAL *T_f, const float freq, ofstream &fwr)
+{
     const int base = (tpb + 2);
+    const int ht = base/2;
     const size_t smem1 = 2*tpb*sizeof(REAL);
     const size_t smem2 = (base*2)*sizeof(REAL);
-    const int ht = base/2;
 
     int indices[4][tpb];
     for (int k = 0; k<tpb; k++)
@@ -609,7 +671,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end, con
     			fwr << endl;
 
     			upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
-    			wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,-1);
+    			splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
 
     			twrite += freq;
     		}
@@ -644,7 +706,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end, con
     			fwr << endl;
 
     			upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
-    			wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,-1);
+    			splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
 
     			twrite += freq;
     		}
@@ -664,9 +726,11 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end, con
 
 int main( int argc, char *argv[] )
 {
-    if (argc != 7)
+    //That is there are less than 8 arguments.
+    if (argc < 9)
 	{
-		cout << "The Program takes six inputs, #Divisions, #Threads/block, dt, finish time, CPU sharing Y/N, and output frequency" << endl;
+		cout << "The Program takes 9 inputs, #Divisions, #Threads/block, deltat, finish time, output frequency..." << endl;
+        cout << "Classic/Swept, CPU sharing Y/N, Variable Output File, Timing Output File (optional)" << endl;
 		exit(-1);
 	}
 
@@ -677,9 +741,11 @@ int main( int argc, char *argv[] )
 	const int tpb = atoi(argv[2]); //Threads per Blocks
     REAL dt = atof(argv[3]);
 	const int tf = atoi(argv[4]); //Finish time
+    const float freq = atof(argv[5]);
+    const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
+    const int tst = atoi(argv[7]);
 	const int bks = dv/tpb; //The number of blocks
-	const int tst = atoi(argv[5]);
-    const float freq = atof(argv[6]);
+
 
     REAL fou = .05;
 
@@ -709,9 +775,8 @@ int main( int argc, char *argv[] )
 	}
 
 	// Call out the file before the loop and write out the initial condition.
-	ofstream fwr, ftime;
-	fwr.open("Results/Heat1D_Result.dat",ios::trunc);
-	ftime.open("Results/Heat1D_Timing.txt",ios::app);
+	ofstream fwr;
+	fwr.open(argv[8],ios::trunc);
 	// Write out x length and then delta x and then delta t.
 	// First item of each line is timestamp.
 	fwr << lx << " " << dv << " " << ds << " " << endl << 0 << " ";
@@ -739,21 +804,36 @@ int main( int argc, char *argv[] )
 
     // Call the kernels until you reach the iteration limit.
 	double tfm;
-
-    tfm = sweptWrapper(bks, tpb, dv, dt, tf, tst, IC, T_final, freq, fwr);
+    if (scheme)
+    {
+        tfm = sweptWrapper(bks, tpb, dv, dt, tf, tst, IC, T_final, freq, fwr);
+    }
+    else
+    {
+        tfm = classicWrapper(bks, tpb, dv, dt, tf, IC, T_final, freq, fwr);
+    }
 
 	// Show the time and write out the final condition.
 	cudaEventRecord(stop, 0);
 	cudaEventSynchronize(stop);
 	cudaEventElapsedTime( &timed, start, stop);
 
-	timed = timed * 1.e-3;
+	timed *= 1.e3;
 
-	cout << "That took: " << timed << " seconds" << endl;
+    double n_timesteps = tfm/dt;
 
-	ftime << dv << " " << tpb << " " << timed << endl;
+    double per_ts = timed/n_timesteps;
 
-	ftime.close();
+    cout << n_timesteps << " timesteps" << endl;
+	cout << "Averaged " << per_ts << " microseconds (us) per timestep" << endl;
+
+    if (argc>8)
+    {
+        ofstream ftime;
+        ftime.open(argv[9],ios::app);
+    	ftime << dv << "\t" << tpb << "\t" << per_ts << endl;
+    	ftime.close();
+    }
 
 	fwr << tfm << " ";
 	for (int k = 0; k<dv; k++)

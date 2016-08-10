@@ -52,6 +52,9 @@ sourcebase = '1D_SweptShared.cu'
 
 sourcepath = os.path.dirname(__file__)
 basepath = os.path.join(sourcepath,'Results')
+if ~os.path.isdir(basepath):
+    os.mkdir(basepath)
+
 tfile = Fname + timeout
 t_filepath = os.path.abspath(os.path.join(basepath, tfile))
 
