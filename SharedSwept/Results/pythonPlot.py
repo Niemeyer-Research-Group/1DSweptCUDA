@@ -21,7 +21,7 @@ master = Tk()
 master.geometry("400x400")
 
 variable = StringVar(master)
-variable.set(OPTIONS[2]) # default value
+variable.set(OPTIONS[1]) # default value
 
 w = apply(OptionMenu, (master, variable) + tuple(OPTIONS))
 w.pack()
@@ -42,18 +42,26 @@ Fname = variable.get()
 
 execut = "./bin/"+ Fname+ "Out"
 
-div = 1024
+div = 2**10
+print div
 bks = 128
-dt = 0.02
-tf = 100
+dt = 0.02 #timestep in seconds
+tf = 1000 #timestep in seconds
 swept = 1
-tst = 0
+cpu = 1
 
 sourcepath = os.path.abspath(os.path.dirname(__file__))
 
 Varfile = os.path.join(sourcepath, Fname + "1D_Result.dat")
 
-execstr = execut +  ' {0} {1} {2} {3} {4} {5} {6} {7}'.format(div,bks,dt,tf,tf*2,swept,tst,Varfile)
+if swept and cpu:
+    print Fname + " Swept CPU Sharing"
+elif swept:
+    print Fname + " Swept GPU only"
+else:
+    print Fname + " Classic"
+
+execstr = execut +  ' {0} {1} {2} {3} {4} {5} {6} {7}'.format(div,bks,dt,tf,tf*2,swept,cpu,Varfile)
 
 exeStr = shlex.split(execstr)
 proc = sp.Popen(exeStr)
@@ -69,9 +77,6 @@ for line in fin:
         xax = np.linspace(0,1,ar[1])
     else:
         data.append(ar)
-
-df = 100*abs(np.trapz(data[0][1:],xax)-np.trapz(data[-1][1:],xax))/abs(np.trapz(data[0][1:],xax))
-print "Percent Difference in integrals: {}".format(df)
 
 lbl = ["Initial Condition"]
 

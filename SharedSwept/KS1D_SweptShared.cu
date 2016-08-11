@@ -11,9 +11,7 @@
 
 //DO:
 //Use malloc or cudaHostAlloc for all initial and final conditions.
-//Write the ability to pull out time snapshots.
 //The ability to feed in initial conditions.
-//Input paths to output as argc?  Input?
 //Ask about just making up my own conventions.  Like .dat vs txt.  Use that as flag?
 
 #include <cuda.h>
@@ -50,53 +48,82 @@ struct discConstants{
 
 __constant__ discConstants disc;
 
-__host__ __device__
+__host__
 REAL initFun(float xnode)
 {
 	return 2.f * cos(19.f*xnode*M_PI/128.f);
 }
 
-__host__ __device__
+__device__
 __forceinline__
 REAL fourthDer(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tRight, REAL tfarRight)
 {
 	return (tfarLeft - 4.f*tLeft + 6.f*tCenter - 4.f*tRight + tfarRight)/(disc.dx4);
 }
 
-__host__ __device__
+__device__
 __forceinline__
 REAL secondDer(REAL tLeft, REAL tRight, REAL tCenter)
 {
 	return (tLeft + tRight - 2.f*tCenter)/(disc.dx2);
 }
 
-__host__ __device__
+__device__
 __forceinline__
 REAL convect(REAL tLeft, REAL tRight)
 {
 	return (tRight*tRight - tLeft*tLeft)/(4.f*disc.dx);
 }
 
-__host__ __device__
+__device__
 REAL stutterStep(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tRight, REAL tfarRight)
 {
 	return tCenter - disc.dt_half * (convect(tLeft, tRight) + secondDer(tLeft, tRight, tCenter) +
 		fourthDer(tfarLeft, tLeft, tCenter, tRight, tfarRight));
 }
 
-__host__ __device__
+__device__
 REAL finalStep(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tCenter_orig, REAL tRight, REAL tfarRight)
 {
 	return tCenter_orig - disc.dt_half * (convect(tLeft, tRight) + secondDer(tLeft, tRight, tCenter) +
 			fourthDer(tfarLeft, tLeft, tCenter, tRight, tfarRight));
 }
 
+//Classic
+__global__
+void
+classicKS(REAL *ks_in, REAL *ks_out)
+{
+    int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
+    int lastidx = ((blockDim.x*gridDim.x)-1);
+
+    REAL temp[5];
+    REAL persist = ks_in[gid];
+
+    #pragma unroll
+	for (int k = -2; k<3; k++)
+	{
+		temp[k+2] = ks_in[(gid+k)&lastidx];
+	}
+
+	ks_out[gid] = stutterStep(temp[0],temp[1],temp[2],temp[3],temp[4]);
+
+	#pragma unroll
+	for (int k = -2; k<3; k++)
+	{
+		temp[k+2] = ks_out[(gid+k)&lastidx];
+	}
+
+	ks_out[gid] = finalStep(temp[0],temp[1],temp[2],persist,temp[3],temp[4]);
+
+}
+
+
 //Up is the same.
 __global__
 void
 upTriangle(REAL *IC, REAL *right, REAL *left)
 {
-
 	extern __shared__ REAL temper[];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
@@ -324,6 +351,50 @@ wholeDiamond(REAL *right, REAL *left, int pass)
 
 }
 
+double
+classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_end,
+    REAL *IC, REAL *T_f, const float freq, ofstream &fwr)
+{
+    REAL *dks_in, *dks_out;
+
+    cudaMalloc((void **)&dks_in, sizeof(REAL)*dv);
+    cudaMalloc((void **)&dks_out, sizeof(REAL)*dv);
+
+    // Copy the initial conditions to the device array.
+    cudaMemcpy(dks_in,IC,sizeof(REAL)*dv,cudaMemcpyHostToDevice);
+
+    double t_eq = 0.0;
+    double twrite = freq;
+
+    while (t_eq < t_end)
+    {
+        classicKS <<< bks,tpb >>> (dks_in, dks_out);
+        classicKS <<< bks,tpb >>> (dks_out, dks_in);
+        t_eq += 2*dt;
+
+        if (t_eq > twrite)
+        {
+            cudaMemcpy(T_f, dks_in, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+
+			fwr << t_eq << " ";
+            for (int k = 0; k<dv; k++)
+            {
+                fwr << T_f[k] << " ";
+            }
+            fwr << endl;
+
+            twrite += freq;
+        }
+    }
+
+    cudaMemcpy(T_f, dks_in, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+
+    cudaFree(dks_in);
+    cudaFree(dks_out);
+
+    return t_eq;
+}
+
 //The host routine.
 double
 sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
@@ -397,21 +468,24 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
 int main( int argc, char *argv[])
 {
 
-	if (argc != 7)
+	if (argc < 9)
 	{
-		cout << "The Program takes six inputs, #Divisions, #Threads/block, dt, finish time, test or not, and output frequency" << endl;
+		cout << "The Program takes 9 inputs, #Divisions, #Threads/block, deltat, finish time, output frequency..." << endl;
+        cout << "Classic/Swept, CPU sharing Y/N (Ignored), Variable Output File, Timing Output File (optional)" << endl;
 		exit(-1);
 	}
 
 	// Choose the GPGPU.  This is device 0 in my machine which has 2 devices.
 	cudaSetDevice(0);
 
-	int dv = atoi(argv[1]); //Setting it to an int helps with arrays
-	const int tpb = atoi(argv[2]);
-	const int tf = atoi(argv[4]);
-	const int bks = dv/tpb; //The number of blocks since threads/block = 32.
-	const int tst = atoi(argv[5]);
-	const float freq = atof(argv[6]);
+	const int dv = atoi(argv[1]); //Number of spatial points
+	const int tpb = atoi(argv[2]); //Threads per Block
+    const REAL dt = atof(argv[3]); //delta T timestep
+	const float tf = atof(argv[4]); //Finish time
+    const float freq = atof(argv[5]); //Output frequency
+    const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
+    // const int tst = atoi(argv[7]); CPU/GPU share
+    const int bks = dv/tpb; //The number of blocks
 
 	const float lx = dv*dx;
 
@@ -435,20 +509,19 @@ int main( int argc, char *argv[])
 	};
 
 	// Initialize arrays.
-    REAL *IC = (REAL*)malloc(dv*sizeof(REAL));
-	REAL *T_final = (REAL*)malloc(dv*sizeof(REAL));
+    REAL *IC, *T_final;
+	cudaHostAlloc((void **) &IC, dv*sizeof(REAL), cudaHostAllocDefault);
+	cudaHostAlloc((void **) &T_final, dv*sizeof(REAL), cudaHostAllocDefault);
 
-	// Some initial condition for the bar temperature, an exponential decay
-	// function.
+	// Inital condition
 	for (int k = 0; k<dv; k++)
 	{
 		IC[k] = initFun((float)k*dsc.dx);
 	}
 
 	// Call out the file before the loop and write out the initial condition.
-	ofstream fwr, ftime;
-	fwr.open("Results/KS1D_Result.dat",ios::trunc);
-	if (tst) ftime.open("Results/KS1D_Timing.txt",ios::app);
+	ofstream fwr;
+	fwr.open(argv[8],ios::trunc);
 
 	// Write out x length and then delta x and then delta t.
 	// First item of each line is timestamp.
@@ -460,15 +533,10 @@ int main( int argc, char *argv[])
 	}
 
 	fwr << endl;
-
-
 	// Transfer data to GPU.
 
-	// This puts the Fourier number in constant memory.
+	// This puts the constant part of the equation in constant memory
 	cudaMemcpyToSymbol(disc,&dsc,sizeof(dsc));
-
-	// This initializes the device arrays on the device in global memory.
-	// They're all the same size.  Conveniently.
 
 	// Start the counter and start the clock.
 	cudaEvent_t start, stop;
@@ -479,22 +547,36 @@ int main( int argc, char *argv[])
 
 	// Call the kernels until you reach the iteration limit.
 	double tfm;
-
-	tfm = sweptWrapper(bks, tpb, dv, dsc.dt, tf, IC, T_final, freq, fwr);
+	if (scheme)
+    {
+		tfm = sweptWrapper(bks, tpb, dv, dsc.dt, tf, IC, T_final, freq, fwr);
+	}
+	else
+	{
+		tfm = classicWrapper(bks, tpb, dv, dsc.dt, tf, IC, T_final, freq, fwr);
+	}
 
 	// Show the time and write out the final condition.
 	cudaEventRecord(stop, 0);
 	cudaEventSynchronize(stop);
 	cudaEventElapsedTime( &timed, start, stop);
 
-	timed *= 1.e-3;
+	timed *= 1.e3;
 
-	cout << "That took: " << timed << " seconds" << endl;
-	if (tst)
-	{
-		ftime << dv << " " << tpb << " " << timed << endl;
-		ftime.close();
-	}
+	double n_timesteps = tfm/dt;
+
+    double per_ts = timed/n_timesteps;
+
+    cout << n_timesteps << " timesteps" << endl;
+	cout << "Averaged " << per_ts << " microseconds (us) per timestep" << endl;
+
+    if (argc>8)
+    {
+        ofstream ftime;
+        ftime.open(argv[9],ios::app);
+    	ftime << dv << "\t" << tpb << "\t" << per_ts << endl;
+    	ftime.close();
+    }
 
 	fwr << tfm << " ";
 	for (int k = 0; k<dv; k++)
@@ -502,14 +584,16 @@ int main( int argc, char *argv[])
 		fwr << T_final[k] << " ";
 	}
 
+    fwr << endl;
+
 	fwr.close();
 
 	// Free the memory and reset the device.
 	cudaDeviceReset();
 	cudaEventDestroy( start );
 	cudaEventDestroy( stop );
-	free(IC);
-    free(T_final);
+	cudaFreeHost(IC);
+    cudaFreeHost(T_final);
 
 	return 0;
 

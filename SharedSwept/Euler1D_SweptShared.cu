@@ -1,8 +1,4 @@
-//Based on
-//https://en.wikipedia.org/wiki/Sod_shock_tube
-//http://wonka.physics.ncsu.edu/pub/VH-1/bproblems.php
-//http://www.astro.sunysb.edu/mzingale/codes.html
-// http://cococubed.asu.edu/code_pages/exact_riemann.shtml
+//
 
 
 //COMPILE LINE:
@@ -31,23 +27,28 @@ const REAL m_gamma = 0.4;
 const REAL dx = 0.5;
 
 REALfour bd[2];
+REALthree dimz;
 //dbd is the boundary condition
 __constant__ REALfour dbd[2]; //0 is left 1 is right.
 //dimens has three fields x is dt/dx, y is gamma, z is gamma-1
 __constant__ REALthree dimens;
 
 //Calculates the pressure at the current node with the rho, u, e state variables.
-__device__
+__device__ __host__
 __forceinline__
 REAL
 pressure(REALfour current)
 {
+    #ifdef __CUDA_ARCH__
     return dimens.z * (current.z - (0.5 * current.y * current.y/current.x));
+    #else
+    return dimz.z * (current.z - (0.5 * current.y * current.y/current.x));
+    #endif
 }
 
 //Calculates the pressure ratio between the right and left side pressure differences.
 //(pRight-pCurrent)/(pCurrent-pLeft)
-__device__
+__device__ __host__
 __forceinline__
 REAL
 pressureRatio(REAL cvLeft, REAL cvCenter, REAL cvRight)
@@ -57,31 +58,42 @@ pressureRatio(REAL cvLeft, REAL cvCenter, REAL cvRight)
 
 //Reconstructs the state variables if the pressure ratio is finite and positive.
 //I think it's that internal boundary condition.
-__device__
+__device__ __host__
 REALfour
 limitor(REALthree cvCurrent, REALthree cvOther, REAL pRatio)
 {
+    #ifdef __CUDA_ARCH__
     if (isfinite(pRatio) && pRatio > 0) //If it's finite and positive
     {
         REAL fact = (pRatio < 1) ? pRatio : 1.f;
         return make_float4(cvCurrent + 0.5* fact * (cvOther - cvCurrent));
 
     }
-    else //If it's nan, inf, negative or zero.
+    #else
+    if (std::isfinite(pRatio) && pRatio > 0) //If it's finite and positive
     {
-        return make_float4(cvCurrent);
+        REAL fact = (pRatio < 1) ? pRatio : 1.f;
+        return make_float4(cvCurrent + 0.5* fact * (cvOther - cvCurrent));
+
     }
+    #endif
+
+    return make_float4(cvCurrent);
+
 }
 
 //Left and Center then Left and right.
 //This is the meat of the flux calculation.  Fields: x is rho, y is u, z is e, w is p.
-__device__
+__device__ __host__
 REALthree
 eulerFlux(REALfour cvLeft, REALfour cvRight)
 {
-
+    #ifndef __CUDA_ARCH__
+    using namespace std;
+    #endif
     //For the first calculation rho and p remain the same.
     REALthree flux;
+    REAL spectreRadius;
     REAL uLeft = cvLeft.y/cvLeft.x;
     REAL uRight = cvRight.y/cvRight.x;
     REAL eLeft = cvLeft.z/cvLeft.x;
@@ -98,7 +110,11 @@ eulerFlux(REALfour cvLeft, REALfour cvRight)
     halfState.z = (rhoLeftsqrt*eLeft + rhoRightsqrt*eRight)/(rhoLeftsqrt+rhoRightsqrt); //Seems to be unnecessary.
     halfState.w = pressure(halfState);
 
-    REAL spectreRadius = sqrtf(dimens.y * halfState.w/halfState.x) + fabs(halfState.y);
+    #ifdef __CUDA_ARCH__
+    spectreRadius = sqrtf(dimens.y * halfState.w/halfState.x) + fabs(halfState.y);
+    #else
+    spectreRadius = sqrtf(dimz.y * halfState.w/halfState.x) + fabs(halfState.y);
+    #endif
 
     flux += 0.5 * spectreRadius * (make_float3(cvLeft) - make_float3(cvRight));
 
@@ -107,7 +123,7 @@ eulerFlux(REALfour cvLeft, REALfour cvRight)
 }
 
 //This is the predictor step of the finite volume scheme.
-__device__
+__device__ __host__
 REALfour
 eulerStutterStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfour stateRight, REAL pfarRight)
 {
@@ -136,7 +152,11 @@ eulerStutterStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfo
     fluxR = eulerFlux(tempStateLeft,tempStateRight);
 
     //Add the change back to the node in question.
+    #ifdef __CUDA_ARCH__
     stateCenter += make_float4(0.5 * dimens.x * (fluxL-fluxR));
+    #else
+    stateCenter += make_float4(0.5 * dimz.x * (fluxL-fluxR));
+    #endif
     stateCenter.w = pressure(stateCenter);
 
     return stateCenter;
@@ -144,7 +164,7 @@ eulerStutterStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfo
 
 //Same thing as the predictor step, but this final step adds the result to the original state variables to advance to the next timestep.
 //But the predictor variables to find the fluxes.
-__device__
+__device__ __host__
 REALfour
 eulerFinalStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfour stateCenter_orig, REALfour stateRight, REAL pfarRight)
 {
@@ -167,7 +187,11 @@ eulerFinalStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfour
     tempStateRight.w = pressure(tempStateRight);
     fluxR = eulerFlux(tempStateLeft,tempStateRight);
 
-    stateCenter_orig += make_float4(dimens.x * (fluxL-fluxR));
+    #ifdef __CUDA_ARCH__
+    stateCenter_orig += make_float4(0.5 * dimens.x * (fluxL-fluxR));
+    #else
+    stateCenter_orig += make_float4(0.5 * dimz.x * (fluxL-fluxR));
+    #endif
     stateCenter_orig.w = pressure(stateCenter_orig);
 
     return stateCenter_orig;
@@ -226,7 +250,6 @@ classicEuler(REALfour *euler_in, REALfour *euler_out)
     }
     else if (gid == lastidx)
     {
-
         euler_out[gid] = dbd[1];
     }
     else if (gid == 1)
@@ -824,178 +847,176 @@ splitDiamond(REALfour *right, REALfour *left)
 	left[gid] = temper[leftidx];
 }
 
+using namespace std;
 // Do the split diamond on the CPU?
 // What's the idea?  Say malloc the pointers and pass values in the wrapper.
 
-// __host__
-// void
-// CPU_diamond(REALfour *temper, int tpb)
-// {
-//     int step2;
-//     int base = tpb + 4;
-//     int height = base/2;
-//     int height2 = height-2;
-//
-//     //Splitting it is the whole point!
-//     for (int k = height2; k>0; k-=4)
-//     {
-//         for(int n = k; n<(base-k); n++)
-//         {
-//             if (n == (height-1)) //case 1
-//             {
-//                 temper[n+base] = bd[1];
-//             }
-//             else if (n == height)  //case 2
-//             {
-//                 temper[n+base] = bd[0];
-//             }
-//             else if (n == height2) //case 0
-//             {
-//                 temper[n+base] = eulerStutterStep(temper[n-2].w, temper[n-1], temper[n],
-//                     bd[1], bd[1].w);
-//             }
-//             else if (n == (height+1)) //case 3
-//             {
-//                 temper[n+base] = eulerStutterStep(bd[0].w, bd[0], temper[n],
-//                     temper[n+1], temper[n+2].w);
-//             }
-//             else
-//             {
-//                 temper[n+base] = eulerStutterStep(temper[n-2].w, temper[n-1], temper[n],
-//                     temper[n+1], temper[n+2].w);
-//             }
-//         }
-//
-//         step2 = k-2;
-//
-//         for(int n = step2; n<(base-step2); n++)
-//         {
-//             if (n == (height-1)) //case 1
-//             {
-//                 temper[n] = bd[1];
-//             }
-//             else if (n == height)  //case 2
-//             {
-//                 temper[n] = bd[0];
-//             }
-//             else if (n == height2) //case 0
-//             {
-//                 temper[n] = eulerFinalStep(temper[base+n-2].w, temper[base+n-1], temper[base+n], temper[n],
-//                     bd[1], bd[1].w);
-//             }
-//             else if (n == (height+1)) //case 3
-//             {
-//                 temper[n] = eulerFinalStep(bd[0].w, bd[0], temper[base+n], temper[n],
-//                     temper[base+n+1], temper[base+n+2].w);
-//             }
-//             else
-//             {
-//                 temper[n] = eulerFinalStep(temper[base+n-2].w, temper[base+n-1], temper[base+n], temper[n],
-//                     temper[base+n+1], temper[base+n+2].w);
-//             }
-//         }
-//     }
-//
-//     for (int k = 0; k<tpb; k++)
-//     {
-//         temper[k] = temper[k+2];
-//     }
-//
-//     height -= 2;
-//     height2 -= 2;
-//
-//     for(int n = 2; n<(tpb-2); n++)
-//     {
-//         if (n == (height-1)) //case 1
-//         {
-//             temper[n+tpb] = bd[1];
-//         }
-//         else if (n == height)  //case 2
-//         {
-//             temper[n+tpb] = bd[0];
-//         }
-//         else if (n == height2) //case 0
-//         {
-//             temper[n+tpb] = eulerStutterStep(temper[n-2].w, temper[n-1], temper[n],
-//                 bd[1], bd[1].w);
-//         }
-//         else if (n == (height+1)) //case 3
-//         {
-//             temper[n+tpb] = eulerStutterStep(bd[0].w, bd[0], temper[n],
-//                 temper[n+1], temper[n+2].w);
-//         }
-//         else
-//         {
-//             temper[n+tpb] = eulerStutterStep(temper[n-2].w, temper[n-1], temper[n],
-//                 temper[n+1], temper[n+2].w);
-//         }
-//     }
-//
-//     //Top part.
-//     for (int k = 4; k<height; k+=4)
-//     {
-//         for(int n = k; n<(tpb-k); n++)
-//         {
-//             if (n == (height-1)) //case 1
-//             {
-//                 temper[n] = bd[1];
-//             }
-//             else if (n == height)  //case 2
-//             {
-//                 temper[n] = bd[0];
-//             }
-//             else if (n == height2) //case 0
-//             {
-//                 temper[n] = eulerFinalStep(temper[tpb+n-2].w, temper[tpb+n-1], temper[tpb+n], temper[n],
-//                     bd[1], bd[1].w);
-//             }
-//             else if (n == (height+1)) //case 3
-//             {
-//                 temper[n] = eulerFinalStep(bd[0].w, bd[0], temper[tpb+n], temper[n],
-//                     temper[tpb+n+1], temper[tpb+n+2].w);
-//             }
-//             else
-//             {
-//                 temper[n] = eulerFinalStep(temper[tpb+n-2].w, temper[tpb+n-1], temper[tpb+n], temper[n],
-//                     temper[tpb+n+1], temper[tpb+n+2].w);
-//             }
-//         }
-//
-//         step2 = k+2;
-//
-//         for(int n = step2; n<(tpb-step2); n++)
-//         {
-//             if (n == (height-1)) //case 1
-//             {
-//                 temper[n+tpb] = bd[1];
-//             }
-//             else if (n == height)  //case 2
-//             {
-//                 temper[n+tpb] = bd[0];
-//             }
-//             else if (n == height2) //case 0
-//             {
-//                 temper[n+tpb] = eulerStutterStep(temper[n-2].w, temper[n-1], temper[n],
-//                     bd[1], bd[1].w);
-//             }
-//             else if (n == (height+1)) //case 3
-//             {
-//                 temper[n+tpb] = eulerStutterStep(bd[0].w, bd[0], temper[n],
-//                     temper[n+1], temper[n+2].w);
-//             }
-//             else
-//             {
-//                 temper[n+tpb] = eulerStutterStep(temper[n-2].w, temper[n-1], temper[n],
-//                     temper[n+1], temper[n+2].w);
-//             }
-//         }
-//     }
-// }
+__host__
+void
+CPU_diamond(REALfour *temper, int tpb)
+{
+    int step2;
+    int base = tpb + 4;
+    int height = base/2;
+    int height2 = height-2;
+
+    //Splitting it is the whole point!
+    for (int k = height2; k>0; k-=4)
+    {
+        for(int n = k; n<(base-k); n++)
+        {
+            if (n == (height-1)) //case 1
+            {
+                temper[n+base] = bd[1];
+            }
+            else if (n == height)  //case 2
+            {
+                temper[n+base] = bd[0];
+            }
+            else if (n == height2) //case 0
+            {
+                temper[n+base] = eulerStutterStep(temper[n-2].w, temper[n-1], temper[n],
+                    bd[1], bd[1].w);
+            }
+            else if (n == (height+1)) //case 3
+            {
+                temper[n+base] = eulerStutterStep(bd[0].w, bd[0], temper[n],
+                    temper[n+1], temper[n+2].w);
+            }
+            else
+            {
+                temper[n+base] = eulerStutterStep(temper[n-2].w, temper[n-1], temper[n],
+                    temper[n+1], temper[n+2].w);
+            }
+        }
+
+        step2 = k-2;
+
+        for(int n = step2; n<(base-step2); n++)
+        {
+            if (n == (height-1)) //case 1
+            {
+                temper[n] = bd[1];
+            }
+            else if (n == height)  //case 2
+            {
+                temper[n] = bd[0];
+            }
+            else if (n == height2) //case 0
+            {
+                temper[n] = eulerFinalStep(temper[base+n-2].w, temper[base+n-1], temper[base+n], temper[n],
+                    bd[1], bd[1].w);
+            }
+            else if (n == (height+1)) //case 3
+            {
+                temper[n] = eulerFinalStep(bd[0].w, bd[0], temper[base+n], temper[n],
+                    temper[base+n+1], temper[base+n+2].w);
+            }
+            else
+            {
+                temper[n] = eulerFinalStep(temper[base+n-2].w, temper[base+n-1], temper[base+n], temper[n],
+                    temper[base+n+1], temper[base+n+2].w);
+            }
+        }
+    }
+
+    for (int k = 0; k<tpb; k++) temper[k] = temper[k+2];
+
+    height -= 2;
+    height2 -= 2;
+
+    for(int n = 2; n<(tpb-2); n++)
+    {
+        if (n == (height-1)) //case 1
+        {
+            temper[n+tpb] = bd[1];
+        }
+        else if (n == height)  //case 2
+        {
+            temper[n+tpb] = bd[0];
+        }
+        else if (n == height2) //case 0
+        {
+            temper[n+tpb] = eulerStutterStep(temper[n-2].w, temper[n-1], temper[n],
+                bd[1], bd[1].w);
+        }
+        else if (n == (height+1)) //case 3
+        {
+            temper[n+tpb] = eulerStutterStep(bd[0].w, bd[0], temper[n],
+                temper[n+1], temper[n+2].w);
+        }
+        else
+        {
+            temper[n+tpb] = eulerStutterStep(temper[n-2].w, temper[n-1], temper[n],
+                temper[n+1], temper[n+2].w);
+        }
+    }
+
+    //Top part.
+    for (int k = 4; k<height; k+=4)
+    {
+        for(int n = k; n<(tpb-k); n++)
+        {
+            if (n == (height-1)) //case 1
+            {
+                temper[n] = bd[1];
+            }
+            else if (n == height)  //case 2
+            {
+                temper[n] = bd[0];
+            }
+            else if (n == height2) //case 0
+            {
+                temper[n] = eulerFinalStep(temper[tpb+n-2].w, temper[tpb+n-1], temper[tpb+n], temper[n],
+                    bd[1], bd[1].w);
+            }
+            else if (n == (height+1)) //case 3
+            {
+                temper[n] = eulerFinalStep(bd[0].w, bd[0], temper[tpb+n], temper[n],
+                    temper[tpb+n+1], temper[tpb+n+2].w);
+            }
+            else
+            {
+                temper[n] = eulerFinalStep(temper[tpb+n-2].w, temper[tpb+n-1], temper[tpb+n], temper[n],
+                    temper[tpb+n+1], temper[tpb+n+2].w);
+            }
+        }
+
+        step2 = k+2;
+
+        for(int n = step2; n<(tpb-step2); n++)
+        {
+            if (n == (height-1)) //case 1
+            {
+                temper[n+tpb] = bd[1];
+            }
+            else if (n == height)  //case 2
+            {
+                temper[n+tpb] = bd[0];
+            }
+            else if (n == height2) //case 0
+            {
+                temper[n+tpb] = eulerStutterStep(temper[n-2].w, temper[n-1], temper[n],
+                    bd[1], bd[1].w);
+            }
+            else if (n == (height+1)) //case 3
+            {
+                temper[n+tpb] = eulerStutterStep(bd[0].w, bd[0], temper[n],
+                    temper[n+1], temper[n+2].w);
+            }
+            else
+            {
+                temper[n+tpb] = eulerStutterStep(temper[n-2].w, temper[n-1], temper[n],
+                    temper[n+1], temper[n+2].w);
+            }
+        }
+    }
+}
 
 //Classic Discretization wrapper.
 double
 classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_end,
-    REALfour *IC, REALfour *T_f, const float freq, std::ofstream &fwr)
+    REALfour *IC, REALfour *T_f, const float freq, ofstream &fwr)
 {
     REALfour *dEuler_in, *dEuler_out;
 
@@ -1005,17 +1026,16 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_
     // Copy the initial conditions to the device array.
     cudaMemcpy(dEuler_in,IC,sizeof(REALfour)*dv,cudaMemcpyHostToDevice);
 
-    std::cout << "Classic" << std::endl;
 
     double t_eq = 0.0;
     double twrite = freq;
-
 
     while (t_eq < t_end)
     {
         classicEuler <<< bks,tpb >>> (dEuler_in, dEuler_out);
         classicEuler <<< bks,tpb >>> (dEuler_out, dEuler_in);
         t_eq += 2*dt;
+
         if (t_eq > twrite)
         {
             cudaMemcpy(T_f, dEuler_in, sizeof(REALfour)*dv, cudaMemcpyDeviceToHost);
@@ -1025,7 +1045,7 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_
             {
                 fwr << T_f[k].x << " ";
             }
-            fwr << std::endl;
+            fwr << endl;
 
             twrite += freq;
         }
@@ -1043,9 +1063,8 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_
 //The wrapper that calls the routine functions.
 double
 sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end, const int cpu,
-    REALfour *IC, REALfour *T_f, const float freq, std::ofstream &fwr)
+    REALfour *IC, REALfour *T_f, const float freq, ofstream &fwr)
 {
-    std::cout << "Swept" << std::endl;
     const int base = tpb + 4;
     const int height = base/2;
     const size_t smem1 = 2*tpb*sizeof(REALfour);
@@ -1065,7 +1084,9 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end, con
 
     REALfour *tmpr = (REALfour*)malloc(smem2);
 	REALfour *d_IC, *d_right, *d_left;
-    REALfour right[tpb], left[tpb];
+    REALfour *right, *left;
+    cudaHostAlloc((void **) &right, tpb*sizeof(REALfour), cudaHostAllocDefault);
+    cudaHostAlloc((void **) &left, tpb*sizeof(REALfour), cudaHostAllocDefault);
 
 	cudaMalloc((void **)&d_IC, sizeof(REALfour)*dv);
 	cudaMalloc((void **)&d_right, sizeof(REALfour)*dv);
@@ -1088,91 +1109,87 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end, con
         t_eq = t_fullstep;
         omp_set_num_threads( 2 );
 
-        // cudaMemcpy(right,d_left, tpb*sizeof(REALfour), cudaMemcpyDeviceToHost);
-        // cudaMemcpy(left, d_right+(dv-tpb) , tpb*sizeof(REALfour), cudaMemcpyDeviceToHost);
-        //
-        // #pragma omp parallel sections
-        // {
-        // #pragma omp section
-        // {
-        //     for (int k = 0; k<tpb; k++)
-        //     {
-        //         tmpr[indices[0][k]] = left[k];
-        //         tmpr[indices[1][k]] = right[k];
-        //     }
-        //
-        //     CPU_diamond(tmpr, tpb);
-        //
-        //     for (int k = 0; k<tpb; k++)
-        //     {
-        //         left[k] = tmpr[indices[2][k]];
-        //         right[k] = tmpr[indices[3][k]];
-        //     }
-        // }
-        // #pragma omp section
-        // {
-        //     wholeDiamond <<< bks-1,tpb,smem2 >>>(d_right,d_left,false);
-        // }
-        // }
-        //
-        // cudaMemcpy(d_right, right, tpb*sizeof(REALfour), cudaMemcpyHostToDevice);
-        // cudaMemcpy(d_left, left, tpb*sizeof(REALfour), cudaMemcpyHostToDevice);
-        //
-        // while(t_eq < t_end)
-        // {
-        //
-        //     wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,true);
-        //
-        //     cudaMemcpy(right,d_left, tpb*sizeof(REALfour), cudaMemcpyDeviceToHost);
-        //     cudaMemcpy(left, d_right+(dv-tpb) , tpb*sizeof(REALfour), cudaMemcpyDeviceToHost);
-        //     #pragma omp parallel sections
-        //     {
-        //     #pragma omp section
-        //     {
-        //         for (int k = 0; k<tpb; k++)
-        //         {
-        //             tmpr[indices[0][k]] = left[k];
-        //             tmpr[indices[1][k]] = right[k];
-        //         }
-        //
-        //         CPU_diamond(tmpr, tpb);
-        //
-        //         for (int k = 0; k<tpb; k++)
-        //         {
-        //             left[k] = tmpr[indices[2][k]];
-        //             right[k] = tmpr[indices[3][k]];
-        //         }
-        //     }
-        //     #pragma omp section
-        //     {
-        //         wholeDiamond <<< bks-1,tpb,smem2 >>>(d_right,d_left,false);
-        //
-        //     }
-        //     }
-        //
-        //     cudaMemcpy(d_right, right, tpb*sizeof(REALfour), cudaMemcpyHostToDevice);
-        //     cudaMemcpy(d_left, left, tpb*sizeof(REALfour), cudaMemcpyHostToDevice);
-        //
-        //     t_eq += t_fullstep;
-        //
-    	//  	if (t_eq > twrite)
-    	// 	{
-    	// 		downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
-    	// 		cudaMemcpy(T_f, d_IC, sizeof(REALfour)*dv, cudaMemcpyDeviceToHost);
-    	// 		fwr << t_eq << " ";
-        //
-    	// 		for (int k = 0; k<dv; k++)
-    	// 		{
-    	// 				fwr << T_f[k].x << " ";
-    	// 		}
-        //
-    	// 		fwr << std::endl;
-        //
-    	// 		upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
-    	// 		splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
-        //         twrite += freq;
-    	// 	}
-        //}
+        cudaMemcpy(right,d_left, tpb*sizeof(REALfour), cudaMemcpyDeviceToHost);
+        cudaMemcpy(left, d_right+(dv-tpb) , tpb*sizeof(REALfour), cudaMemcpyDeviceToHost);
+
+        #pragma omp parallel sections
+        {
+        #pragma omp section
+        {
+            for (int k = 0; k<tpb; k++)
+            {
+                tmpr[indices[0][k]] = left[k];
+                tmpr[indices[1][k]] = right[k];
+            }
+
+            CPU_diamond(tmpr, tpb);
+
+            for (int k = 0; k<tpb; k++)
+            {
+                left[k] = tmpr[indices[2][k]];
+                right[k] = tmpr[indices[3][k]];
+            }
+        }
+        #pragma omp section
+        {
+            wholeDiamond <<< bks-1,tpb,smem2 >>>(d_right,d_left,false);
+        }
+        }
+
+        cudaMemcpy(d_right, right, tpb*sizeof(REALfour), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_left, left, tpb*sizeof(REALfour), cudaMemcpyHostToDevice);
+
+        while(t_eq < t_end)
+        {
+
+            wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,true);
+
+            cudaMemcpy(right,d_left, tpb*sizeof(REALfour), cudaMemcpyDeviceToHost);
+            cudaMemcpy(left, d_right+(dv-tpb) , tpb*sizeof(REALfour), cudaMemcpyDeviceToHost);
+            #pragma omp parallel sections
+            {
+            #pragma omp section
+            {
+                for (int k = 0; k<tpb; k++)
+                {
+                    tmpr[indices[0][k]] = left[k];
+                    tmpr[indices[1][k]] = right[k];
+                }
+                CPU_diamond(tmpr, tpb);
+
+                for (int k = 0; k<tpb; k++)
+                {
+                    left[k] = tmpr[indices[2][k]];
+                    right[k] = tmpr[indices[3][k]];
+                }
+            }
+            #pragma omp section
+            {
+                wholeDiamond <<< bks-1,tpb,smem2 >>>(d_right,d_left,false);
+            }
+            }
+            cudaMemcpy(d_right, right, tpb*sizeof(REALfour), cudaMemcpyHostToDevice);
+            cudaMemcpy(d_left, left, tpb*sizeof(REALfour), cudaMemcpyHostToDevice);
+            t_eq += t_fullstep;
+
+    	    if (t_eq > twrite)
+    		{
+    			downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
+    			cudaMemcpy(T_f, d_IC, sizeof(REALfour)*dv, cudaMemcpyDeviceToHost);
+    			fwr << t_eq << " ";
+
+    			for (int k = 0; k<dv; k++)
+    			{
+    					fwr << T_f[k].x << " ";
+    			}
+
+    			fwr << endl;
+
+    			upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
+    			splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
+                twrite += freq;
+    		}
+        }
 	}
     else
     {
@@ -1200,7 +1217,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end, con
                         fwr << T_f[k].x << " ";
                 }
 
-                fwr << std::endl;
+                fwr << endl;
 
                 upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
                 splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
@@ -1218,13 +1235,14 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end, con
 	cudaFree(d_IC);
 	cudaFree(d_right);
 	cudaFree(d_left);
+    cudaFreeHost(right);
+    cudaFreeHost(left);
 
     return t_eq;
 }
 
 int main( int argc, char *argv[] )
 {
-    using namespace std;
 
     //That is there are less than 8 arguments.
     if (argc < 9)
@@ -1258,7 +1276,6 @@ int main( int argc, char *argv[] )
     REAL lx = dx*((float)dv-1.f);
 
     //Declare the dimensions in constant memory.
-    REALthree dimz;
     dimz.x = dt/dx; // dt/dx
     dimz.y = gam; dimz.z = m_gamma;
 
@@ -1274,8 +1291,9 @@ int main( int argc, char *argv[] )
     }
 
 	// Initialize arrays.
-    REALfour *IC = (REALfour*)malloc(dv*sizeof(REALfour));
-	REALfour *T_final = (REALfour*)malloc(dv*sizeof(REALfour));
+    REALfour *IC, *T_final;
+	cudaHostAlloc((void **) &IC, dv*sizeof(REALfour), cudaHostAllocDefault);
+	cudaHostAlloc((void **) &T_final, dv*sizeof(REALfour), cudaHostAllocDefault);
 
 	// Some initial condition for the bar temperature, an exponential decay
 	// function.
@@ -1329,6 +1347,7 @@ int main( int argc, char *argv[] )
     {
         tfm = classicWrapper(bks, tpb, dv, dt, tf, IC, T_final, freq, fwr);
     }
+
 	// Show the time and write out the final condition.
 	cudaEventRecord(stop, 0);
 	cudaEventSynchronize(stop);
@@ -1362,7 +1381,6 @@ int main( int argc, char *argv[] )
 	fwr.close();
 
 	// Free the memory and reset the device.
-	cudaDeviceSynchronize();
 
 	cudaEventDestroy( start );
 	cudaEventDestroy( stop );

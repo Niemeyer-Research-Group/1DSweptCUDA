@@ -32,7 +32,7 @@ using namespace std;
 
 __constant__ REAL fo;
 
-const double PI = 3.141592653589793238463;
+const REAL fou = .05;
 
 const REAL th_diff = 8.418e-5;
 
@@ -44,7 +44,11 @@ __host__ __device__ REAL initFun(int xnode, REAL ds, REAL lx)
 
 __host__ __device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
 {
+    #ifdef __CUDA_ARCH__
     return fo*(tLeft+tRight) + (1.f-2.f*fo)*tCenter;
+    #else
+    return fou*(tLeft+tRight) + (1.f-2.f*fou)*tCenter;
+    #endif
 }
 
 __global__
@@ -367,8 +371,9 @@ splitDiamond(REAL *right, REAL *left)
     int tidm = tid - 1;
 
     //The initial conditions are timslice 0 so start k at 1.
+    height -= 1;
 
-	for (int k = 1; k<(height-1); k++)
+	for (int k = 1; k<height; k++)
 	{
 		//Bitwise even odd. On even iterations write to first row.
 		shft_wr = blockDim.x * (k & 1);
@@ -388,11 +393,11 @@ splitDiamond(REAL *right, REAL *left)
         {
             if (tid < (blockDim.x-k) && tid >= k)
             {
-                if (tid == (height - 2))
+                if (tid == (height - 1))
                 {
                     temper[tid + shft_wr] = execFunc(temper[tidm + shft_rd], temper[tidm + shft_rd], temper[tid + shft_rd]);
                 }
-                else if (tid == (height - 1))
+                else if (tid == (height))
                 {
                     temper[tid + shft_wr] = execFunc(temper[tid1 + shft_rd], temper[tid1 + shft_rd], temper[tid + shft_rd]);
                 }
@@ -411,7 +416,6 @@ splitDiamond(REAL *right, REAL *left)
 	left[gid] = temper[leftidx];
 }
 
-//Do the split diamond on the CPU?
 
 
 __host__
@@ -453,6 +457,7 @@ CPU_diamond(REAL *temper, int tpb)
 
     for (int k = 0; k<tpb; k++) temper[k] = temper[k+1];
     //Top part.
+    ht -= 1;
     for (int k = 1; k<ht; k++)
     {
         // This tells you if the current row is the first or second.
@@ -551,7 +556,9 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_en
     REAL *tmpr = (REAL*)malloc(smem2);
 	REAL *d_IC, *d_right, *d_left;
     //USE CUDA host alloc.
-    REAL right[tpb], left[tpb];
+    REAL *right, *left;
+    cudaHostAlloc((void **) &right, tpb*sizeof(REAL), cudaHostAllocDefault);
+    cudaHostAlloc((void **) &left, tpb*sizeof(REAL), cudaHostAllocDefault);
 
 	cudaMalloc((void **)&d_IC, sizeof(REAL)*dv);
 	cudaMalloc((void **)&d_right, sizeof(REAL)*dv);
@@ -720,6 +727,8 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_en
 	cudaFree(d_IC);
 	cudaFree(d_right);
 	cudaFree(d_left);
+    cudaFreeHost(right);
+    cudaFreeHost(left);
 
     return t_eq;
 }
@@ -746,9 +755,6 @@ int main( int argc, char *argv[] )
     const int tst = atoi(argv[7]);
 	const int bks = dv/tpb; //The number of blocks
 
-
-    REAL fou = .05;
-
     const REAL ds = sqrtf(dt*th_diff/fou);
     REAL lx = ds*((float)dv-1.f);
     cout << bks << endl;
@@ -764,8 +770,9 @@ int main( int argc, char *argv[] )
     }
 
 	// Initialize arrays.
-    REAL *IC = (REAL*)malloc(dv*sizeof(REAL));
-	REAL *T_final = (REAL*)malloc(dv*sizeof(REAL));
+    REAL *IC, *T_final;
+	cudaHostAlloc((void **) &IC, dv*sizeof(REAL), cudaHostAllocDefault);
+	cudaHostAlloc((void **) &T_final, dv*sizeof(REAL), cudaHostAllocDefault);
 
 	// Some initial condition for the bar temperature, an exponential decay
 	// function.
