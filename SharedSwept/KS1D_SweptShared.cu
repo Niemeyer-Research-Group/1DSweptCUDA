@@ -89,40 +89,39 @@ REAL finalStep(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tCenter_orig, REAL 
 			fourthDer(tfarLeft, tLeft, tCenter, tRight, tfarRight));
 }
 
+__global__
+void
+swapKernel(const REAL *passing_side, REAL *bin, int direction)
+{
+    int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
+    int lastidx = ((blockDim.x*gridDim.x)-1);
+    int gidout = (gid + direction*blockDim.x) & lastidx;
+
+    bin[gidout] = passing_side[gid];
+
+}
+
 //Classic
 __global__
 void
-classicKS(REAL *ks_in, REAL *ks_out)
+classicKS(const REAL *ks_in, REAL *ks_out, bool final, const REAL *ks_orig)
 {
     int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
     int lastidx = ((blockDim.x*gridDim.x)-1);
 
-    REAL temp[5];
-    REAL persist = ks_in[gid];
-
-    #pragma unroll
-	for (int k = -2; k<3; k++)
+	if (final)
 	{
-		temp[k+2] = ks_in[(gid+k)&lastidx];
+		ks_out[gid] = finalStep(ks_in[(gid-2)&lastidx],ks_in[(gid-1)&lastidx],ks_in[gid],ks_orig[gid],ks_in[(gid+1)&lastidx],ks_in[(gid+2)&lastidx]);
 	}
-
-	ks_out[gid] = stutterStep(temp[0],temp[1],temp[2],temp[3],temp[4]);
-
-	#pragma unroll
-	for (int k = -2; k<3; k++)
+	else
 	{
-		temp[k+2] = ks_out[(gid+k)&lastidx];
+		ks_out[gid] = stutterStep(ks_in[(gid-2)&lastidx],ks_in[(gid-1)&lastidx],ks_in[gid],ks_in[(gid+1)&lastidx],ks_in[(gid+2)&lastidx]);
 	}
-
-	ks_out[gid] = finalStep(temp[0],temp[1],temp[2],persist,temp[3],temp[4]);
-
 }
 
-
-//Up is the same.
 __global__
 void
-upTriangle(REAL *IC, REAL *right, REAL *left)
+upTriangle(const REAL *IC, REAL *right, REAL *left)
 {
 	extern __shared__ REAL temper[];
 
@@ -145,6 +144,8 @@ upTriangle(REAL *IC, REAL *right, REAL *left)
     //Assign the initial values to the first row in temper, each block
     //has it's own version of temper shared among its threads.
 	temper[tid] = IC[gid];
+
+	__syncthreads();
 
 	if (tid > 1 && tid <(blockDim.x-2))
 	{
@@ -187,7 +188,7 @@ upTriangle(REAL *IC, REAL *right, REAL *left)
 
 __global__
 void
-downTriangle(REAL *IC, REAL *right, REAL *left)
+downTriangle(REAL *IC, const REAL *right, const REAL *left)
 {
 	extern __shared__ REAL temper[];
 
@@ -208,11 +209,11 @@ downTriangle(REAL *IC, REAL *right, REAL *left)
 
 	int leftidx = height + ((tid/4 & 1) * base) + (tid & 3) - (4 + (tid/4) * 2);
 	int rightidx = height + ((tid/4 & 1) * base) + (tid/4)*2 + (tid & 3);
-	int gidin = (gid + blockDim.x) & ((blockDim.x*gridDim.x)-1);
-
 
 	temper[leftidx] = right[gid];
-	temper[rightidx] = left[gidin];
+	temper[rightidx] = left[gid];
+
+	__syncthreads();
 
 	for (int k = (height-2); k>0; k-=4)
 	{
@@ -224,6 +225,7 @@ downTriangle(REAL *IC, REAL *right, REAL *left)
 		}
 
 		step2 = k-2;
+		__syncthreads();
 
 		if (tididx < (base-step2) && tididx >= step2)
 		{
@@ -241,7 +243,7 @@ downTriangle(REAL *IC, REAL *right, REAL *left)
 // Pass to split is false.  Pass to whole is true.
 __global__
 void
-wholeDiamond(REAL *right, REAL *left, int pass)
+wholeDiamond(REAL *right, REAL *left)
 {
 	extern __shared__ REAL temper[];
 
@@ -262,19 +264,11 @@ wholeDiamond(REAL *right, REAL *left, int pass)
 
 	int leftidx = height + ((tid/4 & 1) * base) + (tid & 3) - (4 + (tid/4) * 2);
 	int rightidx = height + ((tid/4 & 1) * base) + (tid/4)*2 + (tid & 3);
-	int gidin = (gid + pass*blockDim.x) & ((blockDim.x*gridDim.x)-1);
 
-	if (pass < 0)
-	{
-    	temper[leftidx] = right[gidin];
-    	temper[rightidx] = left[gid];
-	}
-	else
-	{
-		temper[leftidx] = right[gid];
-		temper[rightidx] = left[gidin];
-	}
+	temper[leftidx] = right[gid];
+	temper[rightidx] = left[gid];
 
+	__syncthreads();
 
 	for (int k = (height-2); k>0; k-=4)
 	{
@@ -311,6 +305,8 @@ wholeDiamond(REAL *right, REAL *left, int pass)
 		tid_top[k+2] = tid + k + blockDim.x;
 		tid_bottom[k+2] = tid + k;
 	}
+
+	__syncthreads();
 
 	if (tid > 1 && tid <(blockDim.x-2))
 	{
@@ -355,10 +351,11 @@ double
 classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_end,
     REAL *IC, REAL *T_f, const float freq, ofstream &fwr)
 {
-    REAL *dks_in, *dks_out;
+    REAL *dks_in, *dks_out, *dks_orig;
 
     cudaMalloc((void **)&dks_in, sizeof(REAL)*dv);
     cudaMalloc((void **)&dks_out, sizeof(REAL)*dv);
+	cudaMalloc((void **)&dks_orig, sizeof(REAL)*dv);
 
     // Copy the initial conditions to the device array.
     cudaMemcpy(dks_in,IC,sizeof(REAL)*dv,cudaMemcpyHostToDevice);
@@ -368,9 +365,10 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_
 
     while (t_eq < t_end)
     {
-        classicKS <<< bks,tpb >>> (dks_in, dks_out);
-        classicKS <<< bks,tpb >>> (dks_out, dks_in);
-        t_eq += 2*dt;
+		swapKernel <<< bks,tpb >>> (dks_in, dks_orig, 0);
+        classicKS <<< bks,tpb >>> (dks_in, dks_out, false, dks_orig);
+        classicKS <<< bks,tpb >>> (dks_out, dks_in, true, dks_orig);
+        t_eq += dt;
 
         if (t_eq > twrite)
         {
@@ -391,6 +389,7 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_
 
     cudaFree(dks_in);
     cudaFree(dks_out);
+	cudaFree(dks_orig);
 
     return t_eq;
 }
@@ -401,10 +400,11 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
 	REAL *IC, REAL *T_f, const float freq, ofstream &fwr)
 {
 
-	REAL *d_IC, *d_right, *d_left;
+	REAL *d_IC, *d_right, *d_left, *d_bin;
 	cudaMalloc((void **)&d_IC, sizeof(REAL)*dv);
 	cudaMalloc((void **)&d_right, sizeof(REAL)*dv);
 	cudaMalloc((void **)&d_left, sizeof(REAL)*dv);
+	cudaMalloc((void **)&d_bin, sizeof(REAL)*dv);
 
 	// Copy the initial conditions to the device array.
 	cudaMemcpy(d_IC,IC,sizeof(REAL)*dv,cudaMemcpyHostToDevice);
@@ -418,16 +418,34 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
 	const size_t smem2 = (2*tpb+8)*sizeof(REAL);
 
 	upTriangle <<< bks,tpb,smem1 >>> (d_IC,d_right,d_left);
-	wholeDiamond <<< bks,tpb,smem2 >>> (d_right,d_left,-1);
+
+	swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
+	swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
+
+	//Split
+	wholeDiamond <<< bks,tpb,smem2 >>> (d_right,d_left);
+
+	swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
+	swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+
 	double t_eq = t_fullstep;
 
 	// Call the kernels until you reach the iteration limit.
 	while(t_eq < t_end)
 	{
 
-		wholeDiamond <<< bks,tpb,smem2 >>> (d_right,d_left,1);
+		wholeDiamond <<< bks,tpb,smem2 >>> (d_right,d_left);
+
+		swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
+		swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
+
 		//So it always ends on a left pass since the down triangle is a right pass.
-		wholeDiamond <<< bks,tpb,smem2 >>> (d_right,d_left,-1);
+
+		//Split
+		wholeDiamond <<< bks,tpb,smem2 >>> (d_right,d_left);
+
+		swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
+		swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
 
 		t_eq += t_fullstep;
 
@@ -446,7 +464,15 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
 			fwr << endl;
 
 			upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
-			wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,-1);
+
+			swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
+			swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
+
+			//Split
+			wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
+
+			swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
+			swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
 
 			twrite += freq;
 		}
@@ -510,8 +536,12 @@ int main( int argc, char *argv[])
 
 	// Initialize arrays.
     REAL *IC, *T_final;
-	cudaHostAlloc((void **) &IC, dv*sizeof(REAL), cudaHostAllocDefault);
-	cudaHostAlloc((void **) &T_final, dv*sizeof(REAL), cudaHostAllocDefault);
+
+	// cudaHostAlloc((void **) &IC, dv*sizeof(REAL), cudaHostAllocDefault);
+	// cudaHostAlloc((void **) &T_final, dv*sizeof(REAL), cudaHostAllocDefault);
+
+    IC = (REAL *) malloc(dv*sizeof(REAL));
+    T_final = (REAL *) malloc(dv*sizeof(REAL));
 
 	// Inital condition
 	for (int k = 0; k<dv; k++)
@@ -588,12 +618,17 @@ int main( int argc, char *argv[])
 
 	fwr.close();
 
+	cudaDeviceSynchronize();
 	// Free the memory and reset the device.
-	cudaDeviceReset();
+
 	cudaEventDestroy( start );
 	cudaEventDestroy( stop );
-	cudaFreeHost(IC);
-    cudaFreeHost(T_final);
+	cudaDeviceReset();
+
+	// cudaFreeHost(IC);
+    // cudaFreeHost(T_final);
+	free(IC);
+	free(T_final);
 
 	return 0;
 

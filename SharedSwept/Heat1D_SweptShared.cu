@@ -5,10 +5,8 @@
 
 //DO:
 //Profile and compile --ptaxs.  NEED TO KNOW ABOUT REGISTERS!
-//Use malloc or cudaHostAlloc
-//Set up streams and run Sharing version.
+//Set up streams.
 //The ability to feed in initial conditions.
-//Input paths to output as argc?  Input?
 //Ask about just making up my own conventions.  Like dat vs txt.  Use that as flag?
 
 #include <cuda.h>
@@ -22,7 +20,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <fstream>
-#include "omp.h"
+#include <omp.h>
 
 #ifndef REAL
 #define REAL  float
@@ -39,16 +37,29 @@ const REAL th_diff = 8.418e-5;
 
 __host__ __device__ REAL initFun(int xnode, REAL ds, REAL lx)
 {
-    return 500.f*expf((-ds*(REAL)xnode)/lx ) + 50.f*sinf(-ds*2.f*(REAL)xnode);
+    return 500.f*expf((-ds*(REAL)xnode)/lx ) + 50.f*sinf(-ds*128.f*(REAL)xnode/lx);
 }
 
-__host__ __device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
+__device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
 {
-    #ifdef __CUDA_ARCH__
     return fo*(tLeft+tRight) + (1.f-2.f*fo)*tCenter;
-    #else
+}
+
+__host__ REAL execFuncHost(REAL tLeft, REAL tRight, REAL tCenter)
+{
     return fou*(tLeft+tRight) + (1.f-2.f*fou)*tCenter;
-    #endif
+}
+
+__global__
+void
+swapKernel(const REAL *passing_side, REAL *bin, int direction)
+{
+    int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
+    int lastidx = ((blockDim.x*gridDim.x)-1);
+    int gidout = (gid + direction*blockDim.x) & lastidx;
+
+    bin[gidout] = passing_side[gid];
+
 }
 
 __global__
@@ -73,7 +84,7 @@ classicHeat(REAL *heat_in, REAL *heat_out)
 
 __global__
 void
-upTriangle(REAL *IC, REAL *right, REAL *left)
+upTriangle(const REAL *IC, REAL *right, REAL *left)
 {
 
 	extern __shared__ REAL temper[];
@@ -90,6 +101,8 @@ upTriangle(REAL *IC, REAL *right, REAL *left)
     //Assign the initial values to the first row in temper, each warp (in this
 	//case each block) has it's own version of temper shared among its threads.
 	temper[tid] = IC[gid];
+
+    __syncthreads();
 
 	//The initial conditions are timslice 0 so start k at 1.
 
@@ -124,34 +137,35 @@ upTriangle(REAL *IC, REAL *right, REAL *left)
 // It returns IC which is a full 1D result at a certain time.
 __global__
 void
-downTriangle(REAL *IC, REAL *right, REAL *left)
+downTriangle(REAL *IC, const REAL *right, const REAL *left)
 {
 	extern __shared__ REAL temper[];
 
 	//Same as upTriangle
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
 	int tid = threadIdx.x;
-    int lastidx = ((blockDim.x*gridDim.x)-1);
 	int tid1 = tid + 1;
 	int tid2 = tid + 2;
 	int base = blockDim.x + 2;
 	int height = base/2;
 	int shft_rd;
 	int shft_wr;
-	int leftidx = base/2 - tid/2 + ((tid/2 & 1) * base) + (tid & 1) - 2;
-	int rightidx = base/2 + tid/2 + ((tid/2 & 1) * base) + (tid & 1);
-	int gidin = (gid + blockDim.x) & lastidx;
+
+	int leftidx = height - tid/2 + ((tid/2 & 1) * base) + (tid & 1) - 2;
+	int rightidx = height + tid/2 + ((tid/2 & 1) * base) + (tid & 1);
+    int lastidx = ((blockDim.x*gridDim.x)-1);
 
 	// Initialize temper. Kind of an unrolled for loop.  This is actually at
 	// Timestep 0.
 
 	temper[leftidx] = right[gid];
-	temper[rightidx] = left[gidin];
+	temper[rightidx] = left[gid];
 
+    __syncthreads();
     //k needs to insert the relevant left right values around the computed values
 	//every timestep.  Since it grows larger the loop is reversed.
 
-	for (int k = height-1; k>1; k--)
+	for (int k = (height-1); k>1; k--)
 	{
 		// This tells you if the current row is the first or second.
 		shft_wr = base * ((k+1) & 1);
@@ -167,18 +181,19 @@ downTriangle(REAL *IC, REAL *right, REAL *left)
 
     if (gid == 0)
     {
-        temper[tid1] = execFunc(temper[tid2+base], temper[tid2+base], temper[tid1+base]);
+        temper[tid] = execFunc(temper[tid2+base], temper[tid2+base], temper[tid1+base]);
     }
     else if (gid == lastidx)
     {
-        temper[tid1] = execFunc(temper[tid+base], temper[tid+base], temper[tid1+base]);
+        temper[tid] = execFunc(temper[tid+base], temper[tid+base], temper[tid1+base]);
     }
     else
     {
-        temper[tid1] = execFunc(temper[tid+base], temper[tid2+base], temper[tid1+base]);
+        temper[tid] = execFunc(temper[tid+base], temper[tid2+base], temper[tid1+base]);
     }
+    __syncthreads();
 
-    IC[gid] = temper[tid1];
+    IC[gid] = temper[tid];
 }
 
 //Full refers to whether or not there is a node run on the CPU.
@@ -186,7 +201,6 @@ __global__
 void
 wholeDiamond(REAL *right, REAL *left, bool full)
 {
-
     extern __shared__ REAL temper[];
 
 	//Same as upTriangle
@@ -201,21 +215,24 @@ wholeDiamond(REAL *right, REAL *left, bool full)
 	int shft_wr;
 	int leftidx = height - tid/2 + ((tid/2 & 1) * base) + (tid & 1) - 2;
 	int rightidx = height + tid/2 + ((tid/2 & 1) * base) + (tid & 1);
-	// Initialize temper. Kind of an unrolled for loop.  This is actually at
-	// Timestep 0.
+
+
+    //if (blockIdx.x > (gridDim.x-3)) printf("gid: %i, gidin: %i \n",gid,gidin);
+	// Initialize temper.
 
     if (full)
     {
-        int gidin = (gid + blockDim.x) & lastidx;
         temper[leftidx] = right[gid];
-        temper[rightidx] = left[gidin];
+        temper[rightidx] = left[gid];
     }
     else
     {
-        temper[leftidx] = right[gid];
         gid += blockDim.x;
+        temper[leftidx] = right[gid];
         temper[rightidx] = left[gid];
     }
+
+    __syncthreads();
 
 	for (int k = (height-1); k>1; k--)
 	{
@@ -258,19 +275,20 @@ wholeDiamond(REAL *right, REAL *left, bool full)
 
     //-------------------TOP PART------------------------------------------
 
-    leftidx = tid/2 + ((tid/2 & 1) * base) + (tid & 1);
-    rightidx = (base - 4) + ((tid/2 & 1) * base) + (tid & 1) -  tid/2;
+    leftidx = tid/2 + ((tid/2 & 1) * blockDim.x) + (tid & 1);
+    rightidx = (blockDim.x - 2) + ((tid/2 & 1) * blockDim.x) + (tid & 1) -  tid/2;
 
     int tidm = tid - 1;
 
+    height -= 1;
 	//The initial conditions are timeslice 0 so start k at 1.
 
-    for (int k = 1; k<(height-1); k++)
+    for (int k = 1; k<height; k++)
 	{
 		//Bitwise even odd. On even iterations write to first row.
-		shft_wr = base * (k & 1);
+		shft_wr = blockDim.x * (k & 1);
 		//On even iterations write to second row (starts at element 32)
-		shft_rd = base * ((k + 1) & 1);
+		shft_rd = blockDim.x * ((k + 1) & 1);
 
 		//Each iteration the triangle narrows.  When k = 1, 30 points are
 		//computed, k = 2, 28 points.
@@ -283,10 +301,8 @@ wholeDiamond(REAL *right, REAL *left, bool full)
 		__syncthreads();
 
 	}
-
     right[gid] = temper[rightidx];
 	left[gid] = temper[leftidx];
-
 }
 
 //Split one is always first.  Passing left like the downTriangle.  downTriangle
@@ -295,13 +311,11 @@ __global__
 void
 splitDiamond(REAL *right, REAL *left)
 {
-
     extern __shared__ REAL temper[];
 
 	//Same as upTriangle
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
 	int tid = threadIdx.x;
-    int lastidx = ((blockDim.x*gridDim.x)-1);
 	int tid1 = tid + 1;
 	int tid2 = tid + 2;
 	int base = blockDim.x + 2;
@@ -310,16 +324,15 @@ splitDiamond(REAL *right, REAL *left)
 	int shft_wr;
 	int leftidx = height - tid/2 + ((tid/2 & 1) * base) + (tid & 1) - 2;
 	int rightidx = height + tid/2 + ((tid/2 & 1) * base) + (tid & 1);
-    int gidin = (gid - blockDim.x) & lastidx;
-	// Initialize temper. Kind of an unrolled for loop.  This is actually at
-	// Timestep 0.
 
-    temper[leftidx] = right[gidin];
+	// Initialize temper.
+
+    temper[leftidx] = right[gid];
 	temper[rightidx] = left[gid];
 
     //Wind it up!
-    //k needs to insert the relevant left right values around the computed values
-    //every timestep.  Since it grows larger the loop is reversed.
+
+    __syncthreads();
 
     for (int k = (height-1); k>0; k--)
     {
@@ -345,7 +358,7 @@ splitDiamond(REAL *right, REAL *left)
             {
                 if (tid1 == (height-1))
                 {
-                    temper[tid1 + shft_wr] =execFunc(temper[tid+shft_rd], temper[tid+shft_rd], temper[tid1+shft_rd]);
+                    temper[tid1 + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid+shft_rd], temper[tid1+shft_rd]);
                 }
                 else if (tid1 == height)
                 {
@@ -364,14 +377,15 @@ splitDiamond(REAL *right, REAL *left)
 
     temper[tid] = temper[tid1];
 
+    __syncthreads();
+
     //-------------------TOP PART------------------------------------------
     leftidx = tid/2 + ((tid/2 & 1) * blockDim.x) + (tid & 1);
     rightidx = (blockDim.x - 2) + ((tid/2 & 1) * blockDim.x) + (tid & 1) -  tid/2;
 
     int tidm = tid - 1;
 
-    //The initial conditions are timslice 0 so start k at 1.
-    height -= 1;
+    height--;
 
 	for (int k = 1; k<height; k++)
 	{
@@ -393,11 +407,12 @@ splitDiamond(REAL *right, REAL *left)
         {
             if (tid < (blockDim.x-k) && tid >= k)
             {
-                if (tid == (height - 1))
+                if (tid == (height-1))
                 {
                     temper[tid + shft_wr] = execFunc(temper[tidm + shft_rd], temper[tidm + shft_rd], temper[tid + shft_rd]);
+
                 }
-                else if (tid == (height))
+                else if (tid == height)
                 {
                     temper[tid + shft_wr] = execFunc(temper[tid1 + shft_rd], temper[tid1 + shft_rd], temper[tid + shft_rd]);
                 }
@@ -415,7 +430,6 @@ splitDiamond(REAL *right, REAL *left)
 	right[gid] = temper[rightidx];
 	left[gid] = temper[leftidx];
 }
-
 
 
 __host__
@@ -441,23 +455,23 @@ CPU_diamond(REAL *temper, int tpb)
             //Double trailing index.
             if(n == ht)
             {
-                temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[bck+shft_rd], temper[n+shft_rd]);
+                temper[n + shft_wr] = execFuncHost(temper[bck+shft_rd], temper[bck+shft_rd], temper[n+shft_rd]);
             }
             //Double leading index.
             else if(n == ht+1)
             {
-                temper[n + shft_wr] = execFunc(temper[fwd+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd]);
+                temper[n + shft_wr] = execFuncHost(temper[fwd+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd]);
             }
             else
             {
-                temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd]);
+                temper[n + shft_wr] = execFuncHost(temper[bck+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd]);
             }
         }
     }
 
     for (int k = 0; k<tpb; k++) temper[k] = temper[k+1];
     //Top part.
-    ht -= 1;
+    ht--;
     for (int k = 1; k<ht; k++)
     {
         // This tells you if the current row is the first or second.
@@ -472,16 +486,16 @@ CPU_diamond(REAL *temper, int tpb)
             //Double trailing index.
             if(n == ht)
             {
-                temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[bck+shft_rd], temper[n+shft_rd]);
+                temper[n + shft_wr] = execFuncHost(temper[bck+shft_rd], temper[bck+shft_rd], temper[n+shft_rd]);
             }
             //Double leading index.
             else if(n == ht+1)
             {
-                temper[n + shft_wr] = execFunc(temper[fwd+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd]);
+                temper[n + shft_wr] = execFuncHost(temper[fwd+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd]);
             }
             else
             {
-                temper[n + shft_wr] = execFunc(temper[bck+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd]);
+                temper[n + shft_wr] = execFuncHost(temper[bck+shft_rd], temper[fwd+shft_rd], temper[n+shft_rd]);
             }
         }
     }
@@ -489,7 +503,7 @@ CPU_diamond(REAL *temper, int tpb)
 
 //Classic Discretization wrapper.
 double
-classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_end,
+classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_end,
     REAL *IC, REAL *T_f, const float freq, ofstream &fwr)
 {
     REAL *dheat_in, *dheat_out;
@@ -535,7 +549,7 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_
 
 //The Swept Rule wrapper.
 double
-sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_end, const int cpu,
+sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_end, const int cpu,
     REAL *IC, REAL *T_f, const float freq, ofstream &fwr)
 {
     const int base = (tpb + 2);
@@ -553,16 +567,13 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_en
         indices[3][k] = (tpb - 2) + ((k/2 & 1) * tpb) + (k & 1) -  k/2; //right
     }
 
-    REAL *tmpr = (REAL*)malloc(smem2);
-	REAL *d_IC, *d_right, *d_left;
-    //USE CUDA host alloc.
-    REAL *right, *left;
-    cudaHostAlloc((void **) &right, tpb*sizeof(REAL), cudaHostAllocDefault);
-    cudaHostAlloc((void **) &left, tpb*sizeof(REAL), cudaHostAllocDefault);
+
+	REAL *d_IC, *d_right, *d_left, *d_bin;
 
 	cudaMalloc((void **)&d_IC, sizeof(REAL)*dv);
 	cudaMalloc((void **)&d_right, sizeof(REAL)*dv);
 	cudaMalloc((void **)&d_left, sizeof(REAL)*dv);
+    cudaMalloc((void **)&d_bin, sizeof(REAL)*dv);
 
 	// Copy the initial conditions to the device array.
 	cudaMemcpy(d_IC,IC,sizeof(REAL)*dv,cudaMemcpyHostToDevice);
@@ -570,57 +581,75 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_en
 	const double t_fullstep = dt*(double)tpb;
 
 	upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
+    swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
+    swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
 
     double t_eq;
     double twrite = freq;
 
 	// Call the kernels until you reach the iteration limit.
-    // Done now juse use streams or omp to optimize.
 
     if (cpu)
     {
-        t_eq = t_fullstep/2;
+        REAL *tmpr = (REAL*)malloc(smem2);
+        REAL *h_right, *h_left;
+        cudaHostAlloc((void **) &h_right, tpb*sizeof(REAL), cudaHostAllocDefault);
+        cudaHostAlloc((void **) &h_left, tpb*sizeof(REAL), cudaHostAllocDefault);
+        // h_right = (REALfour *) malloc(tpb*sizeof(REALfour));
+        // h_left = (REALfour *) malloc(tpb*sizeof(REALfour));
+
+        t_eq = t_fullstep;
         omp_set_num_threads( 2 );
 
-        cudaMemcpy(right,d_left, tpb*sizeof(REAL), cudaMemcpyDeviceToHost);
-        cudaMemcpy(left, d_right+(dv-tpb) , tpb*sizeof(REAL), cudaMemcpyDeviceToHost);
+        //Split Diamond Begin------
+
+        cudaMemcpy(h_right, d_left, tpb*sizeof(REAL), cudaMemcpyDeviceToHost);
+        cudaMemcpy(h_left, d_right, tpb*sizeof(REAL), cudaMemcpyDeviceToHost);
+
         #pragma omp parallel sections
         {
         #pragma omp section
         {
-
-
             for (int k = 0; k<tpb; k++)
             {
-                tmpr[indices[0][k]] = left[k];
-                tmpr[indices[1][k]] = right[k];
+                tmpr[indices[0][k]] = h_left[k];
+                tmpr[indices[1][k]] = h_right[k];
             }
 
             CPU_diamond(tmpr, tpb);
 
             for (int k = 0; k<tpb; k++)
             {
-                left[k] = tmpr[indices[2][k]];
-                right[k] = tmpr[indices[3][k]];
+                h_left[k] = tmpr[indices[2][k]];
+                h_right[k] = tmpr[indices[3][k]];
             }
         }
         #pragma omp section
         {
             wholeDiamond <<< bks-1,tpb,smem2 >>>(d_right,d_left,false);
-
         }
         }
 
-        cudaMemcpy(d_right, right, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_left, left, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_right, h_right, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_left, h_left, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
+
+        swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
+        swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+
+        //Split Diamond End------
 
     	while(t_eq < t_end)
     	{
 
             wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,true);
 
-            cudaMemcpy(right,d_left, tpb*sizeof(REAL), cudaMemcpyDeviceToHost);
-            cudaMemcpy(left, d_right+(dv-tpb) , tpb*sizeof(REAL), cudaMemcpyDeviceToHost);
+            swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
+            swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
+
+            //Split Diamond Begin------
+
+            cudaMemcpy(h_right,d_left, tpb*sizeof(REAL), cudaMemcpyDeviceToHost);
+            cudaMemcpy(h_left, d_right, tpb*sizeof(REAL), cudaMemcpyDeviceToHost);
             #pragma omp parallel sections
             {
             #pragma omp section
@@ -629,16 +658,16 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_en
 
                 for (int k = 0; k<tpb; k++)
                 {
-                    tmpr[indices[0][k]] = left[k];
-                    tmpr[indices[1][k]] = right[k];
+                    tmpr[indices[0][k]] = h_left[k];
+                    tmpr[indices[1][k]] = h_right[k];
                 }
 
                 CPU_diamond(tmpr, tpb);
 
                 for (int k = 0; k<tpb; k++)
                 {
-                    left[k] = tmpr[indices[2][k]];
-                    right[k] = tmpr[indices[3][k]];
+                    h_left[k] = tmpr[indices[2][k]];
+                    h_right[k] = tmpr[indices[3][k]];
                 }
             }
             #pragma omp section
@@ -648,9 +677,13 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_en
             }
             }
 
-            cudaMemcpy(d_right, right, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
-            cudaMemcpy(d_left, left, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
+            cudaMemcpy(d_right, h_right, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
+            cudaMemcpy(d_left, h_left, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
 
+            swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
+            swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+
+            //Split Diamond End------
 
 		    //So it always ends on a left pass since the down triangle is a right pass.
 
@@ -677,26 +710,46 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_en
     			}
     			fwr << endl;
 
-    			upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
+                upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
+
+                swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
+                swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
+
     			splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
+
+                swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
+                swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
 
     			twrite += freq;
     		}
         }
+        cudaFreeHost(h_right);
+        cudaFreeHost(h_left);
+        // free(h_right);
+        // free(h_left);
+        free(tmpr);
 	}
     else
     {
         splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
         t_eq = t_fullstep;
+        swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
+        swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
 
         while(t_eq < t_end)
         {
 
             wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,true);
 
-            splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
-            //So it always ends on a left pass since the down triangle is a right pass.
+            swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
+            swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
 
+            splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
+
+            swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
+            swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+
+            //So it always ends on a left pass since the down triangle is a right pass.
             t_eq += t_fullstep;
 
             if (t_eq > twrite)
@@ -713,7 +766,14 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_en
     			fwr << endl;
 
     			upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
+
+                swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
+                swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
+
     			splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
+
+                swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
+                swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
 
     			twrite += freq;
     		}
@@ -727,8 +787,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_en
 	cudaFree(d_IC);
 	cudaFree(d_right);
 	cudaFree(d_left);
-    cudaFreeHost(right);
-    cudaFreeHost(left);
+    cudaFree(d_bin);
 
     return t_eq;
 }
@@ -749,7 +808,7 @@ int main( int argc, char *argv[] )
     int dv = atoi(argv[1]); //Number of spatial points
 	const int tpb = atoi(argv[2]); //Threads per Blocks
     REAL dt = atof(argv[3]);
-	const int tf = atoi(argv[4]); //Finish time
+	const float tf = atof(argv[4]); //Finish time
     const float freq = atof(argv[5]);
     const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
     const int tst = atoi(argv[7]);
@@ -757,7 +816,7 @@ int main( int argc, char *argv[] )
 
     const REAL ds = sqrtf(dt*th_diff/fou);
     REAL lx = ds*((float)dv-1.f);
-    cout << bks << endl;
+    cout << bks << " Blocks" << endl;
 	//Conditions for main input.  Unit testing kinda.
 	//dv and tpb must be powers of two.  dv must be larger than tpb and divisible by
 	//tpb.
@@ -771,8 +830,11 @@ int main( int argc, char *argv[] )
 
 	// Initialize arrays.
     REAL *IC, *T_final;
-	cudaHostAlloc((void **) &IC, dv*sizeof(REAL), cudaHostAllocDefault);
-	cudaHostAlloc((void **) &T_final, dv*sizeof(REAL), cudaHostAllocDefault);
+	// cudaHostAlloc((void **) &IC, dv*sizeof(REAL), cudaHostAllocDefault);
+	// cudaHostAlloc((void **) &T_final, dv*sizeof(REAL), cudaHostAllocDefault);
+
+    IC = (REAL *) malloc(dv*sizeof(REAL));
+    T_final = (REAL *) malloc(dv*sizeof(REAL));
 
 	// Some initial condition for the bar temperature, an exponential decay
 	// function.
@@ -855,6 +917,10 @@ int main( int argc, char *argv[] )
 	cudaEventDestroy( start );
 	cudaEventDestroy( stop );
     cudaDeviceReset();
+    // cudaFreeHost(IC);
+    // cudaFreeHost(T_final);
+    free(IC);
+    free(T_final);
 
 	return 0;
 

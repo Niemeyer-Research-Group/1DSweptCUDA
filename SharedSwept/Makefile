@@ -1,6 +1,6 @@
 # Simple makefile for all test problems for 1D Swept Rule
 
-CUDAFLAGS = -gencode arch=compute_35,code=sm_35 -lm -Xcompiler -fopenmp -w -std=c++11
+CUDAFLAGS = -gencode arch=compute_35,code=sm_35 -lm -restrict -Xcompiler -fopenmp
 
 # It will put the compiled programs in the bin subdirectory within the directory
 # containing the makefile
