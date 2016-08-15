@@ -11,64 +11,197 @@ import os
 import Tkinter as Tk
 import pandas as pd
 
-
 OPTIONS = [
     "KS",
     "Heat",
     "Euler"
 ]
 
+#It's kinda getting there.
 master = Tk.Tk()
 
-master.geometry("400x400")
+dropframe = Tk.Frame(master, pady = 2)
+entryframe = Tk.Frame(master, pady = 1)
+endframe = Tk.Frame(master, pady = 2)
+dropframe.pack()
+endframe.pack(side = 'bottom')
+entryframe.pack(side = 'bottom')
+master.title("Swept Rule 1-D GPU performance test")
 
-variable = Tk.StringVar(master)
-variable.set(OPTIONS[1]) # default value
+problem = Tk.StringVar(master)
+problem.set(OPTIONS[1]) # default value
 
-w = apply(Tk.OptionMenu, (master, variable) + tuple(OPTIONS))
-w.pack()
+#Number of divisions power of two
+divpow = Tk.IntVar(master)
+divpow.set(12)
+
+divpowend = Tk.IntVar(master)
+divpowend.set(20)
+
+#Threads per block.
+blkpow = Tk.IntVar(master)
+blkpow.set(5)
+
+blkpowend = Tk.IntVar(master)
+blkpowend.set(10)
+
+#dt
+deltat = Tk.DoubleVar(master)
+
+#tf
+t_final = Tk.DoubleVar(master)
+
+#freq
+fq = Tk.DoubleVar(master)
+
+#Swept or classic
+sw = Tk.BooleanVar(master)
+
+#CPU or no
+proc_share = Tk.BooleanVar(master)
+
+if problem == 'KS':
+    deltat.set(0.005)
+    t_final.set(1000)
+elif problem == 'Euler':
+    deltat.set(0.02)
+    t_final.set(100)
+else:
+    deltat.set(0.02)
+    t_final.set(1000)
+
+fq.set(t_final.get()*2.0)
+
+runit = Tk.BooleanVar(master)
+runit.set(True)
 
 def ok():
+    master.destroy()
+    
+def ret(event):
+    master.destroy()
+
+def replot():
+    runit.set(False)
     master.destroy()
 
 def on_closing():
     raise SystemExit
 
+def reset_vals(problem):
+    if problem == 'KS':
+        deltat.set(0.005)
+        t_final.set(1000)
+    elif problem == 'Euler':
+        deltat.set(0.02)
+        t_final.set(100)
+    else:
+        deltat.set(0.02)
+        t_final.set(1000)
+
+def reset_label(event):
+    res_one.config(text = str(2**divpow.get()))
+    res_two.config(text = str(2**blkpow.get()))
+    res_three.config(text = str(2**divpowend.get()))
+    res_four.config(text = str(2**blkpowend.get()))
+        
 master.protocol("WM_DELETE_WINDOW", on_closing)
-button = Tk.Button(master, text="OK", command=ok)
-button.pack()
+master.bind('<Return>', ret)
+
+check_one = Tk.Checkbutton(entryframe, text = "Swept Scheme ", variable = sw)
+check_two = Tk.Checkbutton(entryframe, text = "CPU/GPU sharing ", variable = proc_share)
+
+check_one.grid(row = 9, column = 0)
+check_two.grid(row = 10, column = 0)
+
+# Just have one update routine and update for all changes.
+
+Tk.Label(entryframe, text= "Number of divisions: 2^").grid(row=1, column = 0)
+div_one = Tk.Entry(entryframe, textvariable=divpow)
+div_one.grid(row = 1, column = 1)
+
+Tk.Label(entryframe, text= "Threads per block: 2^").grid(row=3, column = 0)
+blk_one = Tk.Entry(entryframe, textvariable=blkpow)
+blk_one.grid(row = 3, column = 1)
+
+Tk.Label(entryframe, text= " to: 2^").grid(row=1, column = 2)
+div_two = Tk.Entry(entryframe, textvariable=divpowend)
+div_two.grid(row = 1, column = 3)
+
+Tk.Label(entryframe, text= " to: 2^").grid(row=3, column = 2)
+blk_two = Tk.Entry(entryframe, textvariable=blkpowend)
+blk_two.grid(row = 3, column = 3)
+
+Tk.Label(entryframe, text= u"\N{GREEK CAPITAL LETTER DELTA}"+"t (seconds): ").grid(row=5, column = 0)
+Tk.Entry(entryframe, textvariable=deltat).grid(row = 5, column = 1)
+
+Tk.Label(entryframe, text= "Stopping time (seconds): ").grid(row=6, column = 0)
+Tk.Entry(entryframe, textvariable=t_final).grid(row = 6, column = 1)
+
+Tk.Label(entryframe, text= "Output frequency (seconds): ").grid(row=7, column = 0)
+Tk.Entry(entryframe, textvariable=fq).grid(row = 7, column = 1)
+
+res_one = Tk.Label(entryframe, text = str(2**divpow.get()), anchor = Tk.W)
+res_one.grid(row = 2, column = 1)
+div_one.bind("<Key-Tab>", reset_label)
+res_two = Tk.Label(entryframe, text = str(2**blkpow.get()), anchor = Tk.W)
+res_two.grid(row = 4, column = 1)
+blk_one.bind("<Key-Tab>", reset_label)
+res_three = Tk.Label(entryframe, text = str(2**divpowend.get()))
+res_three.grid(row = 2, column = 3)
+div_two.bind("<Key-Tab>", reset_label)
+res_four = Tk.Label(entryframe, text = str(2**blkpowend.get()), anchor = Tk.W)
+res_four.grid(row = 4, column = 3)
+blk_two.bind("<Key-Tab>", reset_label)
+
+button_send = Tk.Button(endframe, text="OK", command=ok)
+button_send.grid(row = 0, column = 0)
+button_sk = Tk.Button(endframe, text="SKIP RUN", command=replot)
+button_sk.grid(row = 0, column = 1)
+problem_menu = Tk.OptionMenu(dropframe, problem, *OPTIONS, command=reset_vals)
+problem_menu.grid()
 
 master.mainloop()
 
-Fname = variable.get()
-
 ## -------Tkinter End----------
 
-Fname = variable.get()
+Fname = problem.get()
+dt = deltat.get()
+tf = t_final.get()
+freq = fq.get()
+swept = sw.get()
+cpu = proc_share.get()
 
 timeout = '1D_Timing.txt'
 rsltout = '1D_Result.dat'
-sourcebase = '1D_SweptShared.cu'
+
+if swept and cpu:
+    timestr = Fname + "_Swept_CPU_Sharing"
+    print timestr
+elif swept:
+    timestr = Fname + "_Swept_GPU_only"
+    print timestr
+else:
+    timestr = Fname + "_Classic"
+    print timestr
 
 sourcepath = os.path.dirname(__file__)
 basepath = os.path.join(sourcepath,'Results')
-if ~os.path.isdir(basepath):
+if not os.path.isdir(basepath):
     os.mkdir(basepath)
 
-tfile = Fname + timeout
-t_filepath = os.path.abspath(os.path.join(basepath, tfile))
+timer = Fname + timestr + timeout
+rslt = Fname + rsltout
+timefile = os.path.abspath(os.path.join(basepath, timer))
+rsltfile = os.path.abspath(os.path.join(basepath, rslt))
 
 #Reset timing file.
-if os.path.isfile(t_filepath):
-    os.remove(t_filepath)
+if os.path.isfile(timefile):
+    os.remove(timefile)
 
-div = [2**k for k in range(11,14)]
-blx = [2**k for k in range(5,11)]
-t_fn = open(t_filepath,'a+')
-
-dt = .005
-tf = 1000
-tst = 1
+div = [2**k for k in range(divpow.get(),divpowend.get()+1)]
+blx = [2**k for k in range(blkpow.get(),blkpowend.get()+1)]
+t_fn = open(timefile,'a+')
 
 ExecL = './bin/' + Fname + 'Out'
 
@@ -80,13 +213,11 @@ t_fn.close()
 for k in blx:
     for n in div:
         print n,k
-        execut = ExecL + ' {0} {1} {2} {3} {4} {5}'.format(n,k,dt,tf,tst,tf*2)
+        execut = ExecL + +  ' {0} {1} {2} {3} {4} {5} {6} {7} {8}'.format(div,bks,dt,tf,freq,swept,cpu,rsltfile,timefile)
         exeStr = shlex.split(execut)
         proc = sp.Popen(exeStr)
         sp.Popen.wait(proc)
 
-rslt = Fname + rsltout
-rsltfile = os.path.abspath(os.path.join(basepath, rslt))
 fin = open(rsltfile)
 data = []
 
