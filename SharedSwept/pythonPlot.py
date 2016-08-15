@@ -28,7 +28,7 @@ entryframe.pack(side = 'bottom')
 master.title("Plot the result of the numerical solution")
 
 problem = Tk.StringVar(master)
-roblem.set(OPTIONS[1]) # default value
+problem.set(OPTIONS[1]) # default value
 
 #Number of divisions power of two
 divpow = Tk.IntVar(master)
@@ -53,24 +53,12 @@ sw = Tk.BooleanVar(master)
 #CPU or no
 proc_share = Tk.BooleanVar(master)
 
-if problem == 'KS':
-    deltat.set(0.005)
-    t_final.set(1000)
-elif problem == 'Euler':
-    deltat.set(0.02)
-    t_final.set(100)
-else:
-    deltat.set(0.02)
-    t_final.set(1000)
-
-fq.set(t_final.get()*2.0)
-
 runit = Tk.BooleanVar(master)
 runit.set(True)
 
 def ok():
     master.destroy()
-    
+
 def ret(event):
     master.destroy()
 
@@ -89,14 +77,17 @@ def reset_vals(problem):
         deltat.set(0.02)
         t_final.set(100)
     else:
-        deltat.set(0.02)
-        t_final.set(1000)
+        deltat.set(0.01)
+        t_final.set(500)
+
+    fq.set(t_final.get()*2.0)
 
 def reset_label(event):
     res_one.config(text = str(2**divpow.get()))
-    res_two.config(text = str(2**blkpow.get()))    
-    
-        
+    res_two.config(text = str(2**blkpow.get()))
+    fq.set(t_final.get()*2.0)
+
+
 master.protocol("WM_DELETE_WINDOW", on_closing)
 master.bind('<Return>', ret)
 
@@ -113,14 +104,13 @@ div_ent = Tk.Entry(entryframe, textvariable=divpow)
 div_ent.grid(row = 1, column = 1)
 res_one = Tk.Label(entryframe, text = str(2**divpow.get()), anchor = Tk.W)
 res_one.grid(row = 2, column = 1)
-div_ent.bind("<Key-Tab>", reset_label)
+master.bind_class("Entry","<FocusOut>", reset_label)
 
 Tk.Label(entryframe, text= "Threads per block: 2^").grid(row=3, column = 0)
 blk_ent = Tk.Entry(entryframe, textvariable=blkpow)
 blk_ent.grid(row = 3, column = 1)
 res_two = Tk.Label(entryframe, text = str(2**blkpow.get()), anchor = Tk.W)
 res_two.grid(row = 4, column = 1)
-blk_ent.bind("<Key-Tab>", reset_label)
 
 Tk.Label(entryframe, text= u"\N{GREEK CAPITAL LETTER DELTA}"+"t (seconds): ").grid(row=5, column = 0)
 Tk.Entry(entryframe, textvariable=deltat).grid(row = 5, column = 1)
@@ -133,10 +123,12 @@ Tk.Entry(entryframe, textvariable=fq).grid(row = 7, column = 1)
 
 button_send = Tk.Button(endframe, text="OK", command=ok)
 button_send.grid(row = 0, column = 0)
-button_sk = Tk.Button(endframe, text="SKIP RUN", command=replot)
+button_sk = Tk.Button(endframe, text="REPLOT W/O RUNNING", command=replot)
 button_sk.grid(row = 0, column = 1)
 problem_menu = Tk.OptionMenu(dropframe, problem, *OPTIONS, command=reset_vals)
 problem_menu.grid(sticky="WE")
+
+reset_vals(problem.get())
 
 master.mainloop()
 
@@ -145,8 +137,18 @@ master.mainloop()
 Fname = problem.get()
 
 sourcepath = os.path.abspath(os.path.dirname(__file__))
+basepath = os.path.join(sourcepath,'Results')
 
-Varfile = os.path.join(sourcepath, Fname + "1D_Result.dat")
+binpath = os.path.join(sourcepath,'bin')
+
+#Ensures "make" won't fail if there's no bin directory.
+if not os.path.isdir(binpath):
+    os.mkdir(binpath)
+
+if not os.path.isdir(basepath):
+    os.mkdir(basepath)
+
+Varfile = os.path.join(basepath, Fname + "1D_Result.dat")
 
 if runit.get():
     sp.call("make")
@@ -154,19 +156,20 @@ if runit.get():
     execut = "./bin/"+ Fname+ "Out"
 
     div = 2**divpow.get()
-    print div
     bks = 2**blkpow.get()
-    print bks
     dt = deltat.get() #timestep in seconds
-    print dt
     tf = t_final.get() #timestep in seconds
-    print tf
     freq = fq.get()
-    print freq
-    swept = sw.get()
-    print swept
-    cpu = proc_share.get()
-    print cpu
+    swept = int(sw.get())
+    cpu = int(proc_share.get())
+
+    print div, bks, dt, tf, freq, swept, cpu
+
+    if swept:
+        if Fname == "Heat":
+            print "Number of cycles: {}".format(int(tf/(bks*dt)))
+        else:
+            print "Number of cycles: {}".format(int(tf/(bks*dt*.25)))
 
     if swept and cpu:
         print Fname + " Swept CPU Sharing"
@@ -198,10 +201,9 @@ print data[1][5]
 plt.plot(xax,data[0][1:])
 plt.hold(True)
 for k in range(1,len(data)):
-    plt.plot(xax,data[k][1:],linewidth = 2.0, marker = '.', markersize = 10)
+    plt.plot(xax,data[k][1:],linewidth = 2.0)
     lbl.append("t = {} seconds".format(data[k][0]))
     plt.hold(True)
-
 
 plt.legend(lbl)
 plt.xlabel("Position on bar (m)")

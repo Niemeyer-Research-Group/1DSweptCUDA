@@ -811,7 +811,7 @@ int main( int argc, char *argv[] )
 	const float tf = atof(argv[4]); //Finish time
     const float freq = atof(argv[5]);
     const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
-    const int tst = atoi(argv[7]);
+    const int share = atoi(argv[7]);
 	const int bks = dv/tpb; //The number of blocks
 
     const REAL ds = sqrtf(dt*th_diff/fou);
@@ -830,11 +830,11 @@ int main( int argc, char *argv[] )
 
 	// Initialize arrays.
     REAL *IC, *T_final;
-	// cudaHostAlloc((void **) &IC, dv*sizeof(REAL), cudaHostAllocDefault);
-	// cudaHostAlloc((void **) &T_final, dv*sizeof(REAL), cudaHostAllocDefault);
+	cudaHostAlloc((void **) &IC, dv*sizeof(REAL), cudaHostAllocDefault);
+	cudaHostAlloc((void **) &T_final, dv*sizeof(REAL), cudaHostAllocDefault);
 
-    IC = (REAL *) malloc(dv*sizeof(REAL));
-    T_final = (REAL *) malloc(dv*sizeof(REAL));
+    // IC = (REAL *) malloc(dv*sizeof(REAL));
+    // T_final = (REAL *) malloc(dv*sizeof(REAL));
 
 	// Some initial condition for the bar temperature, an exponential decay
 	// function.
@@ -875,7 +875,7 @@ int main( int argc, char *argv[] )
 	double tfm;
     if (scheme)
     {
-        tfm = sweptWrapper(bks, tpb, dv, dt, tf, tst, IC, T_final, freq, fwr);
+        tfm = sweptWrapper(bks, tpb, dv, dt, tf, share, IC, T_final, freq, fwr);
     }
     else
     {
@@ -917,10 +917,10 @@ int main( int argc, char *argv[] )
 	cudaEventDestroy( start );
 	cudaEventDestroy( stop );
     cudaDeviceReset();
-    // cudaFreeHost(IC);
-    // cudaFreeHost(T_final);
-    free(IC);
-    free(T_final);
+    cudaFreeHost(IC);
+    cudaFreeHost(T_final);
+    // free(IC);
+    // free(T_final);
 
 	return 0;
 

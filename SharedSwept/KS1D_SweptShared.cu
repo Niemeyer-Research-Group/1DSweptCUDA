@@ -32,7 +32,7 @@
 #endif
 
 //-----------For testing --------------
-
+//
 using namespace std;
 
 const REAL dx = 0.5;
@@ -537,11 +537,11 @@ int main( int argc, char *argv[])
 	// Initialize arrays.
     REAL *IC, *T_final;
 
-	// cudaHostAlloc((void **) &IC, dv*sizeof(REAL), cudaHostAllocDefault);
-	// cudaHostAlloc((void **) &T_final, dv*sizeof(REAL), cudaHostAllocDefault);
+	cudaHostAlloc((void **) &IC, dv*sizeof(REAL), cudaHostAllocDefault);
+	cudaHostAlloc((void **) &T_final, dv*sizeof(REAL), cudaHostAllocDefault);
 
-    IC = (REAL *) malloc(dv*sizeof(REAL));
-    T_final = (REAL *) malloc(dv*sizeof(REAL));
+    // IC = (REAL *) malloc(dv*sizeof(REAL));
+    // T_final = (REAL *) malloc(dv*sizeof(REAL));
 
 	// Inital condition
 	for (int k = 0; k<dv; k++)
@@ -625,10 +625,10 @@ int main( int argc, char *argv[])
 	cudaEventDestroy( stop );
 	cudaDeviceReset();
 
-	// cudaFreeHost(IC);
-    // cudaFreeHost(T_final);
-	free(IC);
-	free(T_final);
+	cudaFreeHost(IC);
+    cudaFreeHost(T_final);
+	// free(IC);
+	// free(T_final);
 
 	return 0;
 

@@ -1116,11 +1116,11 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end, con
     {
         REALfour *tmpr = (REALfour*)malloc(smem2);
         REALfour *h_right, *h_left;
-        //cudaHostAlloc((void **) &h_right, tpb*sizeof(REALfour), cudaHostAllocDefault);
-        //cudaHostAlloc((void **) &h_left, tpb*sizeof(REALfour), cudaHostAllocDefault);
+        cudaHostAlloc((void **) &h_right, tpb*sizeof(REALfour), cudaHostAllocDefault);
+        cudaHostAlloc((void **) &h_left, tpb*sizeof(REALfour), cudaHostAllocDefault);
 
-        h_right = (REALfour *) malloc(tpb*sizeof(REALfour));
-        h_left = (REALfour *) malloc(tpb*sizeof(REALfour));
+        // h_right = (REALfour *) malloc(tpb*sizeof(REALfour));
+        // h_left = (REALfour *) malloc(tpb*sizeof(REALfour));
 
         t_eq = t_fullstep;
         omp_set_num_threads( 2 );
@@ -1234,10 +1234,10 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end, con
     		}
         }
 
-        // cudaFreeHost(h_right);
-        // cudaFreeHost(h_left);
-        free(h_right);
-        free(h_left);
+        cudaFreeHost(h_right);
+        cudaFreeHost(h_left);
+        // free(h_right);
+        // free(h_left);
         free(tmpr);
 	}
     else
@@ -1332,11 +1332,9 @@ int main( int argc, char *argv[] )
 	const float tf = atof(argv[4]); //Finish time
     const float freq = atof(argv[5]);
     const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
-    const int tst = atoi(argv[7]);
+    const int share = atoi(argv[7]);
     const int bks = dv/tpb; //The number of blocks
     REAL lx = dx*((float)dv-1.f);
-
-    cout << bks << " Blocks" << endl;
 
     //Declare the dimensions in constant memory.
     dimz.x = dt/dx; // dt/dx
@@ -1355,10 +1353,10 @@ int main( int argc, char *argv[] )
 
 	// Initialize arrays.
     REALfour *IC, *T_final;
-	// cudaHostAlloc((void **) &IC, dv*sizeof(REALfour), cudaHostAllocDefault);
-	// cudaHostAlloc((void **) &T_final, dv*sizeof(REALfour), cudaHostAllocDefault);
-    IC = (REALfour *) malloc(dv*sizeof(REALfour));
-    T_final = (REALfour *) malloc(dv*sizeof(REALfour));
+	cudaHostAlloc((void **) &IC, dv*sizeof(REALfour), cudaHostAllocDefault);
+	cudaHostAlloc((void **) &T_final, dv*sizeof(REALfour), cudaHostAllocDefault);
+    // IC = (REALfour *) malloc(dv*sizeof(REALfour));
+    // T_final = (REALfour *) malloc(dv*sizeof(REALfour));
 
 	// Some initial condition for the bar temperature, an exponential decay
 	// function.
@@ -1406,7 +1404,7 @@ int main( int argc, char *argv[] )
     double tfm;
     if (scheme)
     {
-        tfm = sweptWrapper(bks, tpb, dv, dt, tf, tst, IC, T_final, freq, fwr);
+        tfm = sweptWrapper(bks, tpb, dv, dt, tf, share, IC, T_final, freq, fwr);
     }
     else
     {
@@ -1453,10 +1451,10 @@ int main( int argc, char *argv[] )
 	cudaEventDestroy( stop );
     cudaDeviceReset();
 
-    // cudaFreeHost(IC);
-    // cudaFreeHost(T_final);
-    free(IC);
-    free(T_final);
+    cudaFreeHost(IC);
+    cudaFreeHost(T_final);
+    // free(IC);
+    // free(T_final);
 
 	return 0;
 

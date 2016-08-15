@@ -12,12 +12,12 @@ import Tkinter as Tk
 import pandas as pd
 
 OPTIONS = [
-    "KS",
     "Heat",
+    "KS",
     "Euler"
 ]
 
-#It's kinda getting there.
+#This is a very long python script.
 master = Tk.Tk()
 
 dropframe = Tk.Frame(master, pady = 2)
@@ -29,11 +29,11 @@ entryframe.pack(side = 'bottom')
 master.title("Swept Rule 1-D GPU performance test")
 
 problem = Tk.StringVar(master)
-problem.set(OPTIONS[1]) # default value
+problem.set(OPTIONS[0]) # default value
 
 #Number of divisions power of two
 divpow = Tk.IntVar(master)
-divpow.set(12)
+divpow.set(11)
 
 divpowend = Tk.IntVar(master)
 divpowend.set(20)
@@ -57,27 +57,19 @@ fq = Tk.DoubleVar(master)
 #Swept or classic
 sw = Tk.BooleanVar(master)
 
+#Save the output?
+sv_plt = Tk.BooleanVar(master)
+sv_txt = Tk.BooleanVar(master)
+
 #CPU or no
 proc_share = Tk.BooleanVar(master)
-
-if problem == 'KS':
-    deltat.set(0.005)
-    t_final.set(1000)
-elif problem == 'Euler':
-    deltat.set(0.02)
-    t_final.set(100)
-else:
-    deltat.set(0.02)
-    t_final.set(1000)
-
-fq.set(t_final.get()*2.0)
 
 runit = Tk.BooleanVar(master)
 runit.set(True)
 
 def ok():
     master.destroy()
-    
+
 def ret(event):
     master.destroy()
 
@@ -91,28 +83,32 @@ def on_closing():
 def reset_vals(problem):
     if problem == 'KS':
         deltat.set(0.005)
-        t_final.set(1000)
+        t_final.set(100)
+
     elif problem == 'Euler':
         deltat.set(0.02)
         t_final.set(100)
     else:
-        deltat.set(0.02)
-        t_final.set(1000)
+        deltat.set(0.01)
+        t_final.set(500)
+
+    fq.set(t_final.get()*2.0)
 
 def reset_label(event):
     res_one.config(text = str(2**divpow.get()))
     res_two.config(text = str(2**blkpow.get()))
     res_three.config(text = str(2**divpowend.get()))
     res_four.config(text = str(2**blkpowend.get()))
-        
+    fq.set(t_final.get()*2.0)
+
 master.protocol("WM_DELETE_WINDOW", on_closing)
 master.bind('<Return>', ret)
 
-check_one = Tk.Checkbutton(entryframe, text = "Swept Scheme ", variable = sw)
-check_two = Tk.Checkbutton(entryframe, text = "CPU/GPU sharing ", variable = proc_share)
+Tk.Checkbutton(entryframe, text = "Swept Scheme", variable = sw).grid(row = 9, column = 0)
+Tk.Checkbutton(entryframe, text = "CPU/GPU sharing \n(Not available on KS equation)", variable = proc_share).grid(row = 10, column = 0)
 
-check_one.grid(row = 9, column = 0)
-check_two.grid(row = 10, column = 0)
+Tk.Checkbutton(entryframe, text = "Save plot", variable = sv_plt).grid(row = 9, column = 2)
+Tk.Checkbutton(entryframe, text = "Save txt file", variable = sv_txt).grid(row = 10, column = 2)
 
 # Just have one update routine and update for all changes.
 
@@ -143,23 +139,23 @@ Tk.Entry(entryframe, textvariable=fq).grid(row = 7, column = 1)
 
 res_one = Tk.Label(entryframe, text = str(2**divpow.get()), anchor = Tk.W)
 res_one.grid(row = 2, column = 1)
-div_one.bind("<Key-Tab>", reset_label)
 res_two = Tk.Label(entryframe, text = str(2**blkpow.get()), anchor = Tk.W)
 res_two.grid(row = 4, column = 1)
-blk_one.bind("<Key-Tab>", reset_label)
 res_three = Tk.Label(entryframe, text = str(2**divpowend.get()))
 res_three.grid(row = 2, column = 3)
-div_two.bind("<Key-Tab>", reset_label)
 res_four = Tk.Label(entryframe, text = str(2**blkpowend.get()), anchor = Tk.W)
 res_four.grid(row = 4, column = 3)
-blk_two.bind("<Key-Tab>", reset_label)
+
+master.bind_class("Entry","<Key-Tab>", reset_label)
 
 button_send = Tk.Button(endframe, text="OK", command=ok)
 button_send.grid(row = 0, column = 0)
-button_sk = Tk.Button(endframe, text="SKIP RUN", command=replot)
+button_sk = Tk.Button(endframe, text="REPLOT W/O RUNNING", command=replot)
 button_sk.grid(row = 0, column = 1)
 problem_menu = Tk.OptionMenu(dropframe, problem, *OPTIONS, command=reset_vals)
 problem_menu.grid()
+
+reset_vals(problem.get())
 
 master.mainloop()
 
@@ -169,8 +165,8 @@ Fname = problem.get()
 dt = deltat.get()
 tf = t_final.get()
 freq = fq.get()
-swept = sw.get()
-cpu = proc_share.get()
+swept = int(sw.get())
+cpu = int(proc_share.get())
 
 timeout = '1D_Timing.txt'
 rsltout = '1D_Result.dat'
@@ -185,38 +181,56 @@ else:
     timestr = Fname + "_Classic"
     print timestr
 
-sourcepath = os.path.dirname(__file__)
+print dt, tf, freq, swept, cpu
+
+sourcepath = os.path.abspath(os.path.dirname(__file__))
 basepath = os.path.join(sourcepath,'Results')
+
+binpath = os.path.join(sourcepath,'bin')
+
+#Ensures "make" won't fail if there's no bin directory.
+if not os.path.isdir(binpath):
+    os.mkdir(binpath)
+
 if not os.path.isdir(basepath):
     os.mkdir(basepath)
 
-timer = Fname + timestr + timeout
+timer = timestr + timeout
 rslt = Fname + rsltout
-timefile = os.path.abspath(os.path.join(basepath, timer))
-rsltfile = os.path.abspath(os.path.join(basepath, rslt))
+timefile = os.path.join(basepath, timer)
+rsltfile = os.path.join(basepath, rslt)
 
-#Reset timing file.
-if os.path.isfile(timefile):
-    os.remove(timefile)
+if runit:
+    #Reset timing file.
+    cyc = 0
+    if os.path.isfile(timefile):
+        os.remove(timefile)
 
-div = [2**k for k in range(divpow.get(),divpowend.get()+1)]
-blx = [2**k for k in range(blkpow.get(),blkpowend.get()+1)]
-t_fn = open(timefile,'a+')
+    div = [2**k for k in range(divpow.get(),divpowend.get()+1)]
+    blx = [2**k for k in range(blkpow.get(),blkpowend.get()+1)]
+    t_fn = open(timefile,'a+')
 
-ExecL = './bin/' + Fname + 'Out'
+    ExecL = './bin/' + Fname + 'Out'
 
-sp.call("make")
+    sp.call("make")
 
-t_fn.write("XDimSize\tBlockSize\tTime\n")
-t_fn.close()
+    t_fn.write("XDimSize\tBlockSize\tTime\n")
+    t_fn.close()
 
-for k in blx:
-    for n in div:
-        print n,k
-        execut = ExecL + +  ' {0} {1} {2} {3} {4} {5} {6} {7} {8}'.format(div,bks,dt,tf,freq,swept,cpu,rsltfile,timefile)
-        exeStr = shlex.split(execut)
-        proc = sp.Popen(exeStr)
-        sp.Popen.wait(proc)
+    for k in blx:
+        for n in div:
+            if swept:
+                if Fname == "Heat":
+                    cyc = int(tf/(k*dt))
+                else:
+                    cyc = int(tf/(k*dt*.25))
+            print "---------------------------"
+            print n, k, cyc
+            execut = ExecL +  ' {0} {1} {2} {3} {4} {5} {6} {7} {8}'.format(n,k,dt,tf,freq,swept,cpu,rsltfile,timefile)
+            exeStr = shlex.split(execut)
+            proc = sp.Popen(exeStr)
+            sp.Popen.wait(proc)
+            print "---------------------------"
 
 fin = open(rsltfile)
 data = []
@@ -245,10 +259,14 @@ for line in fin:
 # plt.grid()
 
 #Timing Show
-times = pd.read_table(t_filepath, delim_whitespace = True)
+if not os.path.isfile(timefile):
+    print "There is no file for the specified procedure: " + timestr
+    os.exit(-1)
+
+times = pd.read_table(timefile, delim_whitespace = True)
 headers = times.columns.values.tolist()
 time_split = times.pivot(headers[0],headers[1],headers[2])
 time_split.plot(logx = True, grid = True)
-plt.ylabel('Time (s)')
-plt.title(Fname + ' for ' + str(tf/dt) + ' timesteps')
+plt.ylabel("Time per timestep (us)")
+plt.title(timestr)
 plt.show()
