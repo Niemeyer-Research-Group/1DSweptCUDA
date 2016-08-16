@@ -7,8 +7,6 @@ CUDAFLAGS = -gencode arch=compute_35,code=sm_35 -lm -restrict -Xcompiler -fopenm
 PROJECT_DIR = $(shell pwd)
 OUT_DIR := $(PROJECT_DIR)/bin
 
-print-%  : ; @echo $* = $($*)
-
 default:	$(OUT_DIR)/HeatOut $(OUT_DIR)/KSOut $(OUT_DIR)/EulerOut
 
 $(OUT_DIR)/HeatOut:	Heat1D_SweptShared.cu

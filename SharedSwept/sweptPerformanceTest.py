@@ -1,5 +1,25 @@
 # -*- coding: utf-8 -*-
 
+'''
+This file is the current iteration of research being done to implement the
+swept rule for Partial differential equations in one dimension.  This research
+is a collaborative effort between teams at MIT, Oregon State University, and
+Purdue University.
+
+Copyright (C) 2015 Kyle Niemeyer, niemeyek@oregonstate.edu AND
+Daniel Magee, mageed@oregonstate.edu
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the MIT license.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+You should have received a copy of the MIT license along with this program.
+If not, see <https://opensource.org/licenses/MIT>.
+'''
+
 # A script to test the performance of the algorithm with various
 # x dimension and block sizes
 
@@ -57,10 +77,6 @@ fq = Tk.DoubleVar(master)
 #Swept or classic
 sw = Tk.BooleanVar(master)
 
-#Save the output?
-sv_plt = Tk.BooleanVar(master)
-sv_txt = Tk.BooleanVar(master)
-
 #CPU or no
 proc_share = Tk.BooleanVar(master)
 
@@ -99,18 +115,12 @@ def reset_label(event):
     res_two.config(text = str(2**blkpow.get()))
     res_three.config(text = str(2**divpowend.get()))
     res_four.config(text = str(2**blkpowend.get()))
-    fq.set(t_final.get()*2.0)
 
 master.protocol("WM_DELETE_WINDOW", on_closing)
 master.bind('<Return>', ret)
 
 Tk.Checkbutton(entryframe, text = "Swept Scheme", variable = sw).grid(row = 9, column = 0)
 Tk.Checkbutton(entryframe, text = "CPU/GPU sharing \n(Not available on KS equation)", variable = proc_share).grid(row = 10, column = 0)
-
-Tk.Checkbutton(entryframe, text = "Save plot", variable = sv_plt).grid(row = 9, column = 2)
-Tk.Checkbutton(entryframe, text = "Save txt file", variable = sv_txt).grid(row = 10, column = 2)
-
-# Just have one update routine and update for all changes.
 
 Tk.Label(entryframe, text= "Number of divisions: 2^").grid(row=1, column = 0)
 div_one = Tk.Entry(entryframe, textvariable=divpow)
@@ -146,7 +156,7 @@ res_three.grid(row = 2, column = 3)
 res_four = Tk.Label(entryframe, text = str(2**blkpowend.get()), anchor = Tk.W)
 res_four.grid(row = 4, column = 3)
 
-master.bind_class("Entry","<Key-Tab>", reset_label)
+master.bind_class("Entry","<FocusOut>", reset_label)
 
 button_send = Tk.Button(endframe, text="OK", command=ok)
 button_send.grid(row = 0, column = 0)
@@ -173,14 +183,13 @@ rsltout = '1D_Result.dat'
 
 if swept and cpu:
     timestr = Fname + "_Swept_CPU_Sharing"
-    print timestr
 elif swept:
     timestr = Fname + "_Swept_GPU_only"
-    print timestr
 else:
     timestr = Fname + "_Classic"
-    print timestr
 
+
+print timestr
 print dt, tf, freq, swept, cpu
 
 sourcepath = os.path.abspath(os.path.dirname(__file__))

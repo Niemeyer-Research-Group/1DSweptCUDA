@@ -1,13 +1,25 @@
-//HEAT Yo.
+/* This file is the current iteration of research being done to implement the
+swept rule for Partial differential equations in one dimension.  This research
+is a collaborative effort between teams at MIT, Oregon State University, and
+Purdue University.
+
+Copyright (C) 2015 Kyle Niemeyer, niemeyek@oregonstate.edu AND
+Daniel Magee, mageed@oregonstate.edu
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the MIT license.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+You should have received a copy of the MIT license
+along with this program.  If not, see <https://opensource.org/licenses/MIT>.
+*/
 
 //COMPILE LINE:
-// nvcc -o ./bin/HeatOut Heat1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -w -std=c++11 -Xcompiler -fopenmp
+// nvcc -o ./bin/HeatOut Heat1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -restrict -Xcompiler -fopenmp
 
-//DO:
-//Profile and compile --ptaxs.  NEED TO KNOW ABOUT REGISTERS!
-//Set up streams.
-//The ability to feed in initial conditions.
-//Ask about just making up my own conventions.  Like dat vs txt.  Use that as flag?
 
 #include <cuda.h>
 #include <cuda_runtime_api.h>
@@ -375,8 +387,9 @@ splitDiamond(REAL *right, REAL *left)
         __syncthreads();
     }
 
-    temper[tid] = temper[tid1];
-
+    REAL trade = temper[tid1];
+    __syncthreads();
+    temper[tid] = trade;
     __syncthreads();
 
     //-------------------TOP PART------------------------------------------

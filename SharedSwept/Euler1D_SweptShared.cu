@@ -1,8 +1,24 @@
-//
+/* This file is the current iteration of research being done to implement the
+swept rule for Partial differential equations in one dimension.  This research
+is a collaborative effort between teams at MIT, Oregon State University, and
+Purdue University.
 
+Copyright (C) 2015 Kyle Niemeyer, niemeyek@oregonstate.edu AND
+Daniel Magee, mageed@oregonstate.edu
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the MIT license.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+You should have received a copy of the MIT license along with this program.
+If not, see <https://opensource.org/licenses/MIT>.
+*/
 
 //COMPILE LINE:
-// nvcc -o ./bin/EulerOut Euler1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -w -std=c++11 -Xcompiler -fopenmp
+// nvcc -o ./bin/EulerOut Euler1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -restrict -Xcompiler -fopenmp
 
 #include <cuda.h>
 #include <cuda_runtime_api.h>
@@ -526,9 +542,11 @@ wholeDiamond(REALfour *right, REALfour *left, bool full)
             temper[tididx], temper[tid_top[3]], temper[tid_top[4]].w);
     }
 
-    __syncthreads();
 
-    temper[tid] = temper[tididx];
+    REALfour trade = temper[tididx];
+    __syncthreads();
+    temper[tid] = trade;
+    __syncthreads();
 
     // -------------------TOP PART------------------------------------------
 
@@ -702,7 +720,10 @@ splitDiamond(REALfour *right, REALfour *left)
     }
 
     //Justify the result at 0 index.
-    temper[tid] = temper[tididx];
+    REALfour trade = temper[tididx];
+    __syncthreads();
+    temper[tid] = trade;
+    __syncthreads();
 
     leftidx = ((tid/4 & 1) * blockDim.x) + (tid/4)*2 + (tid & 3);
 	rightidx = (blockDim.x - 4) + ((tid/4 & 1) * blockDim.x) + (tid & 3) - (tid/4)*2;

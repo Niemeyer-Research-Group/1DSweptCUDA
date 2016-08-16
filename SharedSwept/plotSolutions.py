@@ -1,9 +1,30 @@
 # -*- coding: utf-8 -*-
 
+'''
+This file is the current iteration of research being done to implement the
+swept rule for Partial differential equations in one dimension.  This research
+is a collaborative effort between teams at MIT, Oregon State University, and
+Purdue University.
+
+Copyright (C) 2015 Kyle Niemeyer, niemeyek@oregonstate.edu AND
+Daniel Magee, mageed@oregonstate.edu
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the MIT license.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+You should have received a copy of the MIT license along with this program.
+If not, see <https://opensource.org/licenses/MIT>.
+'''
+
 # Just writing a plotting script for the Swept rule CUDA.
 # Perhaps this will also be the calling script.
 
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import subprocess as sp
 import shlex
@@ -85,8 +106,6 @@ def reset_vals(problem):
 def reset_label(event):
     res_one.config(text = str(2**divpow.get()))
     res_two.config(text = str(2**blkpow.get()))
-    fq.set(t_final.get()*2.0)
-
 
 master.protocol("WM_DELETE_WINDOW", on_closing)
 master.bind('<Return>', ret)
@@ -126,7 +145,7 @@ button_send.grid(row = 0, column = 0)
 button_sk = Tk.Button(endframe, text="REPLOT W/O RUNNING", command=replot)
 button_sk.grid(row = 0, column = 1)
 problem_menu = Tk.OptionMenu(dropframe, problem, *OPTIONS, command=reset_vals)
-problem_menu.grid(sticky="WE")
+problem_menu.grid()
 
 reset_vals(problem.get())
 
@@ -150,18 +169,25 @@ if not os.path.isdir(basepath):
 
 Varfile = os.path.join(basepath, Fname + "1D_Result.dat")
 
+div = 2**divpow.get()
+bks = 2**blkpow.get()
+dt = deltat.get() #timestep in seconds
+tf = t_final.get() #timestep in seconds
+freq = fq.get()
+swept = int(sw.get())
+cpu = int(proc_share.get())
+
+if swept and cpu:
+    timestr = Fname + "_Swept_CPU_Sharing"
+elif swept:
+    timestr = Fname + "_Swept_GPU_only"
+else:
+    timestr = Fname + "_Classic"
+
 if runit.get():
     sp.call("make")
 
     execut = "./bin/"+ Fname+ "Out"
-
-    div = 2**divpow.get()
-    bks = 2**blkpow.get()
-    dt = deltat.get() #timestep in seconds
-    tf = t_final.get() #timestep in seconds
-    freq = fq.get()
-    swept = int(sw.get())
-    cpu = int(proc_share.get())
 
     print div, bks, dt, tf, freq, swept, cpu
 
@@ -171,12 +197,7 @@ if runit.get():
         else:
             print "Number of cycles: {}".format(int(tf/(bks*dt*.25)))
 
-    if swept and cpu:
-        print Fname + " Swept CPU Sharing"
-    elif swept:
-        print Fname + " Swept GPU only"
-    else:
-        print Fname + " Classic"
+    print timestr
 
     execstr = execut +  ' {0} {1} {2} {3} {4} {5} {6} {7}'.format(div,bks,dt,tf,freq,swept,cpu,Varfile)
 
@@ -197,17 +218,30 @@ for line in fin:
 
 lbl = ["Initial Condition"]
 
-print data[1][5]
-plt.plot(xax,data[0][1:])
-plt.hold(True)
-for k in range(1,len(data)):
-    plt.plot(xax,data[k][1:],linewidth = 2.0)
-    lbl.append("t = {} seconds".format(data[k][0]))
+print data[-1][10]
+if len(data) < 6:
+    plt.plot(xax,data[0][1:])
     plt.hold(True)
+    for k in range(1,len(data)):
+        plt.plot(xax,data[k][1:],linewidth = 2.0)
+        lbl.append("t = {} seconds".format(data[k][0]))
 
-plt.legend(lbl)
-plt.xlabel("Position on bar (m)")
-plt.ylabel("Vel")
-plt.title(Fname)
-plt.grid()
-plt.show()
+    plt.hold(True)
+    plt.legend(lbl)
+    plt.xlabel("Position on bar (m)")
+    plt.ylabel("Vel")
+    plt.title(timestr+ " " + str(div) + " divisions")
+    plt.grid()
+    plt.show()
+
+else:
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    dop = np.array(data)
+    X,Y = np.meshgrid(xax,np.transpose(dop[:,1]))
+    print dop.shape, X.shape
+    Z = dop[:,1:]
+    print Z.shape
+    ax.plot_surface(X,Y,Z)
+    plt.hold(True)
+    plt.show()

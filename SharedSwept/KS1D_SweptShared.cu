@@ -1,18 +1,27 @@
-//K-S involves no splitting.  And clearly a CPU diamond would be a waste.
-//But it does need to pass it back and forth so it needs different passing versions.
-//The heat equation requires much more because of the boundary conditions.
-//Also, we could test putting the whole thing on the GPU here.  So it never leaves shared memory.
+/* This file is the current iteration of research being done to implement the
+swept rule for Partial differential equations in one dimension.  This research
+is a collaborative effort between teams at MIT, Oregon State University, and
+Purdue University.
+
+Copyright (C) 2015 Kyle Niemeyer, niemeyek@oregonstate.edu AND
+Daniel Magee, mageed@oregonstate.edu
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the MIT license.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+You should have received a copy of the MIT license
+along with this program.  If not, see <https://opensource.org/licenses/MIT>.
+*/
 
 //COMPILE LINE!
-// nvcc -o ./bin/KSOut KS1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -w -std=c++11 -Xcompiler -fopenmp
+// nvcc -o ./bin/KSOut KS1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -restrict -Xcompiler -fopenmp
 
-//RUN LINE!
-// ./bin/KSOut 256 2048 .01 10 0
-
-//DO:
-//Use malloc or cudaHostAlloc for all initial and final conditions.
-//The ability to feed in initial conditions.
-//Ask about just making up my own conventions.  Like .dat vs txt.  Use that as flag?
+//K-S involves no splitting.  And clearly a CPU diamond would be a waste.
+//But it does need to pass it back and forth so it needs different passing versions.
 
 #include <cuda.h>
 #include <cuda_runtime_api.h>
@@ -85,7 +94,7 @@ REAL stutterStep(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tRight, REAL tfar
 __device__
 REAL finalStep(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tCenter_orig, REAL tRight, REAL tfarRight)
 {
-	return tCenter_orig - disc.dt_half * (convect(tLeft, tRight) + secondDer(tLeft, tRight, tCenter) +
+	return tCenter_orig - disc.dt * (convect(tLeft, tRight) + secondDer(tLeft, tRight, tCenter) +
 			fourthDer(tfarLeft, tLeft, tCenter, tRight, tfarRight));
 }
 
@@ -293,7 +302,10 @@ wholeDiamond(REAL *right, REAL *left)
 	}
 
 	//Shift the last row to justify it at 0.
-	temper[tid] = temper[tididx];
+	REAL trade = temper[tididx];
+	__syncthreads();
+	temper[tid] = trade;
+	__syncthreads();
     //-------------------TOP PART------------------------------------------
 
 	leftidx = ((tid/4 & 1) * blockDim.x) + (tid/4)*2 + (tid & 3);
