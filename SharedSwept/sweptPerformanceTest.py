@@ -30,6 +30,7 @@ import shlex
 import os
 import Tkinter as Tk
 import pandas as pd
+import datetime as day
 
 OPTIONS = [
     "Heat",
@@ -188,9 +189,7 @@ elif swept:
 else:
     timestr = Fname + "_Classic"
 
-
-print timestr
-print dt, tf, freq, swept, cpu
+print timestr.replace("_"," ")
 
 sourcepath = os.path.abspath(os.path.dirname(__file__))
 basepath = os.path.join(sourcepath,'Results')
@@ -209,7 +208,7 @@ rslt = Fname + rsltout
 timefile = os.path.join(basepath, timer)
 rsltfile = os.path.join(basepath, rslt)
 
-if runit:
+if runit.get():
     #Reset timing file.
     cyc = 0
     if os.path.isfile(timefile):
@@ -220,6 +219,8 @@ if runit:
     t_fn = open(timefile,'a+')
 
     ExecL = './bin/' + Fname + 'Out'
+
+    print dt, tf, freq, swept, cpu
 
     sp.call("make")
 
@@ -241,16 +242,16 @@ if runit:
             sp.Popen.wait(proc)
             print "---------------------------"
 
-fin = open(rsltfile)
-data = []
-
-for line in fin:
-    ar = [float(n) for n in line.split()]
-
-    if len(ar)<50:
-        xax = np.linspace(0,ar[0],ar[1])
-    else:
-        data.append(ar)
+# fin = open(rsltfile)
+# data = []
+#
+# for line in fin:
+#     ar = [float(n) for n in line.split()]
+#
+#     if len(ar)<50:
+#         xax = np.linspace(0,ar[0],ar[1])
+#     else:
+#         data.append(ar)
 
 
 # lbl = ["Initial Condition"]
@@ -268,6 +269,7 @@ for line in fin:
 # plt.grid()
 
 #Timing Show
+thisday = day.date.today().isoformat()
 if not os.path.isfile(timefile):
     print "There is no file for the specified procedure: " + timestr
     os.exit(-1)
@@ -277,5 +279,5 @@ headers = times.columns.values.tolist()
 time_split = times.pivot(headers[0],headers[1],headers[2])
 time_split.plot(logx = True, grid = True)
 plt.ylabel("Time per timestep (us)")
-plt.title(timestr)
+plt.title(timestr.replace("_"," ") + " " + thisday)
 plt.show()

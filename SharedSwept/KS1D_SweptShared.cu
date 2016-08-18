@@ -40,8 +40,6 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 #define REAL  float
 #endif
 
-//-----------For testing --------------
-//
 using namespace std;
 
 const REAL dx = 0.5;

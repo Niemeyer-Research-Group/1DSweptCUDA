@@ -30,6 +30,7 @@ import subprocess as sp
 import shlex
 import os
 import Tkinter as Tk
+import datetime as day
 
 OPTIONS = [
     "KS",
@@ -230,7 +231,7 @@ if len(data) < 6:
     plt.legend(lbl)
     plt.xlabel("Position on bar (m)")
     plt.ylabel("Vel")
-    plt.title(timestr+ " " + str(div) + " divisions")
+    plt.title(timestr.replace("_"," ") + " :" + str(div) + " points")
     plt.grid()
     plt.show()
 
@@ -243,5 +244,9 @@ else:
     Z = dop[:,1:]
     print Z.shape
     ax.plot_surface(X,Y,Z)
+    plt.title(timestr.replace("_"," ") + ": " + str(div) + " points")
     plt.hold(True)
     plt.show()
+
+testsave = open(os.path.join("Results","UnitTest",timestr + ".txt"),'w')
+json.dump(data, testsave)
