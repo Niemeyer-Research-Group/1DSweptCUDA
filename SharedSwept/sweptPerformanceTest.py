@@ -182,7 +182,7 @@ cpu = int(proc_share.get())
 timeout = '1D_Timing.txt'
 rsltout = '1D_Result.dat'
 
-if swept and cpu:
+if swept and cpu and Fname is not "KS":
     timestr = Fname + "_Swept_CPU_Sharing"
 elif swept:
     timestr = Fname + "_Swept_GPU_only"

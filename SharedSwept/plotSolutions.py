@@ -30,7 +30,7 @@ import subprocess as sp
 import shlex
 import os
 import Tkinter as Tk
-import datetime as day
+import regression_test.py as rt
 
 OPTIONS = [
     "KS",
@@ -158,7 +158,6 @@ Fname = problem.get()
 
 sourcepath = os.path.abspath(os.path.dirname(__file__))
 basepath = os.path.join(sourcepath,'Results')
-
 binpath = os.path.join(sourcepath,'bin')
 
 #Ensures "make" won't fail if there's no bin directory.
@@ -188,7 +187,7 @@ else:
 if runit.get():
     sp.call("make")
 
-    execut = "./bin/"+ Fname+ "Out"
+    execut = os.path.join(binpath, Fname + "Out")
 
     print div, bks, dt, tf, freq, swept, cpu
 
@@ -248,5 +247,5 @@ else:
     plt.hold(True)
     plt.show()
 
-testsave = open(os.path.join("Results","UnitTest",timestr + ".txt"),'w')
-json.dump(data, testsave)
+rt.consistency_test()
+#Maybe it's time for chdir and a function file.
