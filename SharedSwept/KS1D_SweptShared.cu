@@ -358,8 +358,8 @@ wholeDiamond(REAL *right, REAL *left)
 }
 
 double
-classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_end,
-    REAL *IC, REAL *T_f, const float freq, ofstream &fwr)
+classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t_end,
+    REAL *IC, REAL *T_f, const REAL freq, ofstream &fwr)
 {
     REAL *dks_in, *dks_out, *dks_orig;
 
@@ -406,8 +406,8 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_
 
 //The host routine.
 double
-sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
-	REAL *IC, REAL *T_f, const float freq, ofstream &fwr)
+sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
+	REAL *IC, REAL *T_f, const REAL freq, ofstream &fwr)
 {
 
 	REAL *d_IC, *d_right, *d_left, *d_bin;
@@ -484,6 +484,8 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
 			swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
 			swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
 
+			t_eq += t_fullstep;
+
 			twrite += freq;
 		}
 
@@ -496,6 +498,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end,
 	cudaFree(d_IC);
 	cudaFree(d_right);
 	cudaFree(d_left);
+	cudaFree(d_bin);
 
 	return t_eq;
 

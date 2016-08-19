@@ -177,12 +177,21 @@ freq = fq.get()
 swept = int(sw.get())
 cpu = int(proc_share.get())
 
+SCHEME = [
+    "Classic",
+    "SweptGPU",
+    "SweptCPUshare"
+]
+
 if swept and cpu:
-    timestr = Fname + "_Swept_CPU_Sharing"
+    sch = SCHEME[2]
+    timestr = Fname + " " + sch
 elif swept:
-    timestr = Fname + "_Swept_GPU_only"
+    sch = SCHEME[1]
+    timestr = Fname + " " + sch
 else:
-    timestr = Fname + "_Classic"
+    sch = SCHEME[0]
+    timestr = Fname + " " + sch
 
 if runit.get():
     sp.call("make")
@@ -230,7 +239,7 @@ if len(data) < 6:
     plt.legend(lbl)
     plt.xlabel("Position on bar (m)")
     plt.ylabel("Vel")
-    plt.title(timestr.replace("_"," ") + " :" + str(div) + " points")
+    plt.title(timestr + " :" + str(div) + " points")
     plt.grid()
     plt.show()
 
@@ -243,9 +252,10 @@ else:
     Z = dop[:,1:]
     print Z.shape
     ax.plot_surface(X,Y,Z)
-    plt.title(timestr.replace("_"," ") + ": " + str(div) + " points")
+    plt.title(timestr + ": " + str(div) + " points")
     plt.hold(True)
     plt.show()
 
-rt.consistency_test()
+for k in range(1,len(data)):
+    rt.consistency_test(Fname,sch,div,data[k][0],data[k][1:])
 #Maybe it's time for chdir and a function file.

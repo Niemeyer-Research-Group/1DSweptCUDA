@@ -473,6 +473,7 @@ wholeDiamond(REALfour *right, REALfour *left, bool full)
         temper[leftidx] = right[gid];
         temper[rightidx] = left[gid];
 
+        __syncthreads();
         if (gid < 2)
         {
             temper[base+gid] = dbd[0];
@@ -1042,7 +1043,7 @@ CPU_diamond(REALfour *temper, int tpb)
 
 //Classic Discretization wrapper.
 double
-classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_end,
+classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t_end,
     REALfour *IC, REALfour *T_f, const float freq, ofstream &fwr)
 {
     REALfour *dEuler_in, *dEuler_out, *dEuler_orig;
@@ -1091,7 +1092,7 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const int t_
 
 //The wrapper that calls the routine functions.
 double
-sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end, const int cpu,
+sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, const int cpu,
     REALfour *IC, REALfour *T_f, const float freq, ofstream &fwr)
 {
     const int base = tpb + 4;
@@ -1251,6 +1252,8 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end, con
                 swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
                 swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
 
+                t_eq += t_fullstep;
+
                 twrite += freq;
     		}
         }
@@ -1305,6 +1308,8 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const int t_end, con
 
                 swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
                 swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+
+                t_eq += t_fullstep;
 
                 twrite += freq;
             }

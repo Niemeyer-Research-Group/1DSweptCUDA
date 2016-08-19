@@ -594,6 +594,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
 	const double t_fullstep = dt*(double)tpb;
 
 	upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
+
     swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
     swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
 
@@ -733,6 +734,8 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
                 swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
                 swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
 
+                t_eq += t_fullstep;
+
     			twrite += freq;
     		}
         }
@@ -787,6 +790,8 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
 
                 swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
                 swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+
+                t_eq += t_fullstep;
 
     			twrite += freq;
     		}
