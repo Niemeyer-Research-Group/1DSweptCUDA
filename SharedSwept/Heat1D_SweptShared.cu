@@ -46,7 +46,6 @@ const REAL fou = .05;
 
 const REAL th_diff = 8.418e-5;
 
-
 __host__ __device__ REAL initFun(int xnode, REAL ds, REAL lx)
 {
     return 500.f*expf((-ds*(REAL)xnode)/lx ) + 50.f*sinf(-ds*128.f*(REAL)xnode/lx);
