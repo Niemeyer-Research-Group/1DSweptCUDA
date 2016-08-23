@@ -8,4 +8,5 @@
 bin/
 CMakeFiles/
 *.cmake
+*.pyc
 misc/

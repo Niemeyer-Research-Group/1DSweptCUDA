@@ -30,7 +30,7 @@ import subprocess as sp
 import shlex
 import os
 import Tkinter as Tk
-import regression_test.py as rt
+import RegressionTesting as rt
 
 OPTIONS = [
     "KS",
@@ -255,7 +255,7 @@ else:
     plt.title(timestr + ": " + str(div) + " points")
     plt.hold(True)
     plt.show()
-
-for k in range(1,len(data)):
-    rt.consistency_test(Fname,sch,div,data[k][0],data[k][1:])
-#Maybe it's time for chdir and a function file.
+#
+# for k in range(1,len(data)):
+#     rt.consistency_test(Fname,sch,div,data[k][0],data[k][1:])
+# #Maybe it's time for chdir and a function file.

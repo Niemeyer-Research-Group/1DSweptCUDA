@@ -11,3 +11,5 @@ Approximate Solution of Kuramoto–Sivashinsky Equation
 Using Reduced Differential Transform Method
 Omer ACAN1,a) and Yıldıray KESKİN1,b)
 Department of Mathematics, Science Faculty, Selcuk University, Konya 42003, Turkey
+
+http://dx.doi.org/10.1063/1.4912680

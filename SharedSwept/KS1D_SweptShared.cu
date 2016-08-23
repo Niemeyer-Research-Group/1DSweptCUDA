@@ -18,7 +18,7 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 */
 
 //COMPILE LINE!
-// nvcc -o ./bin/KSOut KS1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -restrict -Xcompiler -fopenmp
+// nvcc -o ./bin/KSOut KS1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -restrict -Xcompiler -fopenmp --ptxas-options=-v
 
 //K-S involves no splitting.  And clearly a CPU diamond would be a waste.
 //But it does need to pass it back and forth so it needs different passing versions.
@@ -134,14 +134,7 @@ upTriangle(const REAL *IC, REAL *right, REAL *left)
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tid = threadIdx.x; //Block Thread ID
-
-    int tid_top[5], tid_bottom[5];
-	#pragma unroll
-	for (int k = -2; k<3; k++)
-	{
-		tid_top[k+2] = tid + k + blockDim.x;
-		tid_bottom[k+2] = tid + k;
-	}
+	int tid_top = threadIdx.x + blockDim.x;
 
 	int leftidx = ((tid/4 & 1) * blockDim.x) + (tid/4)*2 + (tid & 3);
 	int rightidx = (blockDim.x - 4) + ((tid/4 & 1) * blockDim.x) + (tid & 3) - (tid/4)*2;
@@ -156,8 +149,8 @@ upTriangle(const REAL *IC, REAL *right, REAL *left)
 
 	if (tid > 1 && tid <(blockDim.x-2))
 	{
-		temper[tid_top[2]] = stutterStep(temper[tid_bottom[0]], temper[tid_bottom[1]], temper[tid_bottom[2]],
-			temper[tid_bottom[3]], temper[tid_bottom[4]]);
+		temper[tid_top] = stutterStep(temper[tid - 2], temper[tid - 1], temper[tid],
+			temper[tid + 1], temper[tid + 2]);
 	}
 
 	__syncthreads();
@@ -167,8 +160,8 @@ upTriangle(const REAL *IC, REAL *right, REAL *left)
 	{
 		if (tid < (blockDim.x-k) && tid >= k)
 		{
-			temper[tid] = finalStep(temper[tid_top[0]], temper[tid_top[1]], temper[tid_top[2]],
-				temper[tid], temper[tid_top[3]], temper[tid_top[4]]);
+			temper[tid] = finalStep(temper[tid_top - 2], temper[tid_top - 1], temper[tid_top],
+				temper[tid], temper[tid_top + 1], temper[tid_top + 2]);
 
 		}
 		step2 = k + 2;
@@ -176,21 +169,19 @@ upTriangle(const REAL *IC, REAL *right, REAL *left)
 
 		if (tid < (blockDim.x-step2) && tid >= step2)
 		{
-			temper[tid_top[2]] = stutterStep(temper[tid_bottom[0]], temper[tid_bottom[1]], temper[tid_bottom[2]],
-				temper[tid_bottom[3]], temper[tid_bottom[4]]);
+			temper[tid_top] = stutterStep(temper[tid - 2], temper[tid - 1], temper[tid],
+				temper[tid + 1], temper[tid + 2]);
 		}
 
 		//Make sure the threads are synced
 		__syncthreads();
 
 	}
-
 	//After the triangle has been computed, the right and left shared arrays are
 	//stored in global memory by the global thread ID since (conveniently),
 	//they're the same size as a warp!
 	right[gid] = temper[rightidx];
 	left[gid] = temper[leftidx];
-
 }
 
 __global__
