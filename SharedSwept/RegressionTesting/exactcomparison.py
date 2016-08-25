@@ -21,20 +21,28 @@ def euler_exact():
    plt.show()
 
 
-##500.f*expf((-ds*(REAL)xnode)/lx ) + 50.f*sinf(-ds*128.f*(REAL)xnode/lx);
-#
-def heat_exact(x,t,L,n,c0,cn):
-    rt = 1e-4
-    at = 1e-5
-    alpha = 8.418e-5;
-    Lhs1 = cn[0]*np.exp(-(np.pi/L)**2*(alpha*t))*np.cos(x*np.pi/L)
+##50*(x-L/2) + 50
+def heats(n,L,x,t):
+    alpha = 8.418e-5
+    return 1.0/n**2 * np.exp(-alpha*t*(n*np.pi/L)**2) * np.cos(n*x*np.pi/L)
 
-    for k in range(2,50):
-        cnt = float(k)
 
-        Lhs1 +=  cn[k]*np.exp(-(cnt*np.pi/L)**2*(alpha*t))*np.cos(cnt*x*np.pi/L)
+def heat_exact(t,L,divs):
 
-    Tf1 = c0 + Lhs1
+    xm = np.linspace(0,L,divs)
+    c0 = 50.0*L/3.0
+    cout = 400.0*L/(np.pi**2)
+    Tf1 = []
+    for xr in xm:
+        c  = 2
+        ser = heats(c,L,xr,t)
+        h = np.copy(ser)
+        for k in range(100):
+            c += 2
+            ser = heats(c,L,xr,t)
+            h += ser
+
+        Tf1.append(c0 - cout * h)
 
     return Tf1
 
@@ -44,16 +52,13 @@ def KS_exact(x,x0,t,k,c):
 
 if __name__ == '__main__':
 
-    print len(sys.argv)
-
     if len(sys.argv) < 2:
         sys.exit(-1)
 
-    print sys.argv[1]
     #HEAT Exact
     if int(sys.argv[1]) == 0:
-        nm = 2048
-        Lm = 16.0
+        nm = 1024
+        Lm = 1.0
         tm = np.linspace(2.0,500.0,6)
         xm = np.linspace(0.0,Lm,nm)
         ds = xm[1]-xm[0]
@@ -62,14 +67,14 @@ if __name__ == '__main__':
         x = symbols('x')
         #L = symbols('L', positive = True)
         n = symbols('n', positive = True, integer = True)
-        fx = 500.0 - 250.0*exp(-x/Lm)
+        fx = 50.0*sin(np.pi*x*4.0)
         fourier = cos(n*x*pi/Lm)
         c0i = 1.0/Lm * integrate(fx,(x,0,Lm))
         cNi = 2.0/Lm * integrate(fx*fourier,(x,0,Lm))
         print c0i, cNi
         cn = []
         c0 = c0i.evalf()
-        for k in range(1,51):
+        for k in range(100):
             cn.append(cNi.evalf(subs = {n: k}))
 
         init = [fx.evalf(subs = {x : tmp}) for tmp in xm]
@@ -84,6 +89,13 @@ if __name__ == '__main__':
             plt.plot(xm,ar)
             plt.hold(True)
             lbl.append(str(k))
+            if k == tm[1]:
+                gr = open('Temp.txt','a+')
+                for a in ar:
+                    gr.write(str(a) + "  ")
+
+                gr.close()
+                break
 
         plt.legend(lbl)
         plt.show()
@@ -106,7 +118,7 @@ if __name__ == '__main__':
             plt.plot(xm,ar)
             plt.hold(True)
             lbl.append(str(t))
-            print t, ar
+
 
         plt.legend(lbl)
         plt.show()

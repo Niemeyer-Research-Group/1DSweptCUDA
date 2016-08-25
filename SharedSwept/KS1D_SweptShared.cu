@@ -134,7 +134,8 @@ upTriangle(const REAL *IC, REAL *right, REAL *left)
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tid = threadIdx.x; //Block Thread ID
-	int tid_top = threadIdx.x + blockDim.x;
+
+	int tid_top = tid + blockDim.x;
 
 	int leftidx = ((tid/4 & 1) * blockDim.x) + (tid/4)*2 + (tid & 3);
 	int rightidx = (blockDim.x - 4) + ((tid/4 & 1) * blockDim.x) + (tid & 3) - (tid/4)*2;
@@ -149,7 +150,7 @@ upTriangle(const REAL *IC, REAL *right, REAL *left)
 
 	if (tid > 1 && tid <(blockDim.x-2))
 	{
-		temper[tid_top] = stutterStep(temper[tid - 2], temper[tid - 1], temper[tid],
+		temper[tid_top] = stutterStep(temper[tid-2], temper[tid - 1], temper[tid],
 			temper[tid + 1], temper[tid + 2]);
 	}
 

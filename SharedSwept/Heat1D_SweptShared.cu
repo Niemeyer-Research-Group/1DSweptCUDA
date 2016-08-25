@@ -42,13 +42,14 @@ using namespace std;
 
 __constant__ REAL fo;
 
-const REAL fou = .05;
+const REAL fou = 0.25;
 
 const REAL th_diff = 8.418e-5;
 
 __host__ __device__ REAL initFun(int xnode, REAL ds, REAL lx)
 {
-    return 500.f - 250.f*expf(-(REAL)xnode*ds/lx);
+    REAL a = ((REAL)xnode*ds);
+    return 100.f*a*(1-a/lx);
 }
 
 __device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
@@ -600,6 +601,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
     double t_eq;
     double twrite = freq;
 
+
 	// Call the kernels until you reach the iteration limit.
 
     if (cpu)
@@ -812,9 +814,9 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
 int main( int argc, char *argv[] )
 {
     //That is there are less than 8 arguments.
-    if (argc < 9)
+    if (argc < 8)
 	{
-		cout << "The Program takes 9 inputs, #Divisions, #Threads/block, deltat, finish time, output frequency..." << endl;
+		cout << "The Program takes 9 inputs, #Divisions, #Threads/block, finish time, output frequency..." << endl;
         cout << "Classic/Swept, CPU sharing Y/N, Variable Output File, Timing Output File (optional)" << endl;
 		exit(-1);
 	}
@@ -824,15 +826,15 @@ int main( int argc, char *argv[] )
 
     int dv = atoi(argv[1]); //Number of spatial points
 	const int tpb = atoi(argv[2]); //Threads per Blocks
-    REAL dt = atof(argv[3]);
-	const float tf = atof(argv[4]); //Finish time
-    const float freq = atof(argv[5]);
-    const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
-    const int share = atoi(argv[7]);
+	const float tf = atof(argv[3]); //Finish time
+    const float freq = atof(argv[4]);
+    const int scheme = atoi(argv[5]); //1 for Swept 0 for classic
+    const int share = atoi(argv[6]);
 	const int bks = dv/tpb; //The number of blocks
+    const REAL lx = (REAL)dv/2048.f;
 
-    const REAL ds = sqrtf(dt*th_diff/fou);
-    REAL lx = ds*((float)dv-1.f);
+    const REAL ds = lx/((REAL)dv-1.f);
+    REAL dt = ds*ds*fou/th_diff;
     cout << bks << " Blocks" << endl;
 	//Conditions for main input.  Unit testing kinda.
 	//dv and tpb must be powers of two.  dv must be larger than tpb and divisible by
@@ -862,7 +864,7 @@ int main( int argc, char *argv[] )
 
 	// Call out the file before the loop and write out the initial condition.
 	ofstream fwr;
-	fwr.open(argv[8],ios::trunc);
+	fwr.open(argv[7],ios::trunc);
 	// Write out x length and then delta x and then delta t.
 	// First item of each line is timestamp.
 	fwr << lx << " " << dv << " " << ds << " " << endl << 0 << " ";
@@ -913,14 +915,13 @@ int main( int argc, char *argv[] )
     cout << n_timesteps << " timesteps" << endl;
 	cout << "Averaged " << per_ts << " microseconds (us) per timestep" << endl;
 
-    if (argc>8)
+    if (argc>7)
     {
         ofstream ftime;
-        ftime.open(argv[9],ios::app);
+        ftime.open(argv[8],ios::app);
     	ftime << dv << "\t" << tpb << "\t" << per_ts << endl;
     	ftime.close();
     }
-
 	fwr << tfm << " ";
 	for (int k = 0; k<dv; k++)
 	{

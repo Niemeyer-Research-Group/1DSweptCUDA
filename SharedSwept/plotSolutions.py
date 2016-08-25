@@ -30,7 +30,9 @@ import subprocess as sp
 import shlex
 import os
 import Tkinter as Tk
-import RegressionTesting as rt
+from RegressionTesting.exactcomparison import *
+
+
 
 OPTIONS = [
     "KS",
@@ -100,7 +102,7 @@ def reset_vals(problem):
         t_final.set(100)
     else:
         deltat.set(0.01)
-        t_final.set(500)
+        t_final.set(200)
 
     fq.set(t_final.get()*2.0)
 
@@ -177,6 +179,8 @@ freq = fq.get()
 swept = int(sw.get())
 cpu = int(proc_share.get())
 
+L = div/2048
+print L
 SCHEME = [
     "Classic",
     "SweptGPU",
@@ -198,7 +202,7 @@ if runit.get():
 
     execut = os.path.join(binpath, Fname + "Out")
 
-    print div, bks, dt, tf, freq, swept, cpu
+    print div, bks, tf, freq, swept, cpu
 
     if swept:
         if Fname == "Heat":
@@ -208,7 +212,7 @@ if runit.get():
 
     print timestr
 
-    execstr = execut +  ' {0} {1} {2} {3} {4} {5} {6} {7}'.format(div,bks,dt,tf,freq,swept,cpu,Varfile)
+    execstr = execut +  ' {0} {1} {2} {3} {4} {5} {6}'.format(div,bks,tf,freq,swept,cpu,Varfile)
 
     exeStr = shlex.split(execstr)
     proc = sp.Popen(exeStr)
@@ -216,32 +220,45 @@ if runit.get():
 
 fin = open(Varfile)
 data = []
+time = []
 
 for line in fin:
     ar = [float(n) for n in line.split()]
 
     if len(ar)<50:
-        xax = np.linspace(0,1,ar[1])
+        xax = np.linspace(0,L,div)
     else:
-        data.append(ar)
+        data.append(ar[1:])
+        time.append(ar[0])
 
 lbl = ["Initial Condition"]
 
-print data[-1][10]
+
 if len(data) < 6:
-    plt.plot(xax,data[0][1:])
+    plt.plot(xax,data[0])
     plt.hold(True)
     for k in range(1,len(data)):
-        plt.plot(xax,data[k][1:],linewidth = 2.0)
-        lbl.append("t = {} seconds".format(data[k][0]))
+        plt.plot(xax,data[k],linewidth = 2.0)
+        lbl.append("t = {} seconds".format(time[k]))
 
     plt.hold(True)
+
+    if Fname == "Heat":
+        exac = heat_exact(time[-1],L,div)
+
+    lbl.append("Exact")
+    plt.plot(np.linspace(0,L,len(exac)),exac)
     plt.legend(lbl)
+
     plt.xlabel("Position on bar (m)")
     plt.ylabel("Vel")
     plt.title(timestr + " :" + str(div) + " points")
     plt.grid()
+    plt.plot(xax,np.array(exac)-np.array(data[-1]))
     plt.show()
+
+
+
 
 else:
     fig = plt.figure()
@@ -255,7 +272,8 @@ else:
     plt.title(timestr + ": " + str(div) + " points")
     plt.hold(True)
     plt.show()
-#
+
+
 # for k in range(1,len(data)):
 #     rt.consistency_test(Fname,sch,div,data[k][0],data[k][1:])
 # #Maybe it's time for chdir and a function file.
