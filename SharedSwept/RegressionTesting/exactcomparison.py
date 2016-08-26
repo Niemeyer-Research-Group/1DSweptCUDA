@@ -1,4 +1,4 @@
-
+#This should be stand alone
 import numpy as np
 import subprocess as sp
 import shlex
@@ -6,22 +6,23 @@ import os
 import matplotlib.pyplot as plt
 import sys
 from sympy import *
+import pandas as pd
 
 from exactpack.solvers.riemann import Sod
 
-def euler_exact():
-   r = np.linspace(0.0,1.0,1025)
+def euler_exact(t):
+   r = np.linspace(0.0,1.0,513)
    print r[1]-r[0]
-   t = .25
 
    solver = Sod()
    soln = solver(r,t)
+
+   print soln.density.size
 
    soln.plot('density')
    plt.show()
 
 
-##50*(x-L/2) + 50
 def heats(n,L,x,t):
     alpha = 8.418e-5
     return 1.0/n**2 * np.exp(-alpha*t*(n*np.pi/L)**2) * np.cos(n*x*np.pi/L)
@@ -46,79 +47,62 @@ def heat_exact(t,L,divs):
 
     return Tf1
 
-def KS_exact(x,x0,t,k,c):
-    u = c + (5.0/19.0)*np.sqrt(11.0/19.0)*(11.0*np.tanh(k*(x-c*t-x0))**3 - 9.0*np.tanh(k*(x-c*t-x0)))
-    return u
+def rmse(exact,sim):
+    return np.sqrt(np.mean((exact-sim)**2))
 
 if __name__ == '__main__':
 
-    if len(sys.argv) < 2:
-        sys.exit(-1)
+    exactpath = os.path.abspath(os.path.dirname(__file__))
+    mainpath = os.path.dirname(exactpath)
 
-    #HEAT Exact
-    if int(sys.argv[1]) == 0:
-        nm = 1024
-        Lm = 1.0
-        tm = np.linspace(2.0,500.0,6)
-        xm = np.linspace(0.0,Lm,nm)
-        ds = xm[1]-xm[0]
+    proc = sp.Popen("make", cwd = mainpath)
+    sp.Popen.wait(proc)
 
-        lbl = []
-        x = symbols('x')
-        #L = symbols('L', positive = True)
-        n = symbols('n', positive = True, integer = True)
-        fx = 50.0*sin(np.pi*x*4.0)
-        fourier = cos(n*x*pi/Lm)
-        c0i = 1.0/Lm * integrate(fx,(x,0,Lm))
-        cNi = 2.0/Lm * integrate(fx*fourier,(x,0,Lm))
-        print c0i, cNi
-        cn = []
-        c0 = c0i.evalf()
-        for k in range(100):
-            cn.append(cNi.evalf(subs = {n: k}))
+    rsltpath = os.path.join(mainpath,'Results')
+    binpath = os.path.join(mainpath,'bin')
 
-        init = [fx.evalf(subs = {x : tmp}) for tmp in xm]
-        plt.plot(xm,init)
-        plt.hold(True)
-        lbl = ["Initial"]
-        for k in tm:
-            ar = []
-            for g in xm:
-                ar.append(heat_exact(g,k,Lm,nm,c0,cn))
+    #Heat first
+    Fname = ["Heat","Euler"]
+    Varfile = os.path.join(rsltpath, Fname[0] + "1D_Result.dat")
+    execut = os.path.join(binpath, Fname[0] + "Out")
 
-            plt.plot(xm,ar)
-            plt.hold(True)
-            lbl.append(str(k))
-            if k == tm[1]:
-                gr = open('Temp.txt','a+')
-                for a in ar:
-                    gr.write(str(a) + "  ")
+    alpha = 8.418e-5
+    div = 2048.0
+    dx = 1/div
+    bks = 256
+    L = 1.0
+    tf = 200
+    freq = 30
+    cpu = 0
+    swept = 0
+    dt = [.0015,.001,.0005,.0001]
+    Fo = [alpha*k/dx**2 for k in dt]
+    err = np.empty()
 
-                gr.close()
-                break
+    for i,dts in enumerate(dt):
+        execstr = execut +  ' {0} {1} {2} {3} {4} {5} {6} {7}'.format(div,bks,dts,tf,freq,swept,cpu,Varfile)
+        exeStr = shlex.split(execstr)
+        proc = sp.Popen(exeStr)
+        sp.Popen.wait(proc)
 
-        plt.legend(lbl)
-        plt.show()
+        # Now read in the files and plot, need better matplotlib strategy.
+        fin = open(Varfile)
+        data = []
+        time = []
+        h = []
+        xax = np.linspace(0,L,div)
 
-    #KS exact
-    else:
-        c0 = 0.1
-        k0 = 1.0/4.0*np.sqrt(11.0/19.0)
-        x0 = -30.0
-        nm = 3
-        Lm = 1.0
-        tm = np.linspace(0.0,1.0,3)
-        xm = np.linspace(0.0,Lm,nm)
-        lbl = []
-        for t in tm:
-            ar = []
-            for g in xm:
-                ar.append(KS_exact(g,x0,t,k0,c0))
+        for i,line in enumerate(fin):
+            if i>1:
 
-            plt.plot(xm,ar)
-            plt.hold(True)
-            lbl.append(str(t))
+                ar = [float(n) for n in line.split()]
+                data.append(ar[1:])
+                time.append(ar[0])
+                h = heat_exact(ar[0],L,div)
+
+        for k in range(len(h)):
+            err[i,k] = rmse(h[k],data[k])
 
 
-        plt.legend(lbl)
-        plt.show()
+
+    euler_exact()

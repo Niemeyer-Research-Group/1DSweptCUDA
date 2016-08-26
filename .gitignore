@@ -5,8 +5,7 @@
 *.cubin
 *.fatbin
 *.dat
-bin/
-CMakeFiles/
 *.cmake
 *.pyc
-misc/
+bin/
+/misc/

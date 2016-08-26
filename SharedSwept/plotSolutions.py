@@ -33,6 +33,7 @@ import Tkinter as Tk
 from RegressionTesting.exactcomparison import *
 
 
+dx = 1.0/2048.0
 
 OPTIONS = [
     "KS",
@@ -40,12 +41,14 @@ OPTIONS = [
     "Euler"
 ]
 
+Param = {"Heat": "Fo = ", "KS":"dt/dx = ", "Euler":"dt/dx = "}
+
 #It's kinda getting there.
 master = Tk.Tk()
 
 dropframe = Tk.Frame(master, pady = 2)
-entryframe = Tk.Frame(master, pady = 1)
-endframe = Tk.Frame(master, pady = 2)
+entryframe = Tk.Frame(master, pady = 1,padx = 15)
+endframe = Tk.Frame(master, pady = 2,padx = 15)
 dropframe.pack()
 endframe.pack(side = 'bottom')
 entryframe.pack(side = 'bottom')
@@ -93,6 +96,11 @@ def replot():
 def on_closing():
     raise SystemExit
 
+def reset_label(event):
+    res_one.config(text = str(2**divpow.get()))
+    res_two.config(text = str(2**blkpow.get()))
+    res_three.config(text = Param[problem.get()] + str(alpha*deltat.get()/(dx**2)))
+
 def reset_vals(problem):
     if problem == 'KS':
         deltat.set(0.005)
@@ -105,10 +113,8 @@ def reset_vals(problem):
         t_final.set(200)
 
     fq.set(t_final.get()*2.0)
+    reset_label(1)
 
-def reset_label(event):
-    res_one.config(text = str(2**divpow.get()))
-    res_two.config(text = str(2**blkpow.get()))
 
 master.protocol("WM_DELETE_WINDOW", on_closing)
 master.bind('<Return>', ret)
@@ -143,6 +149,9 @@ Tk.Entry(entryframe, textvariable=t_final).grid(row = 6, column = 1)
 Tk.Label(entryframe, text= "Output frequency (seconds): ").grid(row=7, column = 0)
 Tk.Entry(entryframe, textvariable=fq).grid(row = 7, column = 1)
 
+res_three = Tk.Label(entryframe, text = Param[problem.get()] + str(alpha*deltat.get()/(dx**2)))
+res_three.grid(row = 11, column = 0, columnspan = 2)
+
 button_send = Tk.Button(endframe, text="OK", command=ok)
 button_send.grid(row = 0, column = 0)
 button_sk = Tk.Button(endframe, text="REPLOT W/O RUNNING", command=replot)
@@ -152,12 +161,12 @@ problem_menu.grid()
 
 reset_vals(problem.get())
 
+
 master.mainloop()
 
-##Interface end
+##Interface end --------------------
 
 Fname = problem.get()
-
 sourcepath = os.path.abspath(os.path.dirname(__file__))
 basepath = os.path.join(sourcepath,'Results')
 binpath = os.path.join(sourcepath,'bin')
@@ -179,8 +188,6 @@ freq = fq.get()
 swept = int(sw.get())
 cpu = int(proc_share.get())
 
-L = div/2048
-print L
 SCHEME = [
     "Classic",
     "SweptGPU",
@@ -212,7 +219,7 @@ if runit.get():
 
     print timestr
 
-    execstr = execut +  ' {0} {1} {2} {3} {4} {5} {6}'.format(div,bks,tf,freq,swept,cpu,Varfile)
+    execstr = execut +  ' {0} {1} {2} {3} {4} {5} {6} {7}'.format(div,bks,dt,tf,freq,swept,cpu,Varfile)
 
     exeStr = shlex.split(execstr)
     proc = sp.Popen(exeStr)
@@ -226,7 +233,8 @@ for line in fin:
     ar = [float(n) for n in line.split()]
 
     if len(ar)<50:
-        xax = np.linspace(0,L,div)
+        xax = np.linspace(0,ar[0],div)
+        print ar
     else:
         data.append(ar[1:])
         time.append(ar[0])
@@ -241,24 +249,11 @@ if len(data) < 6:
         plt.plot(xax,data[k],linewidth = 2.0)
         lbl.append("t = {} seconds".format(time[k]))
 
-    plt.hold(True)
-
-    if Fname == "Heat":
-        exac = heat_exact(time[-1],L,div)
-
-    lbl.append("Exact")
-    plt.plot(np.linspace(0,L,len(exac)),exac)
-    plt.legend(lbl)
-
     plt.xlabel("Position on bar (m)")
     plt.ylabel("Vel")
     plt.title(timestr + " :" + str(div) + " points")
     plt.grid()
-    plt.plot(xax,np.array(exac)-np.array(data[-1]))
     plt.show()
-
-
-
 
 else:
     fig = plt.figure()

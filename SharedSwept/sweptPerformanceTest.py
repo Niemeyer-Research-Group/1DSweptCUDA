@@ -30,7 +30,6 @@ import shlex
 import os
 import Tkinter as Tk
 import pandas as pd
-import datetime as day
 
 OPTIONS = [
     "Heat",
