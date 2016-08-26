@@ -32,8 +32,8 @@ import os
 import Tkinter as Tk
 from RegressionTesting.exactcomparison import *
 
-
-dx = 1.0/2048.0
+alpha = 8.418e-5
+dx = 0.001
 
 OPTIONS = [
     "KS",
@@ -209,7 +209,7 @@ if runit.get():
 
     execut = os.path.join(binpath, Fname + "Out")
 
-    print div, bks, tf, freq, swept, cpu
+    print div, bks, dt, tf, freq, swept, cpu
 
     if swept:
         if Fname == "Heat":

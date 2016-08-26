@@ -35,7 +35,7 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 #include <omp.h>
 
 #ifndef REAL
-#define REAL  float
+#define REAL  double
 #endif
 
 using namespace std;
@@ -45,6 +45,8 @@ __constant__ REAL fo;
 REAL fou;
 
 const REAL th_diff = 8.418e-5;
+
+const REAL ds = .001;
 
 __host__ __device__ REAL initFun(int xnode, REAL ds, REAL lx)
 {
@@ -832,11 +834,10 @@ int main( int argc, char *argv[] )
     const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
     const int share = atoi(argv[7]);
 	const int bks = dv/tpb; //The number of blocks
-    const REAL lx = (REAL)dv/2048.f;
-    const REAL ds = lx/((REAL)dv-1.f);
+    const REAL lx = ds * ((REAL)dv - 1.f);
     fou = th_diff*dt/(ds*ds);  //Fourier number
 
-    cout << bks << " Blocks" << endl;
+    cout << bks << " Blocks " << lx << " Length" << endl;
 
 	//dv and tpb must be powers of two.  dv must be larger than tpb and divisible by
 	//tpb.

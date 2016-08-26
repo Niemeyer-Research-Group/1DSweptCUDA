@@ -40,7 +40,7 @@ If not, see <https://opensource.org/licenses/MIT>.
 
 const REAL gam = 1.4;
 const REAL m_gamma = 0.4;
-const REAL dx = 0.5;
+const REAL lx = 1.0;
 
 REALfour bd[2];
 REALthree dimz;
@@ -202,9 +202,9 @@ eulerFinalStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfour
     fluxR = eulerFlux(tempStateLeft,tempStateRight);
 
     #ifdef __CUDA_ARCH__
-    stateCenter_orig += make_float4(0.5 * dimens.x * (fluxL-fluxR));
+    stateCenter_orig += make_float4(dimens.x * (fluxL-fluxR));
     #else
-    stateCenter_orig += make_float4(0.5 * dimz.x * (fluxL-fluxR));
+    stateCenter_orig += make_float4(dimz.x * (fluxL-fluxR));
     #endif
     stateCenter_orig.w = pressure(stateCenter_orig);
 
@@ -1360,7 +1360,7 @@ int main( int argc, char *argv[] )
     const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
     const int share = atoi(argv[7]);
     const int bks = dv/tpb; //The number of blocks
-    REAL lx = dx*((float)dv-1.f);
+    const REAL dx = lx/((REAL)dv-1.f);
 
     //Declare the dimensions in constant memory.
     dimz.x = dt/dx; // dt/dx
@@ -1374,6 +1374,12 @@ int main( int argc, char *argv[] )
     {
         cout << "INVALID NUMERIC INPUT!! "<< endl;
         cout << "2nd ARGUMENT MUST BE A POWER OF TWO >= 32 AND FIRST ARGUMENT MUST BE DIVISIBLE BY SECOND" << endl;
+        exit(-1);
+    }
+
+    if (dimz.x > .1)
+    {
+        cout << "The value of dt/dx (" << dimz.x << ") is too high.  In general it must be <=.1 for stability." << endl;
         exit(-1);
     }
 
