@@ -541,7 +541,7 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const float 
         if (t_eq > twrite)
         {
             cudaMemcpy(T_f, dheat_in, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
-            fwr << t_eq << " ";
+            fwr << " Temperature " << t_eq << " ";
 
             for (int k = 0; k<dv; k++)
             {
@@ -776,7 +776,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
     			downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
 
     			cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
-    			fwr << t_eq << " ";
+    			fwr << " Temperature " << t_eq << " ";
 
     			for (int k = 0; k<dv; k++)
     			{
@@ -869,7 +869,7 @@ int main( int argc, char *argv[] )
 	fwr.open(argv[8],ios::trunc);
 	// Write out x length and then delta x and then delta t.
 	// First item of each line is timestamp.
-	fwr << lx << " " << dv << " " << ds << " " << endl << 0 << " ";
+	fwr << lx << " " << dv << " " << ds << " " << endl << " Temperature " << 0 << " ";
 
 	for (int k = 0; k<dv; k++)
 	{
@@ -924,7 +924,7 @@ int main( int argc, char *argv[] )
     	ftime << dv << "\t" << tpb << "\t" << per_ts << endl;
     	ftime.close();
     }
-	fwr << tfm << " ";
+	fwr << " Temperature " << tfm << " ";
 	for (int k = 0; k<dv; k++)
 	{
 		fwr << T_final[k] << " ";

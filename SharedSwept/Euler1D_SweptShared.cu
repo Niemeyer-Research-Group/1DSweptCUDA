@@ -1068,12 +1068,21 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t
         if (t_eq > twrite)
         {
             cudaMemcpy(T_f, dEuler_in, sizeof(REALfour)*dv, cudaMemcpyDeviceToHost);
-            fwr << t_eq << " ";
 
-            for (int k = 0; k<dv; k++)
-            {
-                fwr << T_f[k].x << " ";
-            }
+            fwr << " Density " << t_eq << " ";
+            for (int k = 0; k<dv; k++) fwr << T_f[k].x << " ";
+            fwr << endl;
+
+            fwr << " Velocity " << t_eq << " ";
+            for (int k = 0; k<dv; k++) fwr << T_f[k].y << " ";
+            fwr << endl;
+
+            fwr << " Energy " << t_eq << " ";
+            for (int k = 0; k<dv; k++) fwr << T_f[k].z << " ";
+            fwr << endl;
+
+            fwr << " Pressure " << t_eq << " ";
+            for (int k = 0; k<dv; k++) fwr << T_f[k].w << " ";
             fwr << endl;
 
             twrite += freq;
@@ -1233,14 +1242,22 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
     			downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
 
     			cudaMemcpy(T_f, d_IC, sizeof(REALfour)*dv, cudaMemcpyDeviceToHost);
-    			fwr << t_eq << " ";
 
-    			for (int k = 0; k<dv; k++)
-    			{
-    					fwr << T_f[k].x << " ";
-    			}
+                fwr << " Density " << t_eq << " ";
+                for (int k = 0; k<dv; k++) fwr << T_f[k].x << " ";
+                fwr << endl;
 
-    			fwr << endl;
+                fwr << " Velocity " << t_eq << " ";
+                for (int k = 0; k<dv; k++) fwr << T_f[k].y << " ";
+                fwr << endl;
+
+                fwr << " Energy " << t_eq << " ";
+                for (int k = 0; k<dv; k++) fwr << T_f[k].z << " ";
+                fwr << endl;
+
+                fwr << " Pressure " << t_eq << " ";
+                for (int k = 0; k<dv; k++) fwr << T_f[k].w << " ";
+                fwr << endl;
 
     			upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
 
@@ -1290,13 +1307,21 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
                 downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
 
                 cudaMemcpy(T_f, d_IC, sizeof(REALfour)*dv, cudaMemcpyDeviceToHost);
-                fwr << t_eq << " ";
 
-                for (int k = 0; k<dv; k++)
-                {
-                        fwr << T_f[k].x << " ";
-                }
+                fwr << " Density " << t_eq << " ";
+            	for (int k = 0; k<dv; k++) fwr << T_f[k].x << " ";
+                fwr << endl;
 
+                fwr << " Velocity " << t_eq << " ";
+            	for (int k = 0; k<dv; k++) fwr << T_f[k].y << " ";
+                fwr << endl;
+
+                fwr << " Energy " << t_eq << " ";
+                for (int k = 0; k<dv; k++) fwr << T_f[k].z << " ";
+                fwr << endl;
+
+                fwr << " Pressure " << t_eq << " ";
+                for (int k = 0; k<dv; k++) fwr << T_f[k].w << " ";
                 fwr << endl;
 
                 upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
@@ -1409,14 +1434,23 @@ int main( int argc, char *argv[] )
 	fwr.open(argv[8],ios::trunc);
 	// Write out x length and then delta x and then delta t.
 	// First item of each line is timestamp.
-	fwr << lx << " " << dv << " " << dx << " " << endl << 0 << " ";
+	fwr << lx << " " << dv << " " << dx << " " << endl;
 
-	for (int k = 0; k<dv; k++)
-	{
-		fwr << IC[k].x << " ";
-	}
+    fwr << " Density " << 0 << " ";
+    for (int k = 0; k<dv; k++) fwr << IC[k].x << " ";
+    fwr << endl;
 
-	fwr << endl;
+    fwr << " Velocity " << 0 << " ";
+    for (int k = 0; k<dv; k++) fwr << IC[k].y << " ";
+    fwr << endl;
+
+    fwr << " Energy " << 0 << " ";
+    for (int k = 0; k<dv; k++) fwr << IC[k].z << " ";
+    fwr << endl;
+
+    fwr << " Pressure " << 0 << " ";
+    for (int k = 0; k<dv; k++) fwr << IC[k].w << " ";
+    fwr << endl;
 
     //Transfer data to GPU.
 	// This puts the Fourier number in constant memory.
@@ -1465,12 +1499,20 @@ int main( int argc, char *argv[] )
     	ftime.close();
     }
 
-	fwr << tfm << " ";
-	for (int k = 0; k<dv; k++)
-	{
-		fwr << T_final[k].x << " ";
-	}
+	fwr << " Density " << tfm << " ";
+	for (int k = 0; k<dv; k++) fwr << T_final[k].x << " ";
+    fwr << endl;
 
+    fwr << " Velocity " << tfm << " ";
+	for (int k = 0; k<dv; k++) fwr << T_final[k].y << " ";
+    fwr << endl;
+
+    fwr << " Energy " << tfm << " ";
+    for (int k = 0; k<dv; k++) fwr << T_final[k].z << " ";
+    fwr << endl;
+
+    fwr << " Pressure " << tfm << " ";
+    for (int k = 0; k<dv; k++) fwr << T_final[k].w << " ";
     fwr << endl;
 
 	fwr.close();
