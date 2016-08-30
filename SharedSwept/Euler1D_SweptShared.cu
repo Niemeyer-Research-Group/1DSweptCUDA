@@ -34,9 +34,13 @@ If not, see <https://opensource.org/licenses/MIT>.
 #include <fstream>
 #include <omp.h>
 
-#define REAL        float
-#define REALfour    float4
-#define REALthree   float3
+#ifndef REAL
+    #define REAL        float
+    #define REALfour    float4
+    #define REALthree   float3
+    #define THREEVEC( ... ) make_float3(__VA_ARGS__)
+    #define FOURVEC( ... )  make_float4(__VA_ARGS__)
+#endif
 
 const REAL gam = 1.4;
 const REAL m_gamma = 0.4;
@@ -82,19 +86,19 @@ limitor(REALthree cvCurrent, REALthree cvOther, REAL pRatio)
     if (isfinite(pRatio) && pRatio > 0) //If it's finite and positive
     {
         REAL fact = (pRatio < 1) ? pRatio : 1.f;
-        return make_float4(cvCurrent + 0.5* fact * (cvOther - cvCurrent));
+        return FOURVEC(cvCurrent + 0.5* fact * (cvOther - cvCurrent));
 
     }
     #else
     if (std::isfinite(pRatio) && pRatio > 0) //If it's finite and positive
     {
         REAL fact = (pRatio < 1) ? pRatio : 1.f;
-        return make_float4(cvCurrent + 0.5* fact * (cvOther - cvCurrent));
+        return FOURVEC(cvCurrent + 0.5* fact * (cvOther - cvCurrent));
 
     }
     #endif
 
-    return make_float4(cvCurrent);
+    return FOURVEC(cvCurrent);
 }
 
 //Left and Center then Left and right.
@@ -131,7 +135,7 @@ eulerFlux(REALfour cvLeft, REALfour cvRight)
     spectreRadius = sqrtf(dimz.y * halfState.w/halfState.x) + fabs(halfState.y);
     #endif
 
-    flux += 0.5 * spectreRadius * (make_float3(cvLeft) - make_float3(cvRight));
+    flux += 0.5 * spectreRadius * (THREEVEC(cvLeft) - THREEVEC(cvRight));
 
     return flux;
 }
@@ -145,13 +149,13 @@ eulerStutterStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfo
     REALfour tempStateLeft, tempStateRight;
 
     //Get the pressure ratios as a structure.
-    pR = make_float3(pressureRatio(pfarLeft,stateLeft.w,stateCenter.w),
+    pR = THREEVEC(pressureRatio(pfarLeft,stateLeft.w,stateCenter.w),
         pressureRatio(stateLeft.w,stateCenter.w,stateRight.w),
         pressureRatio(stateCenter.w,stateRight.w,pfarRight));
 
     //This is the temporary state bounded by the limitor function.
-    tempStateLeft = limitor(make_float3(stateLeft), make_float3(stateCenter), pR.x);
-    tempStateRight = limitor(make_float3(stateCenter), make_float3(stateLeft), 1.0/pR.y);
+    tempStateLeft = limitor(THREEVEC(stateLeft), THREEVEC(stateCenter), pR.x);
+    tempStateRight = limitor(THREEVEC(stateCenter), THREEVEC(stateLeft), 1.0/pR.y);
 
     //Pressure needs to be recalculated for the new limited state variables.
     tempStateLeft.w = pressure(tempStateLeft);
@@ -159,17 +163,17 @@ eulerStutterStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfo
     fluxL = eulerFlux(tempStateLeft,tempStateRight);
 
     //Do the same thing with the right side.
-    tempStateLeft = limitor(make_float3(stateCenter), make_float3(stateRight), pR.y);
-    tempStateRight = limitor(make_float3(stateRight), make_float3(stateCenter), 1.0/pR.z);
+    tempStateLeft = limitor(THREEVEC(stateCenter), THREEVEC(stateRight), pR.y);
+    tempStateRight = limitor(THREEVEC(stateRight), THREEVEC(stateCenter), 1.0/pR.z);
     tempStateLeft.w = pressure(tempStateLeft);
     tempStateRight.w = pressure(tempStateRight);
     fluxR = eulerFlux(tempStateLeft,tempStateRight);
 
     //Add the change back to the node in question.
     #ifdef __CUDA_ARCH__
-    stateCenter += make_float4(0.5 * dimens.x * (fluxL-fluxR));
+    stateCenter += FOURVEC(0.5 * dimens.x * (fluxL-fluxR));
     #else
-    stateCenter += make_float4(0.5 * dimz.x * (fluxL-fluxR));
+    stateCenter += FOURVEC(0.5 * dimz.x * (fluxL-fluxR));
     #endif
     stateCenter.w = pressure(stateCenter);
 
@@ -185,26 +189,26 @@ eulerFinalStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfour
     REALthree fluxL, fluxR, pR;
     REALfour tempStateLeft, tempStateRight;
 
-    pR = make_float3(pressureRatio(pfarLeft,stateLeft.w,stateCenter.w),
+    pR = THREEVEC(pressureRatio(pfarLeft,stateLeft.w,stateCenter.w),
         pressureRatio(stateLeft.w,stateCenter.w,stateRight.w),
         pressureRatio(stateCenter.w,stateRight.w,pfarRight));
 
-    tempStateLeft = limitor(make_float3(stateLeft), make_float3(stateCenter), pR.x);
-    tempStateRight = limitor(make_float3(stateCenter), make_float3(stateLeft), 1.0/pR.y);
+    tempStateLeft = limitor(THREEVEC(stateLeft), THREEVEC(stateCenter), pR.x);
+    tempStateRight = limitor(THREEVEC(stateCenter), THREEVEC(stateLeft), 1.0/pR.y);
     tempStateLeft.w = pressure(tempStateLeft);
     tempStateRight.w = pressure(tempStateRight);
     fluxL = eulerFlux(tempStateLeft,tempStateRight);
 
-    tempStateLeft = limitor(make_float3(stateCenter), make_float3(stateRight), pR.y);
-    tempStateRight = limitor(make_float3(stateRight), make_float3(stateCenter), 1.0/pR.z);
+    tempStateLeft = limitor(THREEVEC(stateCenter), THREEVEC(stateRight), pR.y);
+    tempStateRight = limitor(THREEVEC(stateRight), THREEVEC(stateCenter), 1.0/pR.z);
     tempStateLeft.w = pressure(tempStateLeft);
     tempStateRight.w = pressure(tempStateRight);
     fluxR = eulerFlux(tempStateLeft,tempStateRight);
 
     #ifdef __CUDA_ARCH__
-    stateCenter_orig += make_float4(dimens.x * (fluxL-fluxR));
+    stateCenter_orig += FOURVEC(dimens.x * (fluxL-fluxR));
     #else
-    stateCenter_orig += make_float4(dimz.x * (fluxL-fluxR));
+    stateCenter_orig += FOURVEC(dimz.x * (fluxL-fluxR));
     #endif
     stateCenter_orig.w = pressure(stateCenter_orig);
 

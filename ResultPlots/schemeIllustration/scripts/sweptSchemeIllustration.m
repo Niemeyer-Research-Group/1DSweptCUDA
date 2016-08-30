@@ -7,8 +7,8 @@ close all
 tpb = 16;
 clr = {'r','b'};
 index = 1:tpb;
-pos_top = [.05, .55, .9, .4];
-pos_bottom = [.05, .05, .9, .4];
+pos_top = [.075, .535, .9, .4];
+pos_bottom = [.075, .075, .9, .4];
 
 ax_top = subplot('position',pos_top);
 ax_bottom = subplot('position',pos_bottom);
@@ -39,17 +39,20 @@ end
 
 subplot(ax_top)
 xlim([-1,2*tpb-.5])
-ylim([-1,1.25*tpb])
-%plot([-.5,-.5],[-1,2*tpb],'k','Linewidth',5)
+ylim([-1,tpb])
+title(sprintf('First order swept scheme\n%-s','\rm \it (a)'))
+
 subplot(ax_bottom)
 xlim([-1,2*tpb-.5])
-ylim([-1,1.25*tpb])
-%plot([-.5,-.5],[-1,2*tpb],'k','Linewidth',5)
+ylim([-1,tpb])
+title('\rm \it (b)')
+xlabel('Spatial point')
+ylabel('Sub-timestep')
 
 
 hold on
-x = [.19,.11;.39,.47; .67,.59; .82, .9];
-y = [.1,.15];
+x = [.21,.13;.37,.45; .66,.58; .82, .9];
+y = [.15,.2];
 
 
 base = tpb + 2;
@@ -69,10 +72,10 @@ for k = ht2:-1:1
         end
     end
 end
-annotation('textarrow',x(1,:),y,'String','L_{0} -> R_{0}','LineWidth',1.5)
-annotation('textarrow',x(2,:),y,'String','R_{0} -> L_{1}','LineWidth',1.5)
-annotation('textarrow',x(3,:),y,'String','L_{1} -> R_{1}','LineWidth',1.5)
-annotation('textarrow',x(4,:),y,'String','R_{1} -> L_{0}','LineWidth',1.5)
+annotation('textarrow',x(1,:),y,'String','L_{0} -> R_{0}','LineWidth',1.5,'FontSize',12);
+annotation('textarrow',x(2,:),y,'String','R_{0} -> L_{1}','LineWidth',1.5,'FontSize',12);
+annotation('textarrow',x(3,:),y,'String','L_{1} -> R_{1}','LineWidth',1.5,'FontSize',12);
+annotation('textarrow',x(4,:),y,'String','R_{1} -> L_{0}','LineWidth',1.5,'FontSize',12);
 
 for k = 2:tpb/2
     for n = 1:2

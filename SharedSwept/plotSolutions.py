@@ -43,6 +43,11 @@ OPTIONS = [
 
 Param = {"Heat": "Fo = ", "KS":"dt/dx = ", "Euler":"dt/dx = "}
 
+OPT_PREC = [
+    "Single",
+    "Double"
+]
+
 #It's kinda getting there.
 master = Tk.Tk()
 
@@ -79,9 +84,11 @@ sw = Tk.BooleanVar(master)
 
 #CPU or no
 proc_share = Tk.BooleanVar(master)
+prec = Tk.BooleanVar(master)
 
-runit = Tk.BooleanVar(master)
+runit = runit = Tk.BooleanVar(master)
 runit.set(True)
+
 
 def ok():
     master.destroy()
@@ -121,9 +128,11 @@ master.bind('<Return>', ret)
 
 check_one = Tk.Checkbutton(entryframe, text = "Swept Scheme ", variable = sw)
 check_two = Tk.Checkbutton(entryframe, text = "CPU/GPU sharing ", variable = proc_share)
+check_three = Tk.Checkbutton(entryframe, text = "Double Precision ", variable = prec)
 
 check_one.grid(row = 9, column = 0)
 check_two.grid(row = 10, column = 0)
+check_three.grid(row = 9, column = 1)
 
 # Just have one update routine and update for all changes.
 
@@ -167,6 +176,7 @@ master.mainloop()
 ##Interface end --------------------
 
 Fname = problem.get()
+typename = Fname + OPT_PREC[prec.get()]
 sourcepath = os.path.abspath(os.path.dirname(__file__))
 basepath = os.path.join(sourcepath,'Results')
 binpath = os.path.join(sourcepath,'bin')
@@ -178,7 +188,7 @@ if not os.path.isdir(binpath):
 if not os.path.isdir(basepath):
     os.mkdir(basepath)
 
-Varfile = os.path.join(basepath, Fname + "1D_Result.dat")
+Varfile = os.path.join(basepath, typename + "_1D_Result.dat")
 
 div = 2**divpow.get()
 bks = 2**blkpow.get()
@@ -207,7 +217,7 @@ else:
 if runit.get():
     sp.call("make")
 
-    execut = os.path.join(binpath, Fname + "Out")
+    execut = os.path.join(binpath, typename + "Out")
 
     print div, bks, dt, tf, freq, swept, cpu
 

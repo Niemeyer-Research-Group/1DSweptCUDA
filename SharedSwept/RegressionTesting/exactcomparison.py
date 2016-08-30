@@ -34,7 +34,7 @@ def heat_exact(t,L,divs):
         c  = 2
         ser = heats(c,L,xr,t)
         h = np.copy(ser)
-        for k in range(1):
+        for k in range(200):
             c += 2
             ser = heats(c,L,xr,t)
             h += ser
@@ -48,21 +48,14 @@ def rmse(exact,sim):
 
 if __name__ == '__main__':
 
+
     w = int(sys.argv[1])
+    sch = int(sys.argv[2])
+    cpu = sch/2
+    swept = int(bool(sch))
 
-    exactpath = os.path.abspath(os.path.dirname(__file__))
-    mainpath = os.path.dirname(exactpath)
-
-    proc = sp.Popen("make", cwd = mainpath)
-    sp.Popen.wait(proc)
-
-    rsltpath = os.path.join(mainpath,'Results')
-    binpath = os.path.join(mainpath,'bin')
-
-    #Heat first
     Fname = ["Heat","Euler"]
-    Varfile = os.path.join(rsltpath, Fname[w] + "1D_Result.dat")
-    execut = os.path.join(binpath, Fname[w] + "Out")
+    prec = ["Single","Double"]
 
     SCHEME = [
         "Classic",
@@ -70,85 +63,102 @@ if __name__ == '__main__':
         "SweptCPUshare"
     ]
 
-    alpha = 8.418e-5
+    timestr = Fname[w] + " " + SCHEME[sch]
+    exactpath = os.path.abspath(os.path.dirname(__file__))
+    mainpath = os.path.dirname(exactpath)
+    gitpath = os.path.dirname(mainpath)
+    plotpath = os.path.join(os.path.join(gitpath,'ResultPlots'),'ExactTesting')
+
+    proc = sp.Popen("make", cwd = mainpath)
+    sp.Popen.wait(proc)
+
+    rsltpath = os.path.join(mainpath,'Results')
+    binpath = os.path.join(mainpath,'bin')
+    myplotpath = os.path.join(plotpath,Fname[w])
+
     div = 1024.0
     bks = 64
-    dx = .001
 
-    if w == 0:
+    head = np.array(['Variable','time'])
+    color = ['r','b','k','g']
 
+    #Heat
+
+    if not w:
+        alpha = 8.418e-5
+        dx = .001
         L = dx * (div-1)
-        print L
         tf = 200
         freq = 60
-        cpu = 0
-        swept = 0
         dt = [.0015,.0010,.0005,.0001]
         Fo = [alpha*k/dx**2 for k in dt]
         err = np.empty([4,4])
-        lbl = []
-        lbl2 = []
+
         tm = np.copy(err)
 
-        if swept and cpu:
-            sch = SCHEME[2]
-            timestr = Fname[w] + " " + sch
-        elif swept:
-            sch = SCHEME[1]
-            timestr = Fname[w] + " " + sch
-        else:
-            sch = SCHEME[0]
-            timestr = Fname[w] + " " + sch
+        for pr in prec:
+            plotstr = timestr + " " + pr
+            lbl = []
+            lbl2 = []
 
-        for i,dts in enumerate(dt):
-            execstr = execut +  ' {0} {1} {2} {3} {4} {5} {6} {7}'.format(div,bks,dts,tf,freq,swept,cpu,Varfile)
-            exeStr = shlex.split(execstr)
-            proc = sp.Popen(exeStr)
-            sp.Popen.wait(proc)
-            lbl.append(str(dts) + " " + str(Fo[i]))
+            myplot = os.path.join(myplotpath, plotstr + ".pdf")
+            Varfile = os.path.join(rsltpath, Fname[w] + pr + "_1D_Result.dat")
+            execut = os.path.join(binpath, Fname[w] + pr + "Out")
 
-            # Now read in the files and plot, need better matplotlib strategy.
-            fin = open(Varfile)
-            data = []
-            time = []
-            h = []
-            xax = np.linspace(0,L,div)
+            for i,dts in enumerate(dt):
+                execstr = execut +  ' {0} {1} {2} {3} {4} {5} {6} {7}'.format(div,bks,dts,tf,freq,swept,cpu,Varfile)
+                exeStr = shlex.split(execstr)
+                proc = sp.Popen(exeStr)
+                sp.Popen.wait(proc)
+                lbl.append("{:.4f}      {:.4f}".format(dts,Fo[i]))
 
-            for p,line in enumerate(fin):
+                # Now read in the files and plot, need better matplotlib strategy.
+                fin = tuple(open(Varfile))
+                ar = [float(n) for n in fin[0].split()]
+                xax = np.linspace(0,ar[0],ar[1])
+                h = []
+                data= []
+                time = []
 
-                if p>1:
+                for p in range(2,len(fin)):
 
-                    ar = [float(n) for n in line.split()]
+                    ar = [float(n) for n in fin[p].split()[1:]]
                     data.append(ar[1:])
                     time.append(ar[0])
                     h.append(heat_exact(ar[0],L,div))
 
-            print len(h), len(h[0])
-            for k in range(len(h)):
-                err[i,k] = rmse(h[k],data[k])
-                tm[i,k] = time[k]
+                print len(h)
 
+                pts = range(0,len(h[0]),20)
 
-        for k in range(4):
-            plt.subplot(121)
-            plt.plot(tm[k,:],err[k,:],'-o')
-            plt.hold(True)
-            plt.subplot(122)
-            plt.plot(xax,data[k])
-            lbl2.append(str(time[k]))
+                for k in range(len(h)):
+                    err[i,k] = rmse(h[k],data[k])
+                    tm[i,k] = time[k]
 
-        plt.subplot(121)
-        leg = plt.legend(lbl,title = "dt ------ Fo")
-        plt.xlabel('Simulation time (s)')
-        plt.ylabel('RMS Error')
-        plt.title('Error in ' + timestr + ' ' + str(div) + ' spatial points')
-        plt.subplot(122)
-        plt.legend(lbl2)
-        plt.xlabel('Spatial point')
-        plt.ylabel('Temperature')
-        plt.title(timestr + ' result ')
-        leg.draggable()
-        plt.show()
+            fig, (ax1, ax2) = plt.subplots(ncols = 2)
+            ax1.hold(True)
+            ax2.hold(True)
+            for k in range(4):
+                ax1.plot(tm[k,:],err[k,:],'-o')
+                ax2.plot(xax,data[k],color[k])
+                ax2.plot(xax[pts], h[k][pts],'s'+color[k])
+                lbl2.append("{:2.0f} Simulated ".format(time[k]) )
+                lbl2.append("Exact")
+
+            ax1.legend(lbl,title = "dt ------  Fo")
+            ax1.set_xlabel('Simulation time (s)')
+            ax1.set_ylabel('RMS Error')
+            ax1.set_title(plotstr + ' Error {0} spatial points'.format(div))
+            ax1.grid(alpha = 0.5)
+
+            ax2.legend(lbl2, loc=8, ncol=2)
+            ax2.set_xlabel('Spatial point')
+            ax2.set_ylabel('Temperature')
+            ax2.set_title(plotstr + ' result ')
+            ax2.set_ylim([0,30])
+            ax2.grid(alpha = 0.5)
+            plt.savefig(myplot, dpi=2000)
+            plt.show()
 
     else:
 
@@ -180,7 +190,7 @@ if __name__ == '__main__':
             exeStr = shlex.split(execstr)
             proc = sp.Popen(exeStr)
             sp.Popen.wait(proc)
-            lbl.append(str(dts) + " -- " + str(dt_dx[i]))
+            lbl.append("{0}      {1}".format(dts,dt_dx[i]))
 
             # Now read in the files and plot, need better matplotlib strategy.
             fin = open(Varfile)
@@ -202,27 +212,25 @@ if __name__ == '__main__':
                 err[i,k] = rmse(h[k],data[k])
                 tm[i,k] = time[k]
 
-
+        fig, (ax1, ax2) = plt.subplot(ncols = 2)
+        ax1.hold(True)
+        ax2.hold(True)
         for k in range(4):
-            plt.subplot(121)
-            plt.plot(tm[k,:],err[k,:],'-o')
-            plt.hold(True)
-            plt.subplot(122)
-            plt.plot(xax,data[k])
-            lbl2.append(str(time[k]))
+            ax1.plot(tm[k,:],err[k,:],'-o')
+            ax2.plot(xax,data[k])
+            lbl2.append(str(time[k]) + " Simulated " )
+            lbl2.append("Exact")
 
-        plt.plot(xax,h[0])
-        plt.subplot(121)
-        leg = plt.legend(lbl,title = "dt ------ dt/dx")
-        plt.xlabel('Simulation time (s)')
-        plt.ylabel('RMS Error')
-        plt.title('Error in ' + timestr + ' ' + str(div) + ' spatial points')
-        leg.draggable()
-        plt.subplot(122)
-        lbl2.append("exact")
-        leg2 = plt.legend(lbl2)
-        plt.xlabel('Spatial point')
-        plt.ylabel('Temperature')
-        plt.title(timestr + ' result ')
-        leg2.draggable()
+        ax1.legend(lbl,title = "dt ------  Fo")
+        ax1.set_xlabel('Simulation time (s)')
+        ax1.set_ylabel('RMS Error')
+        ax1.set_title('Error in ' + plotstr + ' ' + str(div) + ' spatial points')
+        ax1.grid(alpha = 0.5)
+
+        ax2.legend(lbl2, loc=8)
+        ax2.set_xlabel('Spatial point')
+        ax2.set_ylabel('Temperature')
+        ax2.set_title(plotstr + ' result ')
+        ax2.grid(alpha = 0.5)
+        plt.savefig(myplot)
         plt.show()
