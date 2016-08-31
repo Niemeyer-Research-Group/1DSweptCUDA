@@ -22,7 +22,6 @@ def euler_exact(t,dv,thing):
 
     return getattr(soln,thing)
 
-
 def heats(n,L,x,t):
     alpha = 8.418e-5
     return 1.0/n**2 * np.exp(-alpha*t*(n*np.pi/L)**2) * np.cos(n*x*np.pi/L)
@@ -108,9 +107,9 @@ if __name__ == '__main__':
             myplot = os.path.join(myplotpath, plotstr + ".pdf")
             Varfile = os.path.join(rsltpath, Fname[w] + pr + "_1D_Result.dat")
             execut = os.path.join(binpath, Fname[w] + pr + "Out")
-            dMain = dict()
-            err = dict()
-            exMain = dict()
+            dMain = []
+            err = []
+            exMain = []
 
             #Main loop
             for i,dts in enumerate(dt):
@@ -119,27 +118,19 @@ if __name__ == '__main__':
                 proc = sp.Popen(exeStr)
                 sp.Popen.wait(proc)
 
-                if not dts in dMain.keys():
-                    dMain[dts] = dict()
-                if not dts in exMain.keys():
-                    exMain[dts] = dict()
-
-
                 fin = tuple(open(Varfile))
                 ar = [float(n) for n in fin[0].split()]
                 xax = np.linspace(0,ar[0],ar[1])
 
-                for p in range(2,len(fin)):
-
-                    ar = fin[p].split()
-
-                    tm = float(ar[1])
-
-                    dMain[dts][tm] = [float(n) for n in ar[2:]]
-                    exMain[dts][tm] = heat_exact(tm, L, div)
+                ar = fin[p].split()
+                nameV = ar[0].lower()
+                tm = float(ar[1])
+                if tm>0:
+                    dMain.append([dts,nameV,tm,[float(n) for n in ar[2:]]])
+                    exMain.append([dts,nameV,tm] + list(euler_exact(tm, div, nameV)))
 
             for keydt in dMain.keys():
-                err[keydt] = dict()
+                err[keydt] = []
                 for keytf in dMain[keydt].keys():
                     err[keydt][keytf] = rmse(exMain[keydt][keytf], dMain[keydt][keytf])
 
@@ -162,10 +153,10 @@ if __name__ == '__main__':
 
                 ax1.plot(x,y,'-o')
 
-            ax1.legend(lbl,title = "dt  ------------  Fo", fontsize = "medium", loc=0)
+            ax1.legend(lbl,title = "dt  ------------  Fo", fontsize="medium, loc=0)
             ax1.set_xlabel('Simulation time (s)')
             ax1.set_ylabel('RMS Error')
-            ax1.set_title(plotstr + ' | {0} spatial points'.format(div), fontsize = "medium")
+            ax1.set_title(plotstr + ' | {0} spatial points'.format(div), fontsize="medium")
             ax1.grid(alpha = 0.5)
 
             tmp = exMain[sv].keys()
@@ -179,10 +170,10 @@ if __name__ == '__main__':
                 lbl2.append( "{:2.0f} (s) Simulated".format(key_f) )
                 lbl2.append("Exact")
 
-            ax2.legend(lbl2, loc=8, ncol=2, fontsize = "medium")
+            ax2.legend(lbl2, loc=8, ncol=2, fontsize="medium)
             ax2.set_xlabel('Spatial point')
             ax2.set_ylabel('Temperature')
-            ax2.set_title(plotstr + ' | dt = {:.4f}'.format(sv), fontsize = "medium")
+            ax2.set_title(plotstr + ' | dt = {:.4f}'.format(sv), fontsize="medium)
             ax2.set_ylim([0,30])
             ax2.grid(alpha=0.5)
             plt.savefig(myplot, dpi=1000, bbox_inches="tight")
@@ -212,6 +203,7 @@ if __name__ == '__main__':
             dMain = []
             err = []
             exMain = []
+            idx = []
 
             #Main loop
             for i,dts in enumerate(dt):
@@ -232,18 +224,26 @@ if __name__ == '__main__':
                     nameV = ar[0].lower()
                     tm = float(ar[1])
                     if tm>0:
-                        dMain.append([dts,nameV,tm,[float(n) for n in ar[2:]]])
-
-                        exMain.append([dts,nameV,tm] + list(euler_exact(tm, div, nameV)))
+                        idx.append([nameV,dts,tm])
+                        dMain.append( [float(n) for n in ar[2:]])
+                        exMain.append( list(euler_exact(tm, div, nameV)))
 
                 for k in range(len(exMain)):
-                    err.append([dMain[k][0],dMain[k][1],dMain[k][2],float(rmse(exMain[k][3:], dMain[k][3:]))])
+                    err.append(float(rmse(exMain[k], dMain[k])))
 
+            idx = [[r[col] for r in idx] for col in range(len(idx[0]))]
             #And now you need to parse it.
-            err = pd.DataFrame(err)
-            print err.set_index([0,1,2])
+            err = pd.Series(err,index=idx)
 
-            fig, (ax1, ax2) = plt.subplot(figsize=(12.,6.), ncol=2)
+            typ = err.index.get_level_values(0).unique()
+            fig, ax = plt.subplot(figsize=(14.,8.), ncol=2, nrow=2)
+
+            ax1.hold(True)
+            ax2.hold(True)
+
+
+
+            fig, (ax1, ax2) = plt.subplot(figsize=(14.,8.), ncol=2)
             ax1.hold(True)
             ax2.hold(True)
             for k in range(4):
@@ -252,16 +252,16 @@ if __name__ == '__main__':
                 lbl2.append(str(time[k]) + " Simulated " )
                 lbl2.append("Exact")
 
-            ax1.legend(lbl,title = "dt ------  Fo")
+            ax1.legend(lbl,title = "dt ------  Fo",fontsize="medium)
             ax1.set_xlabel('Simulation time (s)')
             ax1.set_ylabel('RMS Error')
-            ax1.set_title('Error in ' + plotstr + ' ' + str(div) + ' spatial points')
+            ax1.set_title('Error in ' + plotstr + ' ' + str(div) + ' spatial points',fontsize="medium)
             ax1.grid(alpha=0.5)
 
-            ax2.legend(lbl2, loc=8)
+            ax2.legend(lbl2, loc=8, fontsize="medium)
             ax2.set_xlabel('Spatial point')
             ax2.set_ylabel('Temperature')
-            ax2.set_title(plotstr + ' result ')
+            ax2.set_title(plotstr + ' result ',fontsize="medium)
             ax2.grid(alpha=0.5)
             plt.savefig(myplot)
             plt.show()
