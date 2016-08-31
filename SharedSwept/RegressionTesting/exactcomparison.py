@@ -5,18 +5,22 @@ import shlex
 import os
 import matplotlib.pyplot as plt
 import sys
-from sympy import *
 import pandas as pd
+import time
 
 from exactpack.solvers.riemann import Sod
+import warnings
 
-def euler_exact(t,dv):
-   r = np.linspace(0.0,1.0,dv)
+def euler_exact(t,dv,thing):
+    warnings.filterwarnings("ignore")
+    r = np.linspace(0.0,1.0,dv)
+    if thing == 'velocity':
+        thing = "velocity_x"
 
-   solver = Sod()
-   soln = solver(r,t)
+    solver = Sod()
+    soln = solver(r,t)
 
-   return soln.density
+    return getattr(soln,thing)
 
 
 def heats(n,L,x,t):
@@ -29,12 +33,12 @@ def heat_exact(t,L,divs):
     xm = np.linspace(0,L,divs)
     c0 = 50.0*L/3.0
     cout = 400.0*L/(np.pi**2)
-    Tf1 = np.empty(int(div))
+    Tf1 = np.empty(int(divs))
     for i,xr in enumerate(xm):
         c  = 2
         ser = heats(c,L,xr,t)
         h = np.copy(ser)
-        for k in range(200):
+        for k in range(500):
             c += 2
             ser = heats(c,L,xr,t)
             h += ser
@@ -43,11 +47,15 @@ def heat_exact(t,L,divs):
 
     return Tf1
 
+def Fo(dx,dt):
+    alpha = 8.418e-5
+    return alpha*dt/dx**2
+
+
 def rmse(exact,sim):
     return np.sqrt(np.mean((np.array(exact)-np.array(sim))**2))
 
 if __name__ == '__main__':
-
 
     w = int(sys.argv[1])
     sch = int(sys.argv[2])
@@ -78,23 +86,19 @@ if __name__ == '__main__':
 
     div = 1024.0
     bks = 64
-
-    head = np.array(['Variable','time'])
     color = ['r','b','k','g']
+    pts = range(0,int(div),50)
 
     #Heat
 
     if not w:
-        alpha = 8.418e-5
+
         dx = .001
         L = dx * (div-1)
         tf = 200
         freq = 60
         dt = [.0015,.0010,.0005,.0001]
-        Fo = [alpha*k/dx**2 for k in dt]
-        err = np.empty([4,4])
-
-        tm = np.copy(err)
+        # dt, var, tf
 
         for pr in prec:
             plotstr = timestr + " " + pr
@@ -104,64 +108,86 @@ if __name__ == '__main__':
             myplot = os.path.join(myplotpath, plotstr + ".pdf")
             Varfile = os.path.join(rsltpath, Fname[w] + pr + "_1D_Result.dat")
             execut = os.path.join(binpath, Fname[w] + pr + "Out")
+            dMain = dict()
+            err = dict()
+            exMain = dict()
 
+            #Main loop
             for i,dts in enumerate(dt):
                 execstr = execut +  ' {0} {1} {2} {3} {4} {5} {6} {7}'.format(div,bks,dts,tf,freq,swept,cpu,Varfile)
                 exeStr = shlex.split(execstr)
                 proc = sp.Popen(exeStr)
                 sp.Popen.wait(proc)
-                lbl.append("{:.4f}      {:.4f}".format(dts,Fo[i]))
 
-                # Now read in the files and plot, need better matplotlib strategy.
+                if not dts in dMain.keys():
+                    dMain[dts] = dict()
+                if not dts in exMain.keys():
+                    exMain[dts] = dict()
+
+
                 fin = tuple(open(Varfile))
                 ar = [float(n) for n in fin[0].split()]
                 xax = np.linspace(0,ar[0],ar[1])
-                h = []
-                data= []
-                time = []
-                # YOU IDIOT.  YOU DON"T NEED TO MAKE XAX THE HEADER ROW.  ITLL DEFAULT TO NONE AND
-                #THEN YOU DON"T NEED TO NAME THE TEMPERATURE AND TIME COLS.
 
                 for p in range(2,len(fin)):
 
-                    ar = [float(n) for n in fin[p].split()[1:]]
-                    data.append(ar[1:])
-                    time.append(ar[0])
-                    h.append(heat_exact(ar[0],L,div))
+                    ar = fin[p].split()
 
-                print len(h)
+                    tm = float(ar[1])
 
-                pts = range(0,len(h[0]),20)
+                    dMain[dts][tm] = [float(n) for n in ar[2:]]
+                    exMain[dts][tm] = heat_exact(tm, L, div)
 
-                for k in range(len(h)):
-                    err[i,k] = rmse(h[k],data[k])
-                    tm[i,k] = time[k]
+            for keydt in dMain.keys():
+                err[keydt] = dict()
+                for keytf in dMain[keydt].keys():
+                    err[keydt][keytf] = rmse(exMain[keydt][keytf], dMain[keydt][keytf])
 
-            fig, (ax1, ax2) = plt.subplots(figsize = (10.,5.),ncols = 2)
+            fig, (ax1, ax2) = plt.subplots(figsize=(14.,8.), ncols = 2)
             ax1.hold(True)
             ax2.hold(True)
-            for k in range(4):
-                ax1.plot(tm[k,:],err[k,:],'-o')
-                ax2.plot(xax,data[k],color[k])
-                ax2.plot(xax[pts], h[k][pts],'s'+color[k])
-                lbl2.append("{:2.0f} Simulated ".format(time[k]) )
-                lbl2.append("Exact")
+            tmp = err.keys()
+            tmp.sort()
+            for key_one in tmp:
+                x = []
+                y = []
+                tmp2 = err[key_one].keys()
+                tmp2.sort()
+                sv = key_one
+                for key_two in tmp2:
+                    x.append(key_two)
+                    y.append(err[key_one][key_two])
 
-            ax1.legend(lbl,title = "dt ------  Fo")
+                lbl.append("{:.4f}     {:.4f}".format(key_one, Fo(dx,key_one)))
+
+                ax1.plot(x,y,'-o')
+
+            ax1.legend(lbl,title = "dt  ------------  Fo", fontsize = "medium", loc=0)
             ax1.set_xlabel('Simulation time (s)')
             ax1.set_ylabel('RMS Error')
-            ax1.set_title(plotstr + ' Error {0} spatial points'.format(div))
+            ax1.set_title(plotstr + ' | {0} spatial points'.format(div), fontsize = "medium")
             ax1.grid(alpha = 0.5)
 
-            ax2.legend(lbl2, loc=8, ncol=2)
+            tmp = exMain[sv].keys()
+            tmp.sort()
+
+            for k,key_f in enumerate(tmp):
+                sim = dMain[sv][key_f]
+                ex = exMain[sv][key_f]
+                ax2.plot(xax,sim,color[k])
+                ax2.plot(xax[pts], ex[pts],'s'+color[k])
+                lbl2.append( "{:2.0f} (s) Simulated".format(key_f) )
+                lbl2.append("Exact")
+
+            ax2.legend(lbl2, loc=8, ncol=2, fontsize = "medium")
             ax2.set_xlabel('Spatial point')
             ax2.set_ylabel('Temperature')
-            ax2.set_title(plotstr + ' result ')
+            ax2.set_title(plotstr + ' | dt = {:.4f}'.format(sv), fontsize = "medium")
             ax2.set_ylim([0,30])
-            ax2.grid(alpha = 0.5)
-            plt.savefig(myplot, dpi=2000)
+            ax2.grid(alpha=0.5)
+            plt.savefig(myplot, dpi=1000, bbox_inches="tight")
             plt.show()
-            
+
    #Euler territory
     else:
 
@@ -178,12 +204,16 @@ if __name__ == '__main__':
             plotstr = timestr + " " + pr
             lbl = []
             lbl2 = []
-            #I should be able to initialize a panel here and add to it.
-            iDict = dict()
 
             myplot = os.path.join(myplotpath, plotstr + ".pdf")
             Varfile = os.path.join(rsltpath, Fname[w] + pr + "_1D_Result.dat")
             execut = os.path.join(binpath, Fname[w] + pr + "Out")
+
+            dMain = []
+            err = []
+            exMain = []
+
+            #Main loop
             for i,dts in enumerate(dt):
                 execstr = execut +  ' {0} {1} {2} {3} {4} {5} {6} {7}'.format(div,bks,dts,tf,freq,swept,cpu,Varfile)
                 exeStr = shlex.split(execstr)
@@ -191,25 +221,29 @@ if __name__ == '__main__':
                 sp.Popen.wait(proc)
                 lbl.append("{0}      {1}".format(dts,dt_dx[i]))
 
-                # Now read in the files and plot, need better matplotlib strategy.
+
                 fin = tuple(open(Varfile))
                 ar = [float(n) for n in fin[0].split()]
                 xax = np.linspace(0,ar[0],ar[1])
-                h_intit = np.concatenate((head,xax))
-                h = []
-                tbl_rslt = pd.read_table(Varfile, delim_whitespace = True, names = h_init, skip_rows = [0])
-                tbl_rslt.set_index_names(head)
-                tbl_real = tbl_rslt.transpose()
-                iDict[dts] = tbl_real
 
-                #Still gotta do something for this it's just doing my head in.
-                time = set(tbl_real.get_level(1)) #Takes the level 1 row
-                for tm in time:
-                   h.append(euler_exact(tm,div))
-               
-               
+                for p in range(2,len(fin)):
 
-            fig, (ax1, ax2) = plt.subplot(figsize = (12.,6.)ncols = 2)
+                    ar = fin[p].split()
+                    nameV = ar[0].lower()
+                    tm = float(ar[1])
+                    if tm>0:
+                        dMain.append([dts,nameV,tm,[float(n) for n in ar[2:]]])
+
+                        exMain.append([dts,nameV,tm] + list(euler_exact(tm, div, nameV)))
+
+                for k in range(len(exMain)):
+                    err.append([dMain[k][0],dMain[k][1],dMain[k][2],float(rmse(exMain[k][3:], dMain[k][3:]))])
+
+            #And now you need to parse it.
+            err = pd.DataFrame(err)
+            print err.set_index([0,1,2])
+
+            fig, (ax1, ax2) = plt.subplot(figsize=(12.,6.), ncol=2)
             ax1.hold(True)
             ax2.hold(True)
             for k in range(4):
@@ -222,12 +256,12 @@ if __name__ == '__main__':
             ax1.set_xlabel('Simulation time (s)')
             ax1.set_ylabel('RMS Error')
             ax1.set_title('Error in ' + plotstr + ' ' + str(div) + ' spatial points')
-            ax1.grid(alpha = 0.5)
+            ax1.grid(alpha=0.5)
 
             ax2.legend(lbl2, loc=8)
             ax2.set_xlabel('Spatial point')
             ax2.set_ylabel('Temperature')
             ax2.set_title(plotstr + ' result ')
-            ax2.grid(alpha = 0.5)
+            ax2.grid(alpha=0.5)
             plt.savefig(myplot)
             plt.show()

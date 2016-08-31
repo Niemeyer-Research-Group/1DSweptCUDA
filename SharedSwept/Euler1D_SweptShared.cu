@@ -24,7 +24,7 @@ If not, see <https://opensource.org/licenses/MIT>.
 #include <cuda_runtime_api.h>
 #include <cuda_runtime.h>
 #include <device_functions.h>
-#include <helper_math.h>
+#include "myVectorTypes.h"
 
 #include <ostream>
 #include <iostream>
@@ -40,6 +40,9 @@ If not, see <https://opensource.org/licenses/MIT>.
     #define REALthree   float3
     #define THREEVEC( ... ) make_float3(__VA_ARGS__)
     #define FOURVEC( ... )  make_float4(__VA_ARGS__)
+#else
+    #define THREEVEC( ... ) make_double3(__VA_ARGS__)
+    #define FOURVEC( ... )  make_double4(__VA_ARGS__)
 #endif
 
 const REAL gam = 1.4;

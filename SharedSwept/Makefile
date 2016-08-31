@@ -8,7 +8,8 @@ CUDAFLAGSDOUBLE := $(CUDAFLAGS) -DREAL=double -DREALthree=double3 -DREALfour=dou
 PROJECT_DIR = $(shell pwd)
 OUT_DIR := $(PROJECT_DIR)/bin
 
-default:	$(OUT_DIR)/HeatSingleOut $(OUT_DIR)/KSSingleOut $(OUT_DIR)/EulerSingleOut $(OUT_DIR)/HeatDoubleOut $(OUT_DIR)/KSDoubleOut
+default:	$(OUT_DIR)/HeatSingleOut $(OUT_DIR)/KSSingleOut $(OUT_DIR)/EulerSingleOut \
+	 $(OUT_DIR)/HeatDoubleOut $(OUT_DIR)/KSDoubleOut $(OUT_DIR)/EulerDoubleOut
 
 $(OUT_DIR)/HeatSingleOut:	Heat1D_SweptShared.cu
 	nvcc -o $@ $< $(CUDAFLAGS)
@@ -23,4 +24,7 @@ $(OUT_DIR)/HeatDoubleOut:	Heat1D_SweptShared.cu
 	nvcc -o $@ $< $(CUDAFLAGSDOUBLE)
 
 $(OUT_DIR)/KSDoubleOut:	KS1D_SweptShared.cu
+	nvcc -o $@ $< $(CUDAFLAGSDOUBLE)
+
+$(OUT_DIR)/EulerDoubleOut:	Euler1D_SweptShared.cu
 	nvcc -o $@ $< $(CUDAFLAGSDOUBLE)

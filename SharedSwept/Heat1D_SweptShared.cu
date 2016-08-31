@@ -35,7 +35,7 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 #include <omp.h>
 
 #ifndef REAL
-#define REAL  double
+#define REAL  float
 #endif
 
 using namespace std;
@@ -719,7 +719,8 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
     			downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
 
     			cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
-    			fwr << t_eq << " ";
+
+    			fwr << "Temperature " << t_eq << " ";
 
     			for (int k = 0; k<dv; k++)
     			{
@@ -776,7 +777,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
     			downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
 
     			cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
-    			fwr << " Temperature " << t_eq << " ";
+    			fwr << "Temperature " << t_eq << " ";
 
     			for (int k = 0; k<dv; k++)
     			{
@@ -837,7 +838,7 @@ int main( int argc, char *argv[] )
     const REAL lx = ds * ((REAL)dv - 1.f);
     fou = th_diff*dt/(ds*ds);  //Fourier number
 
-    cout << bks << " Blocks " << lx << " Length" << endl;
+    cout << bks << " Blocks " << lx << " Length" << " Type (float = 4, double = 8) " << sizeof(REAL) << endl;
 
 	//dv and tpb must be powers of two.  dv must be larger than tpb and divisible by
 	//tpb.
@@ -869,7 +870,7 @@ int main( int argc, char *argv[] )
 	fwr.open(argv[8],ios::trunc);
 	// Write out x length and then delta x and then delta t.
 	// First item of each line is timestamp.
-	fwr << lx << " " << dv << " " << ds << " " << endl << " Temperature " << 0 << " ";
+	fwr << lx << " " << dv << " " << ds << " " << endl << "Temperature " << 0 << " ";
 
 	for (int k = 0; k<dv; k++)
 	{
@@ -924,7 +925,7 @@ int main( int argc, char *argv[] )
     	ftime << dv << "\t" << tpb << "\t" << per_ts << endl;
     	ftime.close();
     }
-	fwr << " Temperature " << tfm << " ";
+	fwr << "Temperature " << tfm << " ";
 	for (int k = 0; k<dv; k++)
 	{
 		fwr << T_final[k] << " ";
