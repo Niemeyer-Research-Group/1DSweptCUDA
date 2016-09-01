@@ -88,15 +88,15 @@ limitor(REALthree cvCurrent, REALthree cvOther, REAL pRatio)
     #ifdef __CUDA_ARCH__
     if (isfinite(pRatio) && pRatio > 0) //If it's finite and positive
     {
-        REAL fact = (pRatio < 1) ? pRatio : 1.f;
-        return FOURVEC(cvCurrent + 0.5* fact * (cvOther - cvCurrent));
+        REAL fact = ((pRatio < 1) ? pRatio : 1.0);
+        return FOURVEC(cvCurrent + 0.5 * fact * (cvOther - cvCurrent));
 
     }
     #else
     if (std::isfinite(pRatio) && pRatio > 0) //If it's finite and positive
     {
-        REAL fact = (pRatio < 1) ? pRatio : 1.f;
-        return FOURVEC(cvCurrent + 0.5* fact * (cvOther - cvCurrent));
+        REAL fact = ((pRatio < 1) ? pRatio : 1.0);
+        return FOURVEC(cvCurrent + 0.5 * fact * (cvOther - cvCurrent));
 
     }
     #endif
@@ -116,6 +116,7 @@ eulerFlux(REALfour cvLeft, REALfour cvRight)
     //For the first calculation rho and p remain the same.
     REALthree flux;
     REAL spectreRadius;
+
     REAL uLeft = cvLeft.y/cvLeft.x;
     REAL uRight = cvRight.y/cvRight.x;
     REAL eLeft = cvLeft.z/cvLeft.x;
@@ -126,16 +127,18 @@ eulerFlux(REALfour cvLeft, REALfour cvRight)
     flux.z = 0.5 * (cvLeft.x*uLeft*eLeft + cvRight.x*uRight*eRight + uLeft*cvLeft.w + uRight*cvRight.w);
 
     REALfour halfState;
-    REAL rhoLeftsqrt = sqrtf(cvLeft.x); REAL rhoRightsqrt = sqrtf(cvRight.x);
+    REAL rhoLeftsqrt = sqrt(cvLeft.x); REAL rhoRightsqrt = sqrt(cvRight.x);
     halfState.x = rhoLeftsqrt * rhoRightsqrt;
-    halfState.y = (rhoLeftsqrt*uLeft + rhoRightsqrt*uRight)/(rhoLeftsqrt+rhoRightsqrt);
-    halfState.z = (rhoLeftsqrt*eLeft + rhoRightsqrt*eRight)/(rhoLeftsqrt+rhoRightsqrt); //Seems to be unnecessary.
+    halfState.y = halfState.x * (rhoLeftsqrt*uLeft + rhoRightsqrt*uRight)/(rhoLeftsqrt + rhoRightsqrt);
+    halfState.z = halfState.x * (rhoLeftsqrt*eLeft + rhoRightsqrt*eRight)/(rhoLeftsqrt + rhoRightsqrt);
     halfState.w = pressure(halfState);
 
+    halfState.y = halfState.y/halfState.x;
+
     #ifdef __CUDA_ARCH__
-    spectreRadius = sqrtf(dimens.y * halfState.w/halfState.x) + fabs(halfState.y);
+    spectreRadius = sqrt(dimens.y * halfState.w/halfState.x) + fabs(halfState.y);
     #else
-    spectreRadius = sqrtf(dimz.y * halfState.w/halfState.x) + fabs(halfState.y);
+    spectreRadius = sqrt(dimz.y * halfState.w/halfState.x) + fabs(halfState.y);
     #endif
 
     flux += 0.5 * spectreRadius * (THREEVEC(cvLeft) - THREEVEC(cvRight));
@@ -1081,11 +1084,11 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t
             fwr << endl;
 
             fwr << " Velocity " << t_eq << " ";
-            for (int k = 0; k<dv; k++) fwr << T_f[k].y << " ";
+            for (int k = 0; k<dv; k++) fwr << T_f[k].y/T_f[k].x << " ";
             fwr << endl;
 
             fwr << " Energy " << t_eq << " ";
-            for (int k = 0; k<dv; k++) fwr << T_f[k].z << " ";
+            for (int k = 0; k<dv; k++) fwr << (T_f[k].z/T_f[k].x) << " ";
             fwr << endl;
 
             fwr << " Pressure " << t_eq << " ";
@@ -1255,11 +1258,11 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
                 fwr << endl;
 
                 fwr << " Velocity " << t_eq << " ";
-                for (int k = 0; k<dv; k++) fwr << T_f[k].y << " ";
+                for (int k = 0; k<dv; k++) fwr << (T_f[k].y/T_f[k].x) << " ";
                 fwr << endl;
 
                 fwr << " Energy " << t_eq << " ";
-                for (int k = 0; k<dv; k++) fwr << T_f[k].z << " ";
+                for (int k = 0; k<dv; k++) fwr << (T_f[k].z/T_f[k].x) << " ";
                 fwr << endl;
 
                 fwr << " Pressure " << t_eq << " ";
@@ -1320,11 +1323,11 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
                 fwr << endl;
 
                 fwr << " Velocity " << t_eq << " ";
-            	for (int k = 0; k<dv; k++) fwr << T_f[k].y << " ";
+            	for (int k = 0; k<dv; k++) fwr << (T_f[k].y/T_f[k].x) << " ";
                 fwr << endl;
 
                 fwr << " Energy " << t_eq << " ";
-                for (int k = 0; k<dv; k++) fwr << T_f[k].z << " ";
+                for (int k = 0; k<dv; k++) fwr << (T_f[k].z/T_f[k].x) << " ";
                 fwr << endl;
 
                 fwr << " Pressure " << t_eq << " ";
@@ -1511,11 +1514,11 @@ int main( int argc, char *argv[] )
     fwr << endl;
 
     fwr << " Velocity " << tfm << " ";
-	for (int k = 0; k<dv; k++) fwr << T_final[k].y << " ";
+	for (int k = 0; k<dv; k++) fwr << T_final[k].y/T_final[k].x << " ";
     fwr << endl;
 
     fwr << " Energy " << tfm << " ";
-    for (int k = 0; k<dv; k++) fwr << T_final[k].z << " ";
+    for (int k = 0; k<dv; k++) fwr << T_final[k].z/T_final[k].x << " ";
     fwr << endl;
 
     fwr << " Pressure " << tfm << " ";

@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 import sys
 import pandas as pd
 import time
-
 from exactpack.solvers.riemann import Sod
 import warnings
 
@@ -83,7 +82,7 @@ if __name__ == '__main__':
     binpath = os.path.join(mainpath,'bin')
     myplotpath = os.path.join(plotpath,Fname[w])
 
-    div = 1024.0
+    div = 2048.0
     bks = 64
     color = ['r','b','k','g']
     pts = range(0,int(div),50)
@@ -105,7 +104,7 @@ if __name__ == '__main__':
             lbl2 = []
 
             myplot = os.path.join(myplotpath, plotstr + ".pdf")
-            Varfile = os.path.join(rsltpath, Fname[w] + pr + "_1D_Result.dat")
+            Varfile = os.path.join(rsltpath, Fname[w] + "_1D_Result.dat")
             execut = os.path.join(binpath, Fname[w] + pr + "Out")
             dMain = []
             err = []
@@ -118,64 +117,76 @@ if __name__ == '__main__':
                 proc = sp.Popen(exeStr)
                 sp.Popen.wait(proc)
 
-                fin = tuple(open(Varfile))
+                f = open(Varfile)
+                fin = tuple(f)
                 ar = [float(n) for n in fin[0].split()]
                 xax = np.linspace(0,ar[0],ar[1])
 
-                ar = fin[p].split()
-                nameV = ar[0].lower()
-                tm = float(ar[1])
-                if tm>0:
-                    dMain.append([dts,nameV,tm,[float(n) for n in ar[2:]]])
-                    exMain.append([dts,nameV,tm] + list(euler_exact(tm, div, nameV)))
+                for p in range(2,len(fin)):
+                    ar = fin[p].split()
+                    tm = float(ar[1])
+                    if tm>0:
+                        dMain.append([dts, tm] + [float(n) for n in ar[2:]])
+                        exMain.append([dts, tm] + list(heat_exact(tm, L, div)))
 
-            for keydt in dMain.keys():
-                err[keydt] = []
-                for keytf in dMain[keydt].keys():
-                    err[keydt][keytf] = rmse(exMain[keydt][keytf], dMain[keydt][keytf])
+                f.close()
+
+            for k in range(len(exMain)):
+                err.append([dMain[k][0], dMain[k][1], float(rmse(exMain[k][2:], dMain[k][2:]))])
 
             fig, (ax1, ax2) = plt.subplots(figsize=(14.,8.), ncols = 2)
             ax1.hold(True)
             ax2.hold(True)
-            tmp = err.keys()
-            tmp.sort()
-            for key_one in tmp:
-                x = []
-                y = []
-                tmp2 = err[key_one].keys()
-                tmp2.sort()
-                sv = key_one
-                for key_two in tmp2:
-                    x.append(key_two)
-                    y.append(err[key_one][key_two])
 
-                lbl.append("{:.4f}     {:.4f}".format(key_one, Fo(dx,key_one)))
+            err = pd.DataFrame(err)
+            head = ['dt','tf','Error']
+            err.columns = head
+            err = err.set_index(head[0])
+            dfi = err.index.get_level_values(0).unique()
 
-                ax1.plot(x,y,'-o')
+            for dfidx in dfi:
+                dn = err.xs(dfidx)
+                ax1.plot(dn['tf'], dn['Error'],'-o', label="{:.2e}       {:.5f}".format(dfidx,dfidx/dx))
 
-            ax1.legend(lbl,title = "dt  ------------  Fo", fontsize="medium, loc=0)
+            hand, lbl = ax1.get_legend_handles_labels()
+            ax1.legend(hand, lbl, title = "dt  ------------  Fo", fontsize="medium", loc=0)
             ax1.set_xlabel('Simulation time (s)')
             ax1.set_ylabel('RMS Error')
-            ax1.set_title(plotstr + ' | {0} spatial points'.format(div), fontsize="medium")
+            ax1.set_title(plotstr + ' | {0} spatial points     '.format(div), fontsize="medium")
             ax1.grid(alpha = 0.5)
 
-            tmp = exMain[sv].keys()
-            tmp.sort()
+            simF = pd.DataFrame(dMain)
+            exF = pd.DataFrame(exMain)
+            simF = simF.set_index(0)
+            exF = exF.set_index(0)
+            typ = simF.index.get_level_values(0).unique()
+            rt = typ[0]
+            simF = simF.xs( rt )
+            exF = exF.xs( rt )
+            simF = simF.set_index(1)
+            exF = exF.set_index(1)
+            simF.columns = xax
+            exF.columns = xax
+            df_sim = simF.transpose()
+            df_exact = exF.transpose()
+            cl = df_sim.columns.values.tolist()
+            df_exact.reset_index(inplace=True)
+            df_sim.reset_index(inplace=True)
 
-            for k,key_f in enumerate(tmp):
-                sim = dMain[sv][key_f]
-                ex = exMain[sv][key_f]
-                ax2.plot(xax,sim,color[k])
-                ax2.plot(xax[pts], ex[pts],'s'+color[k])
-                lbl2.append( "{:2.0f} (s) Simulated".format(key_f) )
-                lbl2.append("Exact")
+            for k, tfs in enumerate(cl):
+                ax2.plot(df_sim['index'], df_sim[tfs], color[k], label="{:.2f} (s) Simulated".format(tfs))
+                ax2.plot(df_exact.loc[pts,'index'], df_exact.loc[pts,tfs], 's'+color[k], label='Exact')
 
-            ax2.legend(lbl2, loc=8, ncol=2, fontsize="medium)
+            hand, lbl = ax2.get_legend_handles_labels()
+            ax2.legend(hand, lbl, loc=8, ncol=2, fontsize="medium")
             ax2.set_xlabel('Spatial point')
             ax2.set_ylabel('Temperature')
-            ax2.set_title(plotstr + ' | dt = {:.4f}'.format(sv), fontsize="medium)
+            ax2.set_title(plotstr + ' | dt = {:.4f}      '.format(rt), fontsize="medium")
             ax2.set_ylim([0,30])
             ax2.grid(alpha=0.5)
+            ax2.set_xlim([0,xax[-1]])
+
+            plt.tight_layout()
             plt.savefig(myplot, dpi=1000, bbox_inches="tight")
             plt.show()
 
@@ -196,14 +207,14 @@ if __name__ == '__main__':
             lbl = []
             lbl2 = []
 
-            myplot = os.path.join(myplotpath, plotstr + ".pdf")
+            myplotE = os.path.join(myplotpath, plotstr + "_Error.pdf")
+            myplotR = os.path.join(myplotpath, plotstr + "_Result.pdf")
             Varfile = os.path.join(rsltpath, Fname[w] + pr + "_1D_Result.dat")
             execut = os.path.join(binpath, Fname[w] + pr + "Out")
 
             dMain = []
             err = []
             exMain = []
-            idx = []
 
             #Main loop
             for i,dts in enumerate(dt):
@@ -211,10 +222,9 @@ if __name__ == '__main__':
                 exeStr = shlex.split(execstr)
                 proc = sp.Popen(exeStr)
                 sp.Popen.wait(proc)
-                lbl.append("{0}      {1}".format(dts,dt_dx[i]))
-
-
-                fin = tuple(open(Varfile))
+                lbl.append("{:.4f}     {:.4f}".format(dts,dt_dx[i]))
+                f = open(Varfile)
+                fin = tuple(f)
                 ar = [float(n) for n in fin[0].split()]
                 xax = np.linspace(0,ar[0],ar[1])
 
@@ -224,44 +234,92 @@ if __name__ == '__main__':
                     nameV = ar[0].lower()
                     tm = float(ar[1])
                     if tm>0:
-                        idx.append([nameV,dts,tm])
-                        dMain.append( [float(n) for n in ar[2:]])
-                        exMain.append( list(euler_exact(tm, div, nameV)))
+                        idx = [dts,nameV,tm]
+                        dMain.append( idx + [float(n) for n in ar[2:]])
+                        exMain.append( idx + list(euler_exact(tm, div, nameV)))
 
-                for k in range(len(exMain)):
-                    err.append(float(rmse(exMain[k], dMain[k])))
+                f.close()
 
-            idx = [[r[col] for r in idx] for col in range(len(idx[0]))]
-            #And now you need to parse it.
-            err = pd.Series(err,index=idx)
+            for k in range(len(exMain)):
+                err.append([dMain[k][1], dMain[k][0], dMain[k][2], float(rmse(exMain[k][3:], dMain[k][3:]))])
 
+
+            err = pd.DataFrame(err)
+            err = err.set_index(0)
+            head = ['dt','tf','Error']
             typ = err.index.get_level_values(0).unique()
-            fig, ax = plt.subplot(figsize=(14.,8.), ncol=2, nrow=2)
+            by_var = []
 
-            ax1.hold(True)
-            ax2.hold(True)
+            for ty in typ:
+                by_var.append(err.xs(ty))
 
 
+            fig, ax = plt.subplots(2,2,figsize=(14.,8.))
+            ax = ax.ravel()
 
-            fig, (ax1, ax2) = plt.subplot(figsize=(14.,8.), ncol=2)
-            ax1.hold(True)
-            ax2.hold(True)
-            for k in range(4):
-                ax1.plot(tm[k,:],err[k,:],'-o')
-                ax2.plot(xax,data[k])
-                lbl2.append(str(time[k]) + " Simulated " )
-                lbl2.append("Exact")
+            for i,df in enumerate(by_var):
+                ax[i].set_title(typ[i], fontsize="medium")
+                ax[i].hold(True)
+                ax[i].grid(alpha=0.5)
+                df.columns = head
+                df = df.set_index('dt')
+                dfidx = df.index.get_level_values(0).unique()
+                Lin = []
+                ax[i].ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+                for dfi in dfidx:
+                    dn = df.xs(dfi)
+                    ax[i].plot(dn['tf'], dn['Error'],'-o', label="{:.2e}       {:.5f}".format(dfi,dfi/dx))
+                    ax[i].set_xlabel('Simulation time (s)')
+                    ax[i].set_ylabel('RMS Error')
 
-            ax1.legend(lbl,title = "dt ------  Fo",fontsize="medium)
-            ax1.set_xlabel('Simulation time (s)')
-            ax1.set_ylabel('RMS Error')
-            ax1.set_title('Error in ' + plotstr + ' ' + str(div) + ' spatial points',fontsize="medium)
-            ax1.grid(alpha=0.5)
+            hand, lbl = ax[0].get_legend_handles_labels()
+            fig.legend(hand, lbl, 'upper_right', title="    dt  ---------  dt/dx", fontsize="medium")
+            plt.suptitle(plotstr + ' | {0} spatial points                    {1}'.format(int(div)," "), fontsize="medium")
+            plt.tight_layout(pad=0.2, w_pad=0.75, h_pad=1.5)
+            plt.subplots_adjust(bottom=0.08, right=0.82, top=0.92)
+            plt.savefig(myplotE, dpi=1000, bbox_inches="tight")
+            plt.show()
 
-            ax2.legend(lbl2, loc=8, fontsize="medium)
-            ax2.set_xlabel('Spatial point')
-            ax2.set_ylabel('Temperature')
-            ax2.set_title(plotstr + ' result ',fontsize="medium)
-            ax2.grid(alpha=0.5)
-            plt.savefig(myplot)
+            simF = pd.DataFrame(dMain)
+            exF = pd.DataFrame(exMain)
+            simF = simF.set_index(0)
+            exF = exF.set_index(0)
+            typ = simF.index.get_level_values(0).unique()
+
+            simF = simF.xs(typ[0])
+            exF = exF.xs(typ[0])
+            simF = simF.set_index(1)
+            exF = exF.set_index(1)
+            typ2 = simF.index.get_level_values(0).unique()
+
+            fig2, ax2 = plt.subplots(2,2,figsize=(14.,8.))
+            ax2 = ax2.ravel()
+            for i,state in enumerate(typ2):
+                df_sim = simF.xs(state)
+                df_exact = exF.xs(state)
+                df_sim = df_sim.set_index(2)
+                df_exact = df_exact.set_index(2)
+                df_sim.columns = xax
+                df_exact.columns = xax
+                df_sim = df_sim.transpose()
+                df_exact = df_exact.transpose()
+                cl = df_sim.columns.values.tolist()
+                df_exact.reset_index(inplace=True)
+                df_sim.reset_index(inplace=True)
+                ax2[i].hold(True)
+                ax2[i].set_title(state, fontsize="medium")
+                ax2[i].grid(alpha=0.5)
+                ax2[i].set_xlabel("Spatial point")
+
+                for k,tfs in enumerate(cl):
+                    ax2[i].plot(df_sim['index'], df_sim[tfs], color[k], label="{:.2f} (s) Simulated".format(tfs))
+                    ax2[i].plot(df_exact.loc[pts,'index'], df_exact.loc[pts,tfs], 's'+color[k], label='Exact')
+
+            hand, lbl = ax2[0].get_legend_handles_labels()
+            fig2.suptitle(plotstr + ' | dt = {:.2e}          '.format(typ[0]), fontsize="medium")
+            fig2.legend(hand, lbl, 'upper_right', fontsize="medium")
+            plt.tight_layout(pad=0.2, w_pad=0.75, h_pad=1.5)
+            plt.subplots_adjust(bottom=0.08, right=0.82, top=0.92)
+
+            plt.savefig(myplotR, dpi=1000, bbox_inches="tight")
             plt.show()
