@@ -24,12 +24,13 @@ If not, see <https://opensource.org/licenses/MIT>.
 # Perhaps this will also be the calling script.
 
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+from math import *
 import numpy as np
 import subprocess as sp
 import shlex
 import os
 import Tkinter as Tk
+import pandas as pd
 from RegressionTesting.exactcomparison import *
 
 alpha = 8.418e-5
@@ -113,8 +114,8 @@ def reset_vals(problem):
         deltat.set(0.005)
         t_final.set(1000)
     elif problem == 'Euler':
-        deltat.set(0.02)
-        t_final.set(100)
+        deltat.set(1e-5)
+        t_final.set(0.25)
     else:
         deltat.set(0.01)
         t_final.set(200)
@@ -170,25 +171,30 @@ problem_menu.grid()
 
 reset_vals(problem.get())
 
-
 master.mainloop()
 
 ##Interface end --------------------
 
+precision = ["Single", "Double"]
+
+op = os.path
+
 Fname = problem.get()
-typename = Fname + OPT_PREC[prec.get()]
-sourcepath = os.path.abspath(os.path.dirname(__file__))
-basepath = os.path.join(sourcepath,'Results')
-binpath = os.path.join(sourcepath,'bin')
+typename = Fname + precision[prec.get()]
+sourcepath = op.abspath(op.dirname(__file__))
+basepath = op.join(sourcepath,'Results')
+binpath = op.join(sourcepath,'bin')
 
 #Ensures "make" won't fail if there's no bin directory.
-if not os.path.isdir(binpath):
+if not op.isdir(binpath):
     os.mkdir(binpath)
 
-if not os.path.isdir(basepath):
+if not op.isdir(basepath):
     os.mkdir(basepath)
 
-Varfile = os.path.join(basepath, typename + "_1D_Result.dat")
+Varfile = op.join(basepath, typename + "_1D_Result.dat")
+gitpath = op.dirname(sourcepath)
+gifpath = op.join(op.join(op.join(gitpath,'ResultPlots'),'performance'),typename+".gif")
 
 div = 2**divpow.get()
 bks = 2**blkpow.get()
@@ -217,7 +223,7 @@ else:
 if runit.get():
     sp.call("make")
 
-    execut = os.path.join(binpath, typename + "Out")
+    execut = op.join(binpath, typename + "Out")
 
     print div, bks, dt, tf, freq, swept, cpu
 
@@ -235,38 +241,73 @@ if runit.get():
     proc = sp.Popen(exeStr)
     sp.Popen.wait(proc)
 
-fin = open(Varfile)
+f = open(Varfile)
+fin = tuple(f)
+ar = [float(n) for n in fin[0].split()]
+xax = np.linspace(0,ar[0],ar[1])
 data = []
-time = []
 
-for line in fin:
-    ar = [float(n) for n in line.split()]
-
-    if len(ar)<50:
-        xax = np.linspace(0,ar[0],div)
-        print ar
-    else:
-        data.append(ar[1:])
-        time.append(ar[0])
+for p in range(1,len(fin)):
+    ar = fin[p].split()
+    tm = float(ar[1])
+    dMain.append([ar[0], [float(n) for n in ar[1:]]])
 
 lbl = ["Initial Condition"]
+simF = pd.DataFrame(dMain)
+simF = simF.set_index(0)
+typ = simF.index.get_level_values(0).unique()
+cross = simF.xs( typ[0] )
+cnt = len(cross.index)
 
+if cnt < 6:
+    if len(typ) == 1:
+        fig, ax = plt.subplots((1,1),figsize=(14.,8.))
+        ax = [ax]
+        ax.set_title(plotstr + ' | {0} spatial points                    {1}'.format(int(div)," "), fontsize="medium")
+    else:
+        ax.ravel()
+        fig, ax = plt.subplots((2,2),figsize=(14.,8.))
+        plt.suptitle(plotstr + ' | {0} spatial points                    {1}'.format(int(div)," "), fontsize="medium")
 
-if len(data) < 6:
-    plt.plot(xax,data[0])
-    plt.hold(True)
-    for k in range(1,len(data)):
-        plt.plot(xax,data[k],linewidth = 2.0)
-        lbl.append("t = {} seconds".format(time[k]))
+    for i, ty in enumerate(typ):
 
-    plt.xlabel("Position on bar (m)")
-    plt.ylabel("Vel")
-    plt.title(timestr + " :" + str(div) + " points")
-    plt.grid()
+        df_sim = simF.xs(ty)
+        df_sim = df_sim.set_index(1)
+        df_sim.columns = xax
+        df_sim = df_sim.transpose()
+        cl = df_sim.columns.values.tolist()
+        df_sim.reset_index(inplace=True)
+
+        ax[i].hold(True)
+        #Check if title already exists.  That's probably not the most efficient way to do this.
+        ax[i].set_title(ty, fontsize="medium")
+        ax[i].grid(alpha=0.5)
+        ax[i].set_xlabel("Spatial point")
+        ax[i].plot(xax,data[k],linewidth = 2.0)
+        ax[i].set_ylabel(ty)
+
+        for tfs in cl:
+            ax[i].plot(df_sim['index'], df_sim[tfs], label="{:.2f} (s)".format(tfs))
+
     plt.show()
 
+#Don't do this.  Animate!  A gif?
 else:
-    fig = plt.figure()
+    simF.reset_index(inplace=True)
+    #Now were indexing by time rather than type.
+    #import Figtodat and images2gif library then append the fig
+    #to dat with .fig2img(fig) and append it to images then call
+    #writeGif.  Make figsize big!  view with xnview.  That's gifpath.
+    simF.set_index(1)
+    if len(typ) == 1:
+        fig, ax = plt.subplots((1,1),figsize=(14.,8.))
+        ax = [ax]
+        ax.set_title(plotstr + ' | {0} spatial points                    {1}'.format(int(div)," "), fontsize="medium")
+    else:
+        ax.ravel()
+        fig, ax = plt.subplots((2,2),figsize=(14.,8.))
+        plt.suptitle(plotstr + ' | {0} spatial points
+
     ax = fig.add_subplot(111, projection='3d')
     dop = np.array(data)
     X,Y = np.meshgrid(xax,np.transpose(dop[:,1]))

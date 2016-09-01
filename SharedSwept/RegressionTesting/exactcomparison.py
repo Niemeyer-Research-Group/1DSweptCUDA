@@ -88,7 +88,6 @@ if __name__ == '__main__':
     pts = range(0,int(div),50)
 
     #Heat
-
     if not w:
 
         dx = .001

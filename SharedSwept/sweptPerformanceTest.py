@@ -241,32 +241,6 @@ if runit.get():
             sp.Popen.wait(proc)
             print "---------------------------"
 
-# fin = open(rsltfile)
-# data = []
-#
-# for line in fin:
-#     ar = [float(n) for n in line.split()]
-#
-#     if len(ar)<50:
-#         xax = np.linspace(0,ar[0],ar[1])
-#     else:
-#         data.append(ar)
-
-
-# lbl = ["Initial Condition"]
-#
-# plt.plot(xax,data[0][1:])
-# plt.hold
-# for k in range(1,len(data)):
-#     plt.plot(xax,data[k][1:])
-#     lbl.append("t = {} seconds".format(data[k][0]))
-#
-# plt.legend(lbl)
-# plt.xlabel("Position on bar (m)")
-# plt.ylabel("Velocity")
-# plt.title(Fname + execut[len(ExecL):])
-# plt.grid()
-
 #Timing Show
 thisday = day.date.today().isoformat()
 if not os.path.isfile(timefile):
