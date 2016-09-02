@@ -57,6 +57,7 @@ if __name__ == '__main__':
 
     w = int(sys.argv[1])
     sch = int(sys.argv[2])
+    print len(sys.argv)
     cpu = sch/2
     swept = int(bool(sch))
 
@@ -82,7 +83,7 @@ if __name__ == '__main__':
     binpath = os.path.join(mainpath,'bin')
     myplotpath = os.path.join(plotpath,Fname[w])
 
-    div = 2048.0
+    div = 1024.0
     bks = 64
     color = ['r','b','k','g']
     pts = range(0,int(div),50)
@@ -151,7 +152,7 @@ if __name__ == '__main__':
             ax1.legend(hand, lbl, title = "dt  ------------  Fo", fontsize="medium", loc=0)
             ax1.set_xlabel('Simulation time (s)')
             ax1.set_ylabel('RMS Error')
-            ax1.set_title(plotstr + ' | {0} spatial points     '.format(div), fontsize="medium")
+            ax1.set_title(plotstr + ' | {0} spatial points     '.format(int(div)), fontsize="medium")
             ax1.grid(alpha = 0.5)
 
             simF = pd.DataFrame(dMain)
@@ -180,14 +181,14 @@ if __name__ == '__main__':
             ax2.legend(hand, lbl, loc=8, ncol=2, fontsize="medium")
             ax2.set_xlabel('Spatial point')
             ax2.set_ylabel('Temperature')
-            ax2.set_title(plotstr + ' | dt = {:.4f}      '.format(rt), fontsize="medium")
+            ax2.set_title(plotstr + ' | dt = {:.4f} | {:.0f} spatial points   '.format(rt,div), fontsize="medium")
             ax2.set_ylim([0,30])
             ax2.grid(alpha=0.5)
             ax2.set_xlim([0,xax[-1]])
 
             plt.tight_layout()
             plt.savefig(myplot, dpi=1000, bbox_inches="tight")
-            plt.show()
+            #plt.show()
 
    #Euler territory
     else:
@@ -277,7 +278,7 @@ if __name__ == '__main__':
             plt.tight_layout(pad=0.2, w_pad=0.75, h_pad=1.5)
             plt.subplots_adjust(bottom=0.08, right=0.82, top=0.92)
             plt.savefig(myplotE, dpi=1000, bbox_inches="tight")
-            plt.show()
+            #plt.show()
 
             simF = pd.DataFrame(dMain)
             exF = pd.DataFrame(exMain)
@@ -315,7 +316,7 @@ if __name__ == '__main__':
                     ax2[i].plot(df_exact.loc[pts,'index'], df_exact.loc[pts,tfs], 's'+color[k], label='Exact')
 
             hand, lbl = ax2[0].get_legend_handles_labels()
-            fig2.suptitle(plotstr + ' | dt = {:.2e}          '.format(typ[0]), fontsize="medium")
+            fig2.suptitle(plotstr + ' | dt = {:.2e} | {:.0f} spatial points     '.format(typ[0],div), fontsize="medium")
             fig2.legend(hand, lbl, 'upper_right', fontsize="medium")
             plt.tight_layout(pad=0.2, w_pad=0.75, h_pad=1.5)
             plt.subplots_adjust(bottom=0.08, right=0.82, top=0.92)

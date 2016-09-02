@@ -1051,6 +1051,13 @@ CPU_diamond(REALfour *temper, int tpb)
     }
 }
 
+REAL
+__host__ __inline__
+energy(REAL p, REAL rho, REAL u)
+{
+    return (p/(m_gamma*rho) + 0.5*rho*u*u);
+}
+
 //Classic Discretization wrapper.
 double
 classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t_end,
@@ -1088,7 +1095,7 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t
             fwr << endl;
 
             fwr << " Energy " << t_eq << " ";
-            for (int k = 0; k<dv; k++) fwr << (T_f[k].z/T_f[k].x) << " ";
+            for (int k = 0; k<dv; k++) fwr << energy(T_f[k].w, T_f[k].x, T_f[k].y/T_f[k].x) << " ";
             fwr << endl;
 
             fwr << " Pressure " << t_eq << " ";
@@ -1262,7 +1269,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
                 fwr << endl;
 
                 fwr << " Energy " << t_eq << " ";
-                for (int k = 0; k<dv; k++) fwr << (T_f[k].z/T_f[k].x) << " ";
+                for (int k = 0; k<dv; k++) fwr << energy(T_f[k].w, T_f[k].x, T_f[k].y/T_f[k].x) << " ";
                 fwr << endl;
 
                 fwr << " Pressure " << t_eq << " ";
@@ -1327,7 +1334,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
                 fwr << endl;
 
                 fwr << " Energy " << t_eq << " ";
-                for (int k = 0; k<dv; k++) fwr << (T_f[k].z/T_f[k].x) << " ";
+                for (int k = 0; k<dv; k++) fwr << energy(T_f[k].w, T_f[k].x, T_f[k].y/T_f[k].x) << " ";
                 fwr << endl;
 
                 fwr << " Pressure " << t_eq << " ";
@@ -1455,7 +1462,7 @@ int main( int argc, char *argv[] )
     fwr << endl;
 
     fwr << " Energy " << 0 << " ";
-    for (int k = 0; k<dv; k++) fwr << IC[k].z << " ";
+    for (int k = 0; k<dv; k++) fwr << energy(IC[k].w, IC[k].x, IC[k].y/IC[k].x) << " ";
     fwr << endl;
 
     fwr << " Pressure " << 0 << " ";
@@ -1518,7 +1525,7 @@ int main( int argc, char *argv[] )
     fwr << endl;
 
     fwr << " Energy " << tfm << " ";
-    for (int k = 0; k<dv; k++) fwr << T_final[k].z/T_final[k].x << " ";
+    for (int k = 0; k<dv; k++) fwr << energy(T_final[k].w, T_final[k].x, T_final[k].y/T_final[k].x) << " ";
     fwr << endl;
 
     fwr << " Pressure " << tfm << " ";

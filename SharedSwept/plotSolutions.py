@@ -31,7 +31,8 @@ import shlex
 import os
 import Tkinter as Tk
 import pandas as pd
-from RegressionTesting.exactcomparison import *
+from RegressionTesting.fig2Dat import fig2img
+import images2gif as img
 
 alpha = 8.418e-5
 dx = 0.001
@@ -117,8 +118,8 @@ def reset_vals(problem):
         deltat.set(1e-5)
         t_final.set(0.25)
     else:
-        deltat.set(0.01)
-        t_final.set(200)
+        deltat.set(0.001)
+        t_final.set(100)
 
     fq.set(t_final.get()*2.0)
     reset_label(1)
@@ -194,7 +195,16 @@ if not op.isdir(basepath):
 
 Varfile = op.join(basepath, typename + "_1D_Result.dat")
 gitpath = op.dirname(sourcepath)
-gifpath = op.join(op.join(op.join(gitpath,'ResultPlots'),'performance'),typename+".gif")
+gifpath = op.join(op.join(gitpath,'ResultPlots'),'Gifs')
+giffile = op.join(gifpath,typename+".gif")
+temppath = op.join(gifpath,"Temp")
+
+if not op.isdir(temppath):
+    os.mkdir(temppath)
+
+avifile = op.join(temppath,typename+".avi")
+
+print gifpath
 
 div = 2**divpow.get()
 bks = 2**blkpow.get()
@@ -241,85 +251,152 @@ if runit.get():
     proc = sp.Popen(exeStr)
     sp.Popen.wait(proc)
 
+
 f = open(Varfile)
 fin = tuple(f)
 ar = [float(n) for n in fin[0].split()]
 xax = np.linspace(0,ar[0],ar[1])
-data = []
+ed = ar[0]
+mx = ar[1]/2048.0 * 50.0
+dMain = []
 
 for p in range(1,len(fin)):
     ar = fin[p].split()
-    tm = float(ar[1])
-    dMain.append([ar[0], [float(n) for n in ar[1:]]])
+    dMain.append([ar[0]] + [float(n) for n in ar[1:]])
 
-lbl = ["Initial Condition"]
 simF = pd.DataFrame(dMain)
 simF = simF.set_index(0)
 typ = simF.index.get_level_values(0).unique()
+print typ
 cross = simF.xs( typ[0] )
+
 cnt = len(cross.index)
 
 if cnt < 6:
-    if len(typ) == 1:
-        fig, ax = plt.subplots((1,1),figsize=(14.,8.))
-        ax = [ax]
-        ax.set_title(plotstr + ' | {0} spatial points                    {1}'.format(int(div)," "), fontsize="medium")
-    else:
-        ax.ravel()
-        fig, ax = plt.subplots((2,2),figsize=(14.,8.))
-        plt.suptitle(plotstr + ' | {0} spatial points                    {1}'.format(int(div)," "), fontsize="medium")
 
-    for i, ty in enumerate(typ):
+    #If it's not euler
 
-        df_sim = simF.xs(ty)
-        df_sim = df_sim.set_index(1)
+    if len(typ) < 2:
+
+        fig, ax = plt.subplots(figsize=(14.,8.))
+
+        df_sim = cross.set_index(1)
         df_sim.columns = xax
         df_sim = df_sim.transpose()
         cl = df_sim.columns.values.tolist()
         df_sim.reset_index(inplace=True)
 
-        ax[i].hold(True)
-        #Check if title already exists.  That's probably not the most efficient way to do this.
-        ax[i].set_title(ty, fontsize="medium")
-        ax[i].grid(alpha=0.5)
-        ax[i].set_xlabel("Spatial point")
-        ax[i].plot(xax,data[k],linewidth = 2.0)
-        ax[i].set_ylabel(ty)
+        ax.set_title(typename + ' | {0} spatial points     '.format(int(div)), fontsize="medium")
+        ax.hold(True)
+        ax.grid(alpha=0.5)
+        ax.set_xlabel("Spatial point")
+        ax.set_ylabel(typ[0])
+        ax.set_ylim([0,mx])
+        ax.set_xlim([0,ed])
 
         for tfs in cl:
-            ax[i].plot(df_sim['index'], df_sim[tfs], label="{:.2f} (s)".format(tfs))
+            ax.plot(df_sim['index'], df_sim[tfs], label="{:.2f} (s)".format(tfs))
 
-    plt.show()
+        ax.legend()
+        plt.show()
 
-#Don't do this.  Animate!  A gif?
-else:
-    simF.reset_index(inplace=True)
-    #Now were indexing by time rather than type.
-    #import Figtodat and images2gif library then append the fig
-    #to dat with .fig2img(fig) and append it to images then call
-    #writeGif.  Make figsize big!  view with xnview.  That's gifpath.
-    simF.set_index(1)
-    if len(typ) == 1:
-        fig, ax = plt.subplots((1,1),figsize=(14.,8.))
-        ax = [ax]
-        ax.set_title(plotstr + ' | {0} spatial points                    {1}'.format(int(div)," "), fontsize="medium")
     else:
-        ax.ravel()
+
         fig, ax = plt.subplots((2,2),figsize=(14.,8.))
-        plt.suptitle(plotstr + ' | {0} spatial points
+        ax = ax.ravel()
+        plt.suptitle(typename + ' | {0} spatial points   '.format(int(div)), fontsize="medium")
 
-    ax = fig.add_subplot(111, projection='3d')
-    dop = np.array(data)
-    X,Y = np.meshgrid(xax,np.transpose(dop[:,1]))
-    print dop.shape, X.shape
-    Z = dop[:,1:]
-    print Z.shape
-    ax.plot_surface(X,Y,Z)
-    plt.title(timestr + ": " + str(div) + " points")
-    plt.hold(True)
-    plt.show()
+        for i, ty in enumerate(typ):
+            df_sim = simF.xs(ty)
+            df_sim = df_sim.set_index(1)
+            df_sim.columns = xax
+            df_sim = df_sim.transpose()
+            cl = df_sim.columns.values.tolist()
+            df_sim.reset_index(inplace=True)
+
+            ax[i].hold(True)
+            ax[i].set_title(ty, fontsize="medium")
+            ax[i].grid(alpha=0.5)
+            ax[i].set_xlabel("Spatial point")
+            ax[i].set_title(ty)
+
+            for tfs in cl:
+                ax[i].plot(df_sim['index'], df_sim[tfs], label="{:.2f} (s)".format(tfs))
+
+        hand, lbl = ax[0].get_legend_handles_labels()
+        fig.legend(hand, lbl, 'upper_right', fontsize="medium")
+        plt.tight_layout(pad=0.2, w_pad=0.75, h_pad=1.5)
+        plt.subplots_adjust(bottom=0.08, right=0.82, top=0.92)
+        plt.suptitle(typename + ' | {0} spatial points   '.format(int(div)), fontsize="medium")
+        plt.show()
+
+else:
+    os.chdir(temppath)
+    #If it's not euler
+    if len(typ) == 1:
+
+        df_sim = cross.set_index(1)
+        df_sim.columns = xax
+        df_sim = df_sim.transpose()
+        cl = df_sim.columns.values.tolist()
+        df_sim.reset_index(inplace=True)
+
+        fig, ax = plt.subplots(figsize=(14.,8.))
+        plt.hold(False)
+        fig.suptitle(typename + ' | {0} spatial points   '.format(int(div)), fontweight='bold')
+
+        fig.subplots_adjust(top=0.85)
+
+        for k,tfs in enumerate(cl):
+
+            ax.plot(df_sim['index'], df_sim[tfs])
+
+            ax.set_title("{:.2f} (s)".format(tfs))
+            ax.set_xlabel("Spatial point")
+            ax.grid(alpha=0.5)
+            ax.set_ylabel(typ[0])
+            ax.set_ylim([0,mx])
+            ax.set_xlim([0,ed])
+
+            plt.savefig("frame"+str(k))
 
 
-# for k in range(1,len(data)):
-#     rt.consistency_test(Fname,sch,div,data[k][0],data[k][1:])
-# #Maybe it's time for chdir and a function file.
+    else:
+        simF.reset_index(inplace=True)
+        df_sim = simF.set_index(1)
+        tfidx = simF.index.get_level_values(0).unique()
+
+        fig, ax = plt.subplots((2,2),figsize=(14.,8.))
+        ax = ax.ravel()
+        plt.suptitle(typename + ' | {0} spatial points   '.format(int(div)), fontweight='bold')
+        fig.subplots_adjust(top=0.85)
+
+        for k,tf in enumerate(tfidx):
+
+            df_sim = simF.xs( tf )
+            df_sim = df_sim.set_index(0)
+            df_sim.columns = xax
+            df_sim = df_sim.transpose()
+            cl = df_sim.columns.values.tolist()
+            df_sim.reset_index(inplace=True)
+            fig.title('{:.2e} s '.format(tf))
+
+            for i, state in enumerate(cl):
+                ax[i].plot(df_sim['index'], df_sim[state])
+                ax[i].grid(alpha=0.5)
+                ax[i].set_xlabel("Spatial point")
+                ax[i].set_title(typ[n])
+                if typ[n] == 'energy':
+                    ax[i].set_ylim([1.5,3.5])
+                else:
+                    ax[i].set_ylim([0.0,1.1])
+
+            plt.savefig("frame"+str(k))
+
+
+    sp.call(['ffmpeg', '-i', 'frame%d.png', '-r', '4', 'output.avi'])
+    sp.call(['ffmpeg', '-i', 'output.avi', '-t', '5', giffile])
+
+    f = os.listdir(".")
+    for fm in f:
+        os.remove(fm)

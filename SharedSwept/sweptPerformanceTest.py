@@ -28,6 +28,7 @@ import numpy as np
 import subprocess as sp
 import shlex
 import os
+import sys
 import Tkinter as Tk
 import pandas as pd
 
@@ -37,146 +38,152 @@ OPTIONS = [
     "Euler"
 ]
 
-#This is a very long python script.
-master = Tk.Tk()
+alpha = 8.418e-5
 
-dropframe = Tk.Frame(master, pady = 2)
-entryframe = Tk.Frame(master, pady = 1)
-endframe = Tk.Frame(master, pady = 2)
-dropframe.pack()
-endframe.pack(side = 'bottom')
-entryframe.pack(side = 'bottom')
-master.title("Swept Rule 1-D GPU performance test")
+if len(sys.argv) < 2:
 
-problem = Tk.StringVar(master)
-problem.set(OPTIONS[0]) # default value
+    #GUI start
+    master = Tk.Tk()
 
-#Number of divisions power of two
-divpow = Tk.IntVar(master)
-divpow.set(11)
+    dropframe = Tk.Frame(master, pady = 2)
+    entryframe = Tk.Frame(master, pady = 1)
+    endframe = Tk.Frame(master, pady = 2)
+    dropframe.pack()
+    endframe.pack(side = 'bottom')
+    entryframe.pack(side = 'bottom')
+    master.title("Swept Rule 1-D GPU performance test")
 
-divpowend = Tk.IntVar(master)
-divpowend.set(20)
+    problem = Tk.StringVar(master)
+    problem.set(OPTIONS[0]) # default value
 
-#Threads per block.
-blkpow = Tk.IntVar(master)
-blkpow.set(5)
+    #Number of divisions power of two
+    divpow = Tk.IntVar(master)
+    divpow.set(11)
 
-blkpowend = Tk.IntVar(master)
-blkpowend.set(10)
+    divpowend = Tk.IntVar(master)
+    divpowend.set(20)
 
-#dt
-deltat = Tk.DoubleVar(master)
+    #Threads per block.
+    blkpow = Tk.IntVar(master)
+    blkpow.set(5)
 
-#tf
-t_final = Tk.DoubleVar(master)
+    blkpowend = Tk.IntVar(master)
+    blkpowend.set(10)
 
-#freq
-fq = Tk.DoubleVar(master)
+    #dt
+    deltat = Tk.DoubleVar(master)
 
-#Swept or classic
-sw = Tk.BooleanVar(master)
+    #tf
+    t_final = Tk.DoubleVar(master)
 
-#CPU or no
-proc_share = Tk.BooleanVar(master)
+    #freq
+    fq = Tk.DoubleVar(master)
 
-runit = Tk.BooleanVar(master)
-runit.set(True)
+    #Swept or classic
+    sw = Tk.BooleanVar(master)
 
-def ok():
-    master.destroy()
+    #CPU or no
+    proc_share = Tk.BooleanVar(master)
 
-def ret(event):
-    master.destroy()
+    runit = Tk.BooleanVar(master)
+    runit.set(True)
 
-def replot():
-    runit.set(False)
-    master.destroy()
+    def ok():
+        master.destroy()
 
-def on_closing():
-    raise SystemExit
+    def ret(event):
+        master.destroy()
 
-def reset_vals(problem):
-    if problem == 'KS':
-        deltat.set(0.005)
-        t_final.set(100)
+    def replot():
+        runit.set(False)
+        master.destroy()
 
-    elif problem == 'Euler':
-        deltat.set(0.02)
-        t_final.set(100)
-    else:
-        deltat.set(0.01)
-        t_final.set(500)
+    def on_closing():
+        raise SystemExit
 
-    fq.set(t_final.get()*2.0)
+    def reset_vals(problem):
+        if problem == 'KS':
+            deltat.set(0.005)
+            t_final.set(100)
 
-def reset_label(event):
-    res_one.config(text = str(2**divpow.get()))
-    res_two.config(text = str(2**blkpow.get()))
-    res_three.config(text = str(2**divpowend.get()))
-    res_four.config(text = str(2**blkpowend.get()))
+        elif problem == 'Euler':
+            deltat.set(0.02)
+            t_final.set(100)
+        else:
+            deltat.set(0.01)
+            t_final.set(500)
 
-master.protocol("WM_DELETE_WINDOW", on_closing)
-master.bind('<Return>', ret)
+        fq.set(t_final.get()*2.0)
 
-Tk.Checkbutton(entryframe, text = "Swept Scheme", variable = sw).grid(row = 9, column = 0)
-Tk.Checkbutton(entryframe, text = "CPU/GPU sharing \n(Not available on KS equation)", variable = proc_share).grid(row = 10, column = 0)
+    def reset_label(event):
+        res_one.config(text = str(2**divpow.get()))
+        res_two.config(text = str(2**blkpow.get()))
+        res_three.config(text = str(2**divpowend.get()))
+        res_four.config(text = str(2**blkpowend.get()))
 
-Tk.Label(entryframe, text= "Number of divisions: 2^").grid(row=1, column = 0)
-div_one = Tk.Entry(entryframe, textvariable=divpow)
-div_one.grid(row = 1, column = 1)
+    master.protocol("WM_DELETE_WINDOW", on_closing)
+    master.bind('<Return>', ret)
 
-Tk.Label(entryframe, text= "Threads per block: 2^").grid(row=3, column = 0)
-blk_one = Tk.Entry(entryframe, textvariable=blkpow)
-blk_one.grid(row = 3, column = 1)
+    Tk.Checkbutton(entryframe, text = "Swept Scheme", variable = sw).grid(row = 9, column = 0)
+    Tk.Checkbutton(entryframe, text = "CPU/GPU sharing \n(Not available on KS equation)", variable = proc_share).grid(row = 10, column = 0)
 
-Tk.Label(entryframe, text= " to: 2^").grid(row=1, column = 2)
-div_two = Tk.Entry(entryframe, textvariable=divpowend)
-div_two.grid(row = 1, column = 3)
+    Tk.Label(entryframe, text= "Number of divisions: 2^").grid(row=1, column = 0)
+    div_one = Tk.Entry(entryframe, textvariable=divpow)
+    div_one.grid(row = 1, column = 1)
 
-Tk.Label(entryframe, text= " to: 2^").grid(row=3, column = 2)
-blk_two = Tk.Entry(entryframe, textvariable=blkpowend)
-blk_two.grid(row = 3, column = 3)
+    Tk.Label(entryframe, text= "Threads per block: 2^").grid(row=3, column = 0)
+    blk_one = Tk.Entry(entryframe, textvariable=blkpow)
+    blk_one.grid(row = 3, column = 1)
 
-Tk.Label(entryframe, text= u"\N{GREEK CAPITAL LETTER DELTA}"+"t (seconds): ").grid(row=5, column = 0)
-Tk.Entry(entryframe, textvariable=deltat).grid(row = 5, column = 1)
+    Tk.Label(entryframe, text= " to: 2^").grid(row=1, column = 2)
+    div_two = Tk.Entry(entryframe, textvariable=divpowend)
+    div_two.grid(row = 1, column = 3)
 
-Tk.Label(entryframe, text= "Stopping time (seconds): ").grid(row=6, column = 0)
-Tk.Entry(entryframe, textvariable=t_final).grid(row = 6, column = 1)
+    Tk.Label(entryframe, text= " to: 2^").grid(row=3, column = 2)
+    blk_two = Tk.Entry(entryframe, textvariable=blkpowend)
+    blk_two.grid(row = 3, column = 3)
 
-Tk.Label(entryframe, text= "Output frequency (seconds): ").grid(row=7, column = 0)
-Tk.Entry(entryframe, textvariable=fq).grid(row = 7, column = 1)
+    Tk.Label(entryframe, text= u"\N{GREEK CAPITAL LETTER DELTA}"+"t (seconds): ").grid(row=5, column = 0)
+    Tk.Entry(entryframe, textvariable=deltat).grid(row = 5, column = 1)
 
-res_one = Tk.Label(entryframe, text = str(2**divpow.get()), anchor = Tk.W)
-res_one.grid(row = 2, column = 1)
-res_two = Tk.Label(entryframe, text = str(2**blkpow.get()), anchor = Tk.W)
-res_two.grid(row = 4, column = 1)
-res_three = Tk.Label(entryframe, text = str(2**divpowend.get()))
-res_three.grid(row = 2, column = 3)
-res_four = Tk.Label(entryframe, text = str(2**blkpowend.get()), anchor = Tk.W)
-res_four.grid(row = 4, column = 3)
+    Tk.Label(entryframe, text= "Stopping time (seconds): ").grid(row=6, column = 0)
+    Tk.Entry(entryframe, textvariable=t_final).grid(row = 6, column = 1)
 
-master.bind_class("Entry","<FocusOut>", reset_label)
+    Tk.Label(entryframe, text= "Output frequency (seconds): ").grid(row=7, column = 0)
+    Tk.Entry(entryframe, textvariable=fq).grid(row = 7, column = 1)
 
-button_send = Tk.Button(endframe, text="OK", command=ok)
-button_send.grid(row = 0, column = 0)
-button_sk = Tk.Button(endframe, text="REPLOT W/O RUNNING", command=replot)
-button_sk.grid(row = 0, column = 1)
-problem_menu = Tk.OptionMenu(dropframe, problem, *OPTIONS, command=reset_vals)
-problem_menu.grid()
+    res_one = Tk.Label(entryframe, text = str(2**divpow.get()), anchor = Tk.W)
+    res_one.grid(row = 2, column = 1)
+    res_two = Tk.Label(entryframe, text = str(2**blkpow.get()), anchor = Tk.W)
+    res_two.grid(row = 4, column = 1)
+    res_three = Tk.Label(entryframe, text = str(2**divpowend.get()))
+    res_three.grid(row = 2, column = 3)
+    res_four = Tk.Label(entryframe, text = str(2**blkpowend.get()), anchor = Tk.W)
+    res_four.grid(row = 4, column = 3)
 
-reset_vals(problem.get())
+    master.bind_class("Entry","<FocusOut>", reset_label)
 
-master.mainloop()
+    button_send = Tk.Button(endframe, text="OK", command=ok)
+    button_send.grid(row = 0, column = 0)
+    button_sk = Tk.Button(endframe, text="REPLOT W/O RUNNING", command=replot)
+    button_sk.grid(row = 0, column = 1)
+    problem_menu = Tk.OptionMenu(dropframe, problem, *OPTIONS, command=reset_vals)
+    problem_menu.grid()
+
+    reset_vals(problem.get())
+
+    master.mainloop()
 
 ## -------Tkinter End----------
 
-Fname = problem.get()
-dt = deltat.get()
-tf = t_final.get()
-freq = fq.get()
-swept = int(sw.get())
-cpu = int(proc_share.get())
+    Fname = problem.get()
+    dt = deltat.get()
+    tf = t_final.get()
+    freq = fq.get()
+    swept = int(sw.get())
+    cpu = int(proc_share.get())
+    div = [2**k for k in range(divpow.get(),divpowend.get()+1)]
+    blx = [2**k for k in range(blkpow.get(),blkpowend.get()+1)]
 
 timeout = '1D_Timing.txt'
 rsltout = '1D_Result.dat'
@@ -188,7 +195,7 @@ elif swept:
 else:
     timestr = Fname + "_Classic"
 
-print timestr.replace("_"," ")
+
 
 sourcepath = os.path.abspath(os.path.dirname(__file__))
 basepath = os.path.join(sourcepath,'Results')
@@ -213,8 +220,6 @@ if runit.get():
     if os.path.isfile(timefile):
         os.remove(timefile)
 
-    div = [2**k for k in range(divpow.get(),divpowend.get()+1)]
-    blx = [2**k for k in range(blkpow.get(),blkpowend.get()+1)]
     t_fn = open(timefile,'a+')
 
     ExecL = './bin/' + Fname + 'Out'
