@@ -241,7 +241,7 @@ if runit.get():
         if Fname == "Heat":
             print "Number of cycles: {}".format(int(tf/(bks*dt)))
         else:
-            print "Number of cycles: {}".format(int(tf/(bks*dt*.25)))
+            print "Number of cycles: {}".format(int(4.0*tf/(bks*dt)))
 
     print timestr
 
@@ -394,7 +394,7 @@ else:
             plt.savefig("frame"+str(k))
 
 
-    sp.call(['ffmpeg', '-i', 'frame%d.png', '-r', '4', 'output.avi'])
+    sp.call(['ffmpeg', '-i', 'frame%d.png', '-r', '4', avifile])
     sp.call(['ffmpeg', '-i', 'output.avi', '-t', '5', giffile])
 
     f = os.listdir(".")

@@ -104,7 +104,7 @@ if __name__ == '__main__':
             lbl2 = []
 
             myplot = os.path.join(myplotpath, plotstr + ".pdf")
-            Varfile = os.path.join(rsltpath, Fname[w] + "_1D_Result.dat")
+            Varfile = os.path.join(rsltpath, Fname[w] + "_Result.dat")
             execut = os.path.join(binpath, Fname[w] + pr + "Out")
             dMain = []
             err = []
