@@ -518,8 +518,11 @@ int main( int argc, char *argv[])
     const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
     // const int tst = atoi(argv[7]); CPU/GPU share
     const int bks = dv/tpb; //The number of blocks
-
 	const float lx = dv*dx;
+	char const *prec;
+	prec = (sizeof(REAL)<6) ? "Single": "Double";
+
+	cout << "KS --- #Blocks: " << bks << " | Length: " << lx << " | Precision: " << prec << " | dt/dx: " << dt/dx << endl;
 
 	//Conditions for main input.  Unit testing kinda.
 	//dv and tpb must be powers of two.  dv must be larger than tpb and divisible by

@@ -837,8 +837,10 @@ int main( int argc, char *argv[] )
 	const int bks = dv/tpb; //The number of blocks
     const REAL lx = ds * ((REAL)dv - 1.f);
     fou = th_diff*dt/(ds*ds);  //Fourier number
+    char const *prec;
+    prec = (sizeof(REAL)<6) ? "Single": "Double";
 
-    cout << bks << " Blocks " << lx << " Length" << " Type (float = 4, double = 8) " << sizeof(REAL) << endl;
+    cout << "Heat --- #Blocks: " << bks << " | Length: " << lx << " | Precision: " << prec << " | Fo: " << fou << endl;
 
 	//dv and tpb must be powers of two.  dv must be larger than tpb and divisible by
 	//tpb.

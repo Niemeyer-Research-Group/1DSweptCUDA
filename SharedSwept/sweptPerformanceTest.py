@@ -32,6 +32,7 @@ import os.path as op
 import sys
 import Tkinter as Tk
 import pandas as pd
+import palettable as pal
 
 alpha = 8.418e-5
 
@@ -52,7 +53,7 @@ def eulerdt_tf(div,cyc,bks):
     dt = float("%s" % float("%.2g" % (0.01 * dx)))
     return dt, 0.25 * bks * cyc * dt
 
-find_dt = [heatdt_tf, ksdt_tf, eulerdt_tf]
+find_dt = [heatdt_tf, eulerdt_tf, ksdt_tf]
 
 SCHEME = [
     "Classic",
@@ -65,7 +66,6 @@ PRECISION = [
     "Double"
 ]
 
-
 if len(sys.argv) < 2:
 
     #GUI start
@@ -74,16 +74,21 @@ if len(sys.argv) < 2:
     dropframe = Tk.Frame(master, pady = 2)
     entryframe = Tk.Frame(master, pady = 1)
     endframe = Tk.Frame(master, pady = 2)
+    errframe = Tk.Frame(master, pady=2)
+    errframe.pack(side='top')
     dropframe.pack()
-    endframe.pack(side = 'bottom')
-    entryframe.pack(side = 'bottom')
+    endframe.pack(side='bottom')
+    entryframe.pack(side='bottom')
     master.title("Swept Rule 1-D GPU performance test")
+    errlbl = Tk.Label(errframe, text="There is no CPU share scheme for the KS equation")
+    errlbl.visible = False
+    errlbl.grid(row=0,column=0)
 
     problem = Tk.StringVar(master)
-    problem.set(OPTIONS[0]) # default value
+    problem.set(OPTIONS[2]) # default value
 
     alg = Tk.StringVar(master)
-    alg.set(SCHEME[0]) # default value
+    alg.set(SCHEME[2]) # default value
 
     #Number of divisions power of two
     divpow = Tk.IntVar(master)
@@ -121,21 +126,19 @@ if len(sys.argv) < 2:
     def on_closing():
         raise SystemExit
 
-    def reset_vals(problem):
-        if OPTIONS.index(problem) and SCHEME.index(alg.get()) == 2:
-            errlbl = Tk.Label(entryframe, text="There is no CPU share scheme for the KS equation")
-            errlbl.grid(row=10,column=0,columnspan=4)
+    def reset_vals(p):
+        if OPTIONS.index(problem.get()) == 2 and SCHEME.index(alg.get()) == 2:
+            errlbl.visible = True
         else:
-            try:
-                errlbl.destroy()
-            except:
-                pass
+            print "here"
+            errlbl.visible = False
+
 
     def reset_label(event):
-        res_one.config(text = str(2**divpow.get()))
-        res_three.config(text = str(2**divpowend.get()))
-        res_two.config(text = str(2**blkpow.get()))
-        res_four.config(text = str(2**blkpowend.get()))
+        res_one.config(text=str(2**divpow.get()))
+        res_three.config(text=str(2**divpowend.get()))
+        res_two.config(text=str(2**blkpow.get()))
+        res_four.config(text=str(2**blkpowend.get()))
 
     master.protocol("WM_DELETE_WINDOW", on_closing)
     master.bind('<Return>', ret)
@@ -180,10 +183,10 @@ if len(sys.argv) < 2:
 
     problem_menu = Tk.OptionMenu(dropframe, problem, *OPTIONS, command=reset_vals)
     problem_menu.grid(row=0, column=0)
-    alg_menu = Tk.OptionMenu(dropframe, alg, *SCHEME)
+    alg_menu = Tk.OptionMenu(dropframe, alg, *SCHEME, command=reset_vals)
     alg_menu.grid(row=0, column=1)
 
-    reset_vals(problem.get())
+    reset_vals(alg.get())
 
     master.mainloop()
 
@@ -201,6 +204,7 @@ if len(sys.argv) < 2:
     runb = runit.get()
 
 else:
+    print sys.argv
     fname = sys.argv[1]
     precise = sys.argv[2]
     sch = SCHEME[int(sys.argv[3])]
@@ -222,17 +226,17 @@ blx = [2**k for k in range(bk1, bk2+1)]
 
 timeout = '_Timing.txt'
 rsltout = '_Result.dat'
-
+timename = fname + "_" + precise + "_" + sch
 binf = fname + precise + 'Out'
 varfile = fname + precise + rsltout
-timefile = fname + precise + sch + timeout
-plotstr = fname + precise + sch
+timefile = timename + timeout
+plotstr = timename.replace("_"," ")
 
 sourcepath = op.abspath(op.dirname(__file__))
 rsltpath = op.join(sourcepath,'Results')
-binpath = op.join(sourcepath,'bin')
-gitpath = op.dirname(sourcepath)
-plotpath = op.join(op.join(gitpath,"ResultPlots"),"performance")
+binpath = op.join(sourcepath,'bin') #Binary directory
+gitpath = op.dirname(sourcepath) #Top level of git repo
+plotpath = op.join(op.join(gitpath,"ResultPlots"),"performance") #Folder for plots
 timepath = op.join(rsltpath,timefile)
 varpath = op.join(rsltpath,varfile)
 myplot = op.join(plotpath, plotstr + ".pdf")
@@ -264,13 +268,19 @@ if runb:
             dt, tf = find_dt[prob_idx](dvs,cyc,tpb)
             freq = tf*2.0
             print "---------------------"
+            print "Algorithm #divs #tpb dt endTime"
+            print sch, dvs, tpb, dt, tf
             execut = ExecL +  ' {0} {1} {2} {3} {4} {5} {6} {7} {8}'.format(dvs,tpb,dt,tf,freq,swept,cpu,varpath,timepath)
             exeStr = shlex.split(execut)
             proc = sp.Popen(exeStr)
             sp.Popen.wait(proc)
 
-            #f = open(Varfile)  Maybe check file for nans, but I Think this would be a serious performance hit.
-
+            chk = np.genfromtext(Varfile, delimiter=" ", skip_header=1)[:,1:]
+            if np.any(np.isnan(chk)):
+                print "We found a nan so something's failing"
+                ex = bool(raw_input("Input a 0 to stop, a 1 to continue: "))
+                if not ex:
+                    raise SystemExit
 
 
 #Timing Show

@@ -1403,10 +1403,16 @@ int main( int argc, char *argv[] )
     const int share = atoi(argv[7]);
     const int bks = dv/tpb; //The number of blocks
     const REAL dx = lx/((REAL)dv-1.f);
+    char const *prec;
+    prec = (sizeof(REAL)<6) ? "Single": "Double";
 
     //Declare the dimensions in constant memory.
     dimz.x = dt/dx; // dt/dx
     dimz.y = gam; dimz.z = m_gamma;
+
+    cout << "Euler --- #Blocks: " << bks << " | Length: " << lx << " | Precision: " << prec << " | dt/dx: " << dimz.x << endl;
+
+
 
 	//Conditions for main input.  Unit testing kinda.
 	//dv and tpb must be powers of two.  dv must be larger than tpb and divisible by
