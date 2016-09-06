@@ -51,6 +51,8 @@ OPT_PREC = [
 ]
 
 #def heat_msg()
+#def ks_msg()
+#def euler_msg()
 
 #It's kinda getting there.
 master = Tk.Tk()

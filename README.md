@@ -14,9 +14,8 @@ Navigate to the folder and call make or call make in the samples folder to make 
 
 3. Open the Makefile in the SharedSwept folder and change the compute_ and sm_ numbers in CUDAFLAGS to your compute capability.
 
-4. Copy the files in the samples/common/inc folder to your default include path or add this folder to your path.  Euler requires these headers, and they're helpful in general.
-
-5. Make sure the nvcc compiler is on your shell path.  On Linux it should be in: /usr/local/cuda-7.5/bin
+4. Make sure the nvcc compiler is on your shell path.  On Linux it should be in: /usr/local/cuda-7.5/bin
+The path settings I use can be found in examplerc.txt.
 
 ##Swept program instructions
 
@@ -51,8 +50,11 @@ The KS equation and all classic discretizations do not have CPUshare options, so
 #Python
 * Anaconda for python 2.7
 * [exactpack](https://github.com/losalamos/ExactPack)
-* sympy
+* [palettable](https://jiffyclub.github.io/palettable/#palette-interface)
+
 
 #CUDA
 * Cuda 7.5
-* Cuda samples: helper_math.h on path
+
+#Command line
+* ffmpeg (for gif creation, not essential)
