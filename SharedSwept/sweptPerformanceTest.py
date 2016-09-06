@@ -24,6 +24,7 @@ If not, see <https://opensource.org/licenses/MIT>.
 # x dimension and block sizes
 
 import matplotlib.pyplot as plt
+from cycler import cycler
 import numpy as np
 import subprocess as sp
 import shlex
@@ -31,8 +32,9 @@ import os
 import os.path as op
 import sys
 import Tkinter as Tk
+import ttk
 import pandas as pd
-import palettable as pal
+import palettable.colorbrewer as pal
 
 alpha = 8.418e-5
 
@@ -74,15 +76,15 @@ if len(sys.argv) < 2:
     dropframe = Tk.Frame(master, pady = 2)
     entryframe = Tk.Frame(master, pady = 1)
     endframe = Tk.Frame(master, pady = 2)
-    errframe = Tk.Frame(master, pady=2)
-    errframe.pack(side='top')
+    errframe = Tk.Frame(master)
+
     dropframe.pack()
     endframe.pack(side='bottom')
     entryframe.pack(side='bottom')
+    errframe.pack(side='top')
+    errlbl = ttk.Label(errframe, text="There is no CPU share scheme for the KS equation")
+    errlbl.pack()
     master.title("Swept Rule 1-D GPU performance test")
-    errlbl = Tk.Label(errframe, text="There is no CPU share scheme for the KS equation")
-    errlbl.visible = False
-    errlbl.grid(row=0,column=0)
 
     problem = Tk.StringVar(master)
     problem.set(OPTIONS[2]) # default value
@@ -128,10 +130,12 @@ if len(sys.argv) < 2:
 
     def reset_vals(p):
         if OPTIONS.index(problem.get()) == 2 and SCHEME.index(alg.get()) == 2:
-            errlbl.visible = True
+            errframe.pack(side='top')
         else:
-            print "here"
-            errlbl.visible = False
+            try:
+                errframe.pack_forget()
+            except:
+                pass
 
 
     def reset_label(event):
@@ -228,7 +232,7 @@ timeout = '_Timing.txt'
 rsltout = '_Result.dat'
 timename = fname + "_" + precise + "_" + sch
 binf = fname + precise + 'Out'
-varfile = fname + precise + rsltout
+vf = fname + precise + rsltout
 timefile = timename + timeout
 plotstr = timename.replace("_"," ")
 
@@ -238,8 +242,10 @@ binpath = op.join(sourcepath,'bin') #Binary directory
 gitpath = op.dirname(sourcepath) #Top level of git repo
 plotpath = op.join(op.join(gitpath,"ResultPlots"),"performance") #Folder for plots
 timepath = op.join(rsltpath,timefile)
-varpath = op.join(rsltpath,varfile)
+Varfile = op.join(rsltpath,vf)
 myplot = op.join(plotpath, plotstr + ".pdf")
+
+errchk = False
 
 #Ensures "make" won't fail if there's no bin directory.
 if not op.isdir(binpath):
@@ -270,17 +276,18 @@ if runb:
             print "---------------------"
             print "Algorithm #divs #tpb dt endTime"
             print sch, dvs, tpb, dt, tf
-            execut = ExecL +  ' {0} {1} {2} {3} {4} {5} {6} {7} {8}'.format(dvs,tpb,dt,tf,freq,swept,cpu,varpath,timepath)
+            execut = ExecL +  ' {0} {1} {2} {3} {4} {5} {6} {7} {8}'.format(dvs,tpb,dt,tf,freq,swept,cpu,Varfile,timepath)
             exeStr = shlex.split(execut)
             proc = sp.Popen(exeStr)
             sp.Popen.wait(proc)
 
-            chk = np.genfromtext(Varfile, delimiter=" ", skip_header=1)[:,1:]
-            if np.any(np.isnan(chk)):
-                print "We found a nan so something's failing"
-                ex = bool(raw_input("Input a 0 to stop, a 1 to continue: "))
-                if not ex:
-                    raise SystemExit
+            if errchk:
+                chk = np.genfromtxt(Varfile, delimiter=" ", skip_header=1)[:,1:]
+                if np.any(np.isnan(chk)):
+                    print "We found a nan so something's failing"
+                    ex = bool(raw_input("Input a 0 to stop, a 1 to continue: "))
+                    if not ex:
+                        raise SystemExit
 
 
 #Timing Show
@@ -291,10 +298,13 @@ if not op.isfile(timepath):
 times = pd.read_table(timepath, delim_whitespace = True)
 headers = times.columns.values.tolist()
 time_split = times.pivot(headers[0],headers[1],headers[2])
+plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors))
 time_split.plot(logx = True, grid = True)
 plt.ylabel("Time per timestep (us)")
 plt.title(plotstr + " ")
 plt.savefig(myplot, dpi=1000, bbox_inches="tight")
+
+#if you're doing a one off run show the plot, if you're doing a full performance test, don't
 if len(sys.argv) < 2:
     plt.show()
 else:

@@ -31,8 +31,9 @@ import shlex
 import os
 import sys
 import Tkinter as Tk
+import ttk
 import pandas as pd
-import palettable as pal
+import palettable.colorbrewer as pal
 
 alpha = 8.418e-5
 dx = 0.001
@@ -43,18 +44,43 @@ OPTIONS = [
     "Euler"
 ]
 
-Param = {"Heat": "Fo = ", "KS":"dt/dx = ", "Euler":"dt/dx = "}
-
 OPT_PREC = [
     "Single",
     "Double"
 ]
 
-#def heat_msg()
-#def ks_msg()
-#def euler_msg()
+def heat_msg(div,dt,bks,tf,fr):
+    dx = 0.001
+    div = 2**div
+    bks = 2**bks
+    cyc = int(tf/(bks*dt))
+    Fo = alpha*dt/(dx**2)
+    stab = Fo<.5
+    ot = int(tf/fr)+2
+    return "Fo = {0}   Stability: {1}\nCycles: {2}  #Outputs: {3}".format(Fo, stab, cyc, ot)
 
-#It's kinda getting there.
+def ks_msg(div,dt,bks,tf,fr):
+    dx = 0.5
+    div = 2**div
+    bks = 2**bks
+    cyc = int(4*tf/(bks*dt))
+    dtdx = dt/dx
+    stab = dtdx<.015
+    ot = int(tf/fr)+2
+    return "dt/dx = {0}   Stability: {1}\nCycles: {2}  #Outputs: {3}".format(dtdx, stab, cyc, ot)
+
+def euler_msg(div,dt,bks,tf,fr):
+    dx = 1.0/(div-1.0)
+    div = 2**div
+    bks = 2**bks
+    cyc = int(4*tf/(bks*dt))
+    dtdx = dt/dx
+    stab = dtdx<.05
+    ot = int(tf/fr)+2
+    return "dt/dx = {0}   Stability: {1}\nCycles: {2}  #Outputs: {3}".format(dtdx, stab, cyc, ot)
+
+funs = [ks_msg, heat_msg, euler_msg]
+
 master = Tk.Tk()
 
 dropframe = Tk.Frame(master, pady = 2)
@@ -112,7 +138,7 @@ def on_closing():
 def reset_label(event):
     res_one.config(text = str(2**divpow.get()))
     res_two.config(text = str(2**blkpow.get()))
-    res_three.config(text = Param[problem.get()] + str(alpha*deltat.get()/(dx**2)))
+    res_three.config(text=funs[OPTIONS.index(problem.get())](divpow.get(), deltat.get(), blkpow.get(), t_final.get(),fq.get()))
 
 def reset_vals(problem):
     if problem == 'KS':
@@ -163,8 +189,7 @@ Tk.Entry(entryframe, textvariable=t_final).grid(row = 6, column = 1)
 
 Tk.Label(entryframe, text= "Output frequency (seconds): ").grid(row=7, column = 0)
 Tk.Entry(entryframe, textvariable=fq).grid(row = 7, column = 1)
-
-res_three = Tk.Label(entryframe, text = Param[problem.get()] + str(alpha*deltat.get()/(dx**2)))
+res_three = Tk.Label(entryframe)
 res_three.grid(row = 11, column = 0, columnspan = 2)
 
 button_send = Tk.Button(endframe, text="OK", command=ok)
@@ -286,6 +311,8 @@ if "city" in typ[0]:
     lw = 2
 else:
     lw = 4
+
+plt.gca().set_color_cycle(pal.qualitative.Dark2_8.mpl_colors)
 
 if cnt < 6:
 

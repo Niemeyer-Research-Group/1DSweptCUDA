@@ -6,7 +6,7 @@ Repository for 1D Swept rule scheme written in CUDA C.
 
 ##CUDA instructions
 
-1. install the cuda toolkit v7.5.  Instructions for all OS are on the sidebar [here](http://docs.nvidia.com/cuda/index.html).
+1. Install the cuda toolkit v7.5.  Instructions for all OS are on the sidebar [here](http://docs.nvidia.com/cuda/index.html).
 
 2. Find your GPU compute capability with the deviceQuery.cu program in the utilities folder in the samples folder included in the CUDA toolkit installation.
 Linux Path: /usr/local/cuda-7.5/samples/1_Utilities
@@ -44,17 +44,16 @@ The KS equation and all classic discretizations do not have CPUshare options, so
 [This Document](Swept_1_D_Scheme_Description.pdf) explains the swept algorithm and it's motivation.
 
 ##Dependencies
-#Hardware
+###Hardware
 * An nVidia GPU
 
-#Python
+###Python
 * Anaconda for python 2.7
 * [exactpack](https://github.com/losalamos/ExactPack)
 * [palettable](https://jiffyclub.github.io/palettable/#palette-interface)
 
-
-#CUDA
+###CUDA
 * Cuda 7.5
 
-#Command line
+###Command line
 * ffmpeg (for gif creation, not essential)
