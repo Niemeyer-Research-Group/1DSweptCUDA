@@ -24,7 +24,8 @@ If not, see <https://opensource.org/licenses/MIT>.
 # Perhaps this will also be the calling script.
 
 import matplotlib.pyplot as plt
-from math import *
+#from math import *
+from cycler import cycler
 import numpy as np
 import subprocess as sp
 import shlex
@@ -247,30 +248,19 @@ SCHEME = [
     "SweptCPUshare"
 ]
 
-if swept and cpu:
-    sch = SCHEME[2]
-    timestr = Fname + " " + sch
-elif swept:
-    sch = SCHEME[1]
-    timestr = Fname + " " + sch
-else:
-    sch = SCHEME[0]
-    timestr = Fname + " " + sch
+
+sch = SCHEME[swept+cpu]
+timestr = Fname + " " + sch
+
 
 if runit.get():
     sp.call("make")
 
     execut = op.join(binpath, typename + "Out")
 
-    print div, bks, dt, tf, freq, swept, cpu
-
-    if swept:
-        if Fname == "Heat":
-            print "Number of cycles: {}".format(int(tf/(bks*dt)))
-        else:
-            print "Number of cycles: {}".format(int(4.0*tf/(bks*dt)))
-
-    print timestr
+    print "---------------------"
+    print "Algorithm #divs #tpb dt endTime"
+    print sch, div, bks, dt, tf
 
     execstr = execut +  ' {0} {1} {2} {3} {4} {5} {6} {7}'.format(div,bks,dt,tf,freq,swept,cpu,Varfile)
 
@@ -312,7 +302,7 @@ if "city" in typ[0]:
 else:
     lw = 4
 
-plt.gca().set_color_cycle(pal.qualitative.Dark2_8.mpl_colors)
+plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors))
 
 if cnt < 6:
 
@@ -337,7 +327,7 @@ if cnt < 6:
         ax.set_xlim([0,ed])
 
         for tfs in cl:
-            ax.plot(df_sim['index'], df_sim[tfs], label="{:.2f} (s)".format(tfs), linewidth=lw)
+            ax.plot(df_sim['index'], df_sim[tfs], label="{:.3f} (s)".format(tfs), linewidth=lw)
 
         plt.tight_layout()
         ax.legend()
@@ -364,7 +354,7 @@ if cnt < 6:
             ax[i].set_title(ty)
 
             for tfs in cl:
-                ax[i].plot(df_sim['index'], df_sim[tfs], label="{:.2f} (s)".format(tfs), linewidth=2)
+                ax[i].plot(df_sim['index'], df_sim[tfs], label="{:.3f} (s)".format(tfs), linewidth=2)
 
         hand, lbl = ax[0].get_legend_handles_labels()
         fig.legend(hand, lbl, 'upper_right', fontsize="medium")

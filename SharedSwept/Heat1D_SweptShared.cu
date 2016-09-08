@@ -330,14 +330,16 @@ splitDiamond(REAL *right, REAL *left)
 	//Same as upTriangle
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
 	int tid = threadIdx.x;
-	int tid1 = tid + 1;
-	int tid2 = tid + 2;
 	int base = blockDim.x + 2;
 	int height = base/2;
+    int ht1 = height-1;
 	int shft_rd;
 	int shft_wr;
 	int leftidx = height - tid/2 + ((tid/2 & 1) * base) + (tid & 1) - 2;
 	int rightidx = height + tid/2 + ((tid/2 & 1) * base) + (tid & 1);
+    int tid1 = tid + 1;
+    int tid2 = ((gid == ht1) ? tid : tid + 2);
+    int tid0 = ((gid == height) ? tid+2 : tid);
 
 	// Initialize temper.
 
@@ -348,42 +350,17 @@ splitDiamond(REAL *right, REAL *left)
 
     __syncthreads();
 
-    for (int k = (height-1); k>0; k--)
+    for (int k = ht1; k>0; k--)
     {
         // This tells you if the current row is the first or second.
         shft_wr = base * ((k+1) & 1);
         // Read and write are opposite rows.
         shft_rd = base * (k & 1);
 
-        //Block 0 is split so it needs a different algorithm.  This algorithm
-        //is slightly different than top triangle as described in the note above.
-        if (blockIdx.x > 0)
+
+        if (tid1 < (base-k) && tid1 >= k)
         {
-            if (tid1 < (base-k) && tid1 >= k)
-            {
-                temper[tid1 + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
-            }
-
-        }
-
-        else
-        {
-            if (tid1 < (base-k) && tid1 >= k)
-            {
-                if (tid1 == (height-1))
-                {
-                    temper[tid1 + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid+shft_rd], temper[tid1+shft_rd]);
-                }
-                else if (tid1 == height)
-                {
-                    temper[tid1 + shft_wr] = execFunc(temper[tid2+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
-                }
-                else
-                {
-                    temper[tid1 + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
-                }
-            }
-
+            temper[tid1 + shft_wr] = execFunc(temper[tid0+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
         }
 
         __syncthreads();
@@ -398,44 +375,20 @@ splitDiamond(REAL *right, REAL *left)
     leftidx = tid/2 + ((tid/2 & 1) * blockDim.x) + (tid & 1);
     rightidx = (blockDim.x - 2) + ((tid/2 & 1) * blockDim.x) + (tid & 1) -  tid/2;
 
-    int tidm = tid - 1;
+    tid0--;
+    tid2--;
 
-    height--;
-
-	for (int k = 1; k<height; k++)
+	for (int k = 1; k<ht1; k++)
 	{
 		//Bitwise even odd. On even iterations write to first row.
 		shft_wr = blockDim.x * (k & 1);
 		//On even iterations write to second row (starts at element 32)
 		shft_rd = blockDim.x * ((k + 1) & 1);
 
-		//Each iteration the triangle narrows.  When k = 1, 30 points are
-		//computed, k = 2, 28 points.
-        if (blockIdx.x > 0)
-        {
-            if (tid < (blockDim.x-k) && tid >= k)
-    		{
-    			temper[tid + shft_wr] = execFunc(temper[tidm + shft_rd], temper[tid1 + shft_rd], temper[tid + shft_rd]);
-    		}
-        }
-        else
-        {
-            if (tid < (blockDim.x-k) && tid >= k)
-            {
-                if (tid == (height-1))
-                {
-                    temper[tid + shft_wr] = execFunc(temper[tidm + shft_rd], temper[tidm + shft_rd], temper[tid + shft_rd]);
 
-                }
-                else if (tid == height)
-                {
-                    temper[tid + shft_wr] = execFunc(temper[tid1 + shft_rd], temper[tid1 + shft_rd], temper[tid + shft_rd]);
-                }
-                else
-                {
-                    temper[tid + shft_wr] = execFunc(temper[tidm + shft_rd], temper[tid1 + shft_rd], temper[tid + shft_rd]);
-                }
-            }
+        if (tid < (blockDim.x-k) && tid >= k)
+        {
+            temper[tid + shft_wr] = execFunc(temper[tid0+shft_rd], temper[tid2+shft_rd], temper[tid+shft_rd]);
         }
 
 		//Make sure the threads are synced
@@ -920,7 +873,7 @@ int main( int argc, char *argv[] )
     cout << n_timesteps << " timesteps" << endl;
 	cout << "Averaged " << per_ts << " microseconds (us) per timestep" << endl;
 
-    if (argc>7)
+    if (argc>8)
     {
         ofstream ftime;
         ftime.open(argv[9],ios::app);

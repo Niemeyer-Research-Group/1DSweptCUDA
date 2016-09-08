@@ -56,9 +56,9 @@ struct discConstants{
 __constant__ discConstants disc;
 
 __host__
-REAL initFun(float xnode)
+REAL initFun(REAL xnode)
 {
-	return 2.f * cos(19.f*xnode*M_PI/128.f);
+	return 2.0 * cos(19.0*xnode*M_PI/128.0);
 }
 
 __device__
@@ -150,7 +150,7 @@ upTriangle(const REAL *IC, REAL *right, REAL *left)
 
 	if (tid > 1 && tid <(blockDim.x-2))
 	{
-		temper[tid_top] = stutterStep(temper[tid-2], temper[tid - 1], temper[tid],
+		temper[tid_top] = stutterStep(temper[tid - 2], temper[tid - 1], temper[tid],
 			temper[tid + 1], temper[tid + 2]);
 	}
 
@@ -239,7 +239,7 @@ downTriangle(REAL *IC, const REAL *right, const REAL *left)
     IC[gid] = temper[tididx];
 }
 
-// Pass to split is false.  Pass to whole is true.
+
 __global__
 void
 wholeDiamond(REAL *right, REAL *left)
@@ -539,8 +539,8 @@ int main( int argc, char *argv[])
 		dx, //dx
 		dx*dx, //dx^2
 		dx*dx*dx*dx, //dx^4
-		atof(argv[3]), //dt
-		atof(argv[3])*0.5, //dt half
+		dt, //dt
+		dt*.05, //dt half
 	};
 
 	// Initialize arrays.
