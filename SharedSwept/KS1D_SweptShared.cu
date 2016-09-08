@@ -460,10 +460,8 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
 
 			fwr << " Velocity " << t_eq << " ";
 
-			for (int k = 0; k<dv; k++)
-			{
-				fwr << T_f[k] << " ";
-			}
+			for (int k = 0; k<dv; k++)	fwr << T_f[k] << " ";
+
 			fwr << endl;
 
 			upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
@@ -566,10 +564,7 @@ int main( int argc, char *argv[])
 	// First item of each line is timestamp.
 	fwr << lx << " " << dv << " " << dsc.dx << " " << endl << " Velocity " << 0 << " ";
 
-	for (int k = 0; k<dv; k++)
-	{
-		fwr << IC[k] << " ";
-	}
+	for (int k = 0; k<dv; k++) fwr << IC[k] << " ";
 
 	fwr << endl;
 	// Transfer data to GPU.
@@ -618,10 +613,7 @@ int main( int argc, char *argv[])
     }
 
 	fwr << " Velocity " << tfm << " ";
-	for (int k = 0; k<dv; k++)
-	{
-		fwr << T_final[k] << " ";
-	}
+	for (int k = 0; k<dv; k++) fwr << T_final[k] << " ";
 
     fwr << endl;
 

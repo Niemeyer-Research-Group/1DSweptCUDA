@@ -496,10 +496,8 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const float 
             cudaMemcpy(T_f, dheat_in, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
             fwr << " Temperature " << t_eq << " ";
 
-            for (int k = 0; k<dv; k++)
-            {
-                fwr << T_f[k] << " ";
-            }
+            for (int k = 0; k<dv; k++)   fwr << T_f[k] << " ";
+
             fwr << endl;
 
             twrite += freq;
@@ -555,7 +553,6 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
 
     double t_eq;
     double twrite = freq;
-
 
 	// Call the kernels until you reach the iteration limit.
 
@@ -675,10 +672,8 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
 
     			fwr << "Temperature " << t_eq << " ";
 
-    			for (int k = 0; k<dv; k++)
-    			{
-    				fwr << T_f[k] << " ";
-    			}
+    			for (int k = 0; k<dv; k++)	fwr << T_f[k] << " ";
+
     			fwr << endl;
 
                 upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
@@ -732,10 +727,8 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
     			cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
     			fwr << "Temperature " << t_eq << " ";
 
-    			for (int k = 0; k<dv; k++)
-    			{
-    				fwr << T_f[k] << " ";
-    			}
+    			for (int k = 0; k<dv; k++)	fwr << T_f[k] << " ";
+
     			fwr << endl;
 
     			upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
@@ -881,10 +874,8 @@ int main( int argc, char *argv[] )
     	ftime.close();
     }
 	fwr << "Temperature " << tfm << " ";
-	for (int k = 0; k<dv; k++)
-	{
-		fwr << T_final[k] << " ";
-	}
+	for (int k = 0; k<dv; k++)	fwr << T_final[k] << " ";
+
 
 	fwr.close();
 
