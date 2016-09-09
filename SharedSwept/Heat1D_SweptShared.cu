@@ -551,6 +551,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
     swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
     swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
 
+
     double t_eq;
     double twrite = freq;
 
@@ -612,6 +613,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
 
             swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
             swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
+
 
             //Split Diamond Begin------
 
@@ -763,12 +765,14 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
 int main( int argc, char *argv[] )
 {
     //That is there are less than 8 arguments.
+    for (int k = 0; k<argc; k++) cout << k << " " << argv[k] << endl;
+
     if (argc < 9)
-	{
-		cout << "The Program takes 9 inputs, #Divisions, #Threads/block, deltat, finish time, output frequency..." << endl;
+    {
+    	cout << "The Program takes 9 inputs, #Divisions, #Threads/block, deltat, finish time, output frequency..." << endl;
         cout << "Classic/Swept, CPU sharing Y/N, Variable Output File, Timing Output File (optional)" << endl;
-		exit(-1);
-	}
+    	exit(-1);
+    }
 
 	// Choose the GPGPU.  This is device 0 in my machine which has 2 devices.
 	cudaSetDevice(0);
@@ -800,22 +804,24 @@ int main( int argc, char *argv[] )
 
 	// Initialize arrays.
     REAL *IC, *T_final;
-	cudaHostAlloc((void **) &IC, dv*sizeof(REAL), cudaHostAllocDefault);
-	cudaHostAlloc((void **) &T_final, dv*sizeof(REAL), cudaHostAllocDefault);
 
-    // IC = (REAL *) malloc(dv*sizeof(REAL));
-    // T_final = (REAL *) malloc(dv*sizeof(REAL));
+	// cudaHostAlloc((void **) &IC, dv*sizeof(REAL), cudaHostAllocDefault);
+	// cudaHostAlloc((void **) &T_final, dv*sizeof(REAL), cudaHostAllocDefault);
 
-	// Some initial condition for the bar temperature, an exponential decay
-	// function.
+    IC = (REAL *) malloc(dv*sizeof(REAL));
+    T_final = (REAL *) malloc(dv*sizeof(REAL));
+
 	for (int k = 0; k<dv; k++)
 	{
 		IC[k] = initFun(k, ds, lx);
+
 	}
+
 
 	// Call out the file before the loop and write out the initial condition.
 	ofstream fwr;
 	fwr.open(argv[8],ios::trunc);
+
 	// Write out x length and then delta x and then delta t.
 	// First item of each line is timestamp.
 	fwr << lx << " " << dv << " " << ds << " " << endl << "Temperature " << 0 << " ";
@@ -824,12 +830,12 @@ int main( int argc, char *argv[] )
 	{
 		fwr << IC[k] << " ";
 	}
-
 	fwr << endl;
 
     //Transfer data to GPU.
 	// This puts the Fourier number in constant memory.
 	cudaMemcpyToSymbol(fo,&fou,sizeof(REAL));
+
 
 	// This initializes the device arrays on the device in global memory.
 	// They're all the same size.  Conveniently.
@@ -840,6 +846,7 @@ int main( int argc, char *argv[] )
 	cudaEventCreate( &start );
 	cudaEventCreate( &stop );
 	cudaEventRecord( start, 0);
+
 
     // Call the kernels until you reach the iteration limit.
 	double tfm;
@@ -873,9 +880,9 @@ int main( int argc, char *argv[] )
     	ftime << dv << "\t" << tpb << "\t" << per_ts << endl;
     	ftime.close();
     }
+
 	fwr << "Temperature " << tfm << " ";
 	for (int k = 0; k<dv; k++)	fwr << T_final[k] << " ";
-
 
 	fwr.close();
 
@@ -884,10 +891,10 @@ int main( int argc, char *argv[] )
 	cudaEventDestroy( start );
 	cudaEventDestroy( stop );
     cudaDeviceReset();
-    cudaFreeHost(IC);
-    cudaFreeHost(T_final);
-    // free(IC);
-    // free(T_final);
+    // cudaFreeHost(IC);
+    // cudaFreeHost(T_final);
+    free(IC);
+    free(T_final);
 
 	return 0;
 

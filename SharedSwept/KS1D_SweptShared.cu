@@ -20,9 +20,6 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 //COMPILE LINE!
 // nvcc -o ./bin/KSOut KS1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -restrict -Xcompiler -fopenmp --ptxas-options=-v
 
-//K-S involves no splitting.  And clearly a CPU diamond would be a waste.
-//But it does need to pass it back and forth so it needs different passing versions.
-
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include <cuda_runtime.h>
@@ -90,10 +87,10 @@ REAL stutterStep(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tRight, REAL tfar
 }
 
 __device__
-REAL finalStep(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tCenter_orig, REAL tRight, REAL tfarRight)
+REAL finalStep(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tRight, REAL tfarRight)
 {
-	return tCenter_orig - disc.dt * (convect(tLeft, tRight) + secondDer(tLeft, tRight, tCenter) +
-			fourthDer(tfarLeft, tLeft, tCenter, tRight, tfarRight));
+	return (-disc.dt * (convect(tLeft, tRight) + secondDer(tLeft, tRight, tCenter) +
+			fourthDer(tfarLeft, tLeft, tCenter, tRight, tfarRight)));
 }
 
 __global__
@@ -111,14 +108,14 @@ swapKernel(const REAL *passing_side, REAL *bin, int direction)
 //Classic
 __global__
 void
-classicKS(const REAL *ks_in, REAL *ks_out, bool final, const REAL *ks_orig)
+classicKS(const REAL *ks_in, REAL *ks_out, bool final)
 {
     int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
     int lastidx = ((blockDim.x*gridDim.x)-1);
 
 	if (final)
 	{
-		ks_out[gid] = finalStep(ks_in[(gid-2)&lastidx],ks_in[(gid-1)&lastidx],ks_in[gid],ks_orig[gid],ks_in[(gid+1)&lastidx],ks_in[(gid+2)&lastidx]);
+		ks_out[gid] += finalStep(ks_in[(gid-2)&lastidx],ks_in[(gid-1)&lastidx],ks_in[gid],ks_in[(gid+1)&lastidx],ks_in[(gid+2)&lastidx]);
 	}
 	else
 	{
@@ -161,10 +158,10 @@ upTriangle(const REAL *IC, REAL *right, REAL *left)
 	{
 		if (tid < (blockDim.x-k) && tid >= k)
 		{
-			temper[tid] = finalStep(temper[tid_top - 2], temper[tid_top - 1], temper[tid_top],
-				temper[tid], temper[tid_top + 1], temper[tid_top + 2]);
-
+			temper[tid] += finalStep(temper[tid_top - 2], temper[tid_top - 1], temper[tid_top],
+				temper[tid_top + 1], temper[tid_top + 2]);
 		}
+
 		step2 = k + 2;
 		__syncthreads();
 
@@ -228,8 +225,8 @@ downTriangle(REAL *IC, const REAL *right, const REAL *left)
 
 		if (tididx < (base-step2) && tididx >= step2)
 		{
-			temper[tididx] = finalStep(temper[tid_top[0]], temper[tid_top[1]], temper[tid_top[2]],
-				temper[tididx], temper[tid_top[3]], temper[tid_top[4]]);
+			temper[tididx] += finalStep(temper[tid_top[0]], temper[tid_top[1]], temper[tid_top[2]],
+				temper[tid_top[3]], temper[tid_top[4]]);
 		}
 
 		//Make sure the threads are synced
@@ -275,7 +272,6 @@ wholeDiamond(REAL *right, REAL *left)
 		{
 			temper[tid_top[2]] = stutterStep(temper[tid_bottom[0]], temper[tid_bottom[1]], temper[tid_bottom[2]],
 				temper[tid_bottom[3]], temper[tid_bottom[4]]);
-
 		}
 
 		step2 = k-2;
@@ -283,8 +279,8 @@ wholeDiamond(REAL *right, REAL *left)
 
 		if (tididx < (base-step2) && tididx >= step2)
 		{
-			temper[tididx] = finalStep(temper[tid_top[0]], temper[tid_top[1]], temper[tid_top[2]],
-				temper[tididx], temper[tid_top[3]], temper[tid_top[4]]);
+			temper[tididx] += finalStep(temper[tid_top[0]], temper[tid_top[1]], temper[tid_top[2]],
+				temper[tid_top[3]], temper[tid_top[4]]);
 		}
 
 		//Make sure the threads are synced
@@ -323,8 +319,8 @@ wholeDiamond(REAL *right, REAL *left)
 	{
 		if (tid < (blockDim.x-k) && tid >= k)
 		{
-			temper[tid] = finalStep(temper[tid_top[0]], temper[tid_top[1]], temper[tid_top[2]],
-				temper[tid], temper[tid_top[3]], temper[tid_top[4]]);
+			temper[tid] += finalStep(temper[tid_top[0]], temper[tid_top[1]], temper[tid_top[2]],
+				temper[tid_top[3]], temper[tid_top[4]]);
 		}
 
 		step2 = k+2;
@@ -357,7 +353,6 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t
 
     cudaMalloc((void **)&dks_in, sizeof(REAL)*dv);
     cudaMalloc((void **)&dks_out, sizeof(REAL)*dv);
-	cudaMalloc((void **)&dks_orig, sizeof(REAL)*dv);
 
     // Copy the initial conditions to the device array.
     cudaMemcpy(dks_in,IC,sizeof(REAL)*dv,cudaMemcpyHostToDevice);
@@ -367,9 +362,8 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t
 
     while (t_eq < t_end)
     {
-		swapKernel <<< bks,tpb >>> (dks_in, dks_orig, 0);
-        classicKS <<< bks,tpb >>> (dks_in, dks_out, false, dks_orig);
-        classicKS <<< bks,tpb >>> (dks_out, dks_in, true, dks_orig);
+        classicKS <<< bks,tpb >>> (dks_in, dks_out, false)
+        classicKS <<< bks,tpb >>> (dks_out, dks_in, true)
         t_eq += dt;
 
         if (t_eq > twrite)
@@ -391,7 +385,6 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t
 
     cudaFree(dks_in);
     cudaFree(dks_out);
-	cudaFree(dks_orig);
 
     return t_eq;
 }

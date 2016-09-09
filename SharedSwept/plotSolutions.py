@@ -35,6 +35,7 @@ import Tkinter as Tk
 import ttk
 import pandas as pd
 import palettable.colorbrewer as pal
+import time
 
 alpha = 8.418e-5
 dx = 0.001
@@ -234,6 +235,8 @@ if not op.isdir(temppath):
 
 avifile = op.join(temppath,typename+".avi")
 
+open(Varfile,"a").close()
+
 div = 2**divpow.get()
 bks = 2**blkpow.get()
 dt = deltat.get() #timestep in seconds
@@ -248,10 +251,10 @@ SCHEME = [
     "SweptCPUshare"
 ]
 
-
 sch = SCHEME[swept+cpu]
 timestr = Fname + " " + sch
 
+print runit.get()
 
 if runit.get():
     sp.call("make")
