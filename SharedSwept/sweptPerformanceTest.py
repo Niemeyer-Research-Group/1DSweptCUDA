@@ -265,7 +265,8 @@ if runb:
 
     sp.call("make")
 
-    t_fn.write("XDimSize\tBlockSize\tTime\n")
+    #Parse it out afterward.
+    t_fn.write("#_Spatial_Points\tThreads_per_Block\tTime_per_timestep_(us)\n")
     t_fn.close()
 
 

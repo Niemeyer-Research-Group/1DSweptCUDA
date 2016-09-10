@@ -104,6 +104,7 @@ limitor(REALthree cvCurrent, REALthree cvOther, REAL pRatio)
     return FOURVEC(cvCurrent);
 }
 
+
 //Left and Center then Left and right.
 //This is the meat of the flux calculation.  Fields: x is rho, y is u, z is e, w is p.
 __device__ __host__
@@ -190,7 +191,7 @@ eulerStutterStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfo
 //But the predictor variables to find the fluxes.
 __device__ __host__
 REALfour
-eulerFinalStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfour stateCenter_orig, REALfour stateRight, REAL pfarRight)
+eulerFinalStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfour stateRight, REAL pfarRight)
 {
     REALthree fluxL, fluxR, pR;
     REALfour tempStateLeft, tempStateRight;
@@ -212,13 +213,11 @@ eulerFinalStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfour
     fluxR = eulerFlux(tempStateLeft,tempStateRight);
 
     #ifdef __CUDA_ARCH__
-    stateCenter_orig += FOURVEC(dimens.x * (fluxL-fluxR));
+    return FOURVEC(dimens.x * (fluxL-fluxR));
     #else
-    stateCenter_orig += FOURVEC(dimz.x * (fluxL-fluxR));
+    return FOURVEC(dimz.x * (fluxL-fluxR));
     #endif
-    stateCenter_orig.w = pressure(stateCenter_orig);
 
-    return stateCenter_orig;
 }
 
 __global__
@@ -236,7 +235,7 @@ swapKernel(const REALfour *passing_side, REALfour *bin, int direction)
 //Simple scheme with dirchlet boundary condition.
 __global__
 void
-classicEuler(const REALfour *euler_in, REALfour *euler_out, bool final, const REALfour *euler_orig)
+classicEuler(const REALfour *euler_in, REALfour *euler_out, bool final)
 {
     int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
     int lastidx = ((blockDim.x*gridDim.x)-1);
@@ -253,15 +252,22 @@ classicEuler(const REALfour *euler_in, REALfour *euler_out, bool final, const RE
         }
         else if (gid == 1)
         {
-            euler_out[gid] = eulerFinalStep(dbd[0].w,dbd[0],euler_in[gid],euler_orig[gid],euler_in[(gid+1)],euler_in[(gid+2)].w);
+            euler_out[gid] += eulerFinalStep(dbd[0].w,dbd[0],euler_in[gid],
+                euler_in[(gid+1)],euler_in[(gid+2)].w);
+
+            euler_out[gid].w = pressure(euler_out[gid]);
         }
         else if (gid == (lastidx-1))
         {
-            euler_out[gid] = eulerFinalStep(euler_in[(gid-2)].w,euler_in[(gid-1)],euler_in[gid],euler_orig[gid],dbd[1],dbd[1].w);
+            euler_out[gid] += eulerFinalStep(euler_in[(gid-2)].w,euler_in[(gid-1)],euler_in[gid],
+                dbd[1],dbd[1].w);
+            euler_out[gid].w = pressure(euler_out[gid]);
         }
         else
         {
-            euler_out[gid] = eulerFinalStep(euler_in[(gid-2)].w,euler_in[(gid-1)],euler_in[gid],euler_orig[gid],euler_in[(gid+1)],euler_in[(gid+2)].w);
+            euler_out[gid] += eulerFinalStep(euler_in[(gid-2)].w,euler_in[(gid-1)],euler_in[gid],
+                euler_in[(gid+1)],euler_in[(gid+2)].w);
+            euler_out[gid].w = pressure(euler_out[gid]);
         }
     }
     else
@@ -331,9 +337,10 @@ upTriangle(const REALfour *IC, REALfour *right, REALfour *left)
 	{
 		if (tid < (blockDim.x-k) && tid >= k)
 		{
-			temper[tid] = eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-				temper[tid], temper[tid_top[3]], temper[tid_top[4]].w);
+			temper[tid] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
+				temper[tid_top[3]], temper[tid_top[4]].w);
 
+            temper[tid].w = pressure(temper[tid]);
 		}
 
 		step2 = k + 2;
@@ -390,16 +397,6 @@ downTriangle(REALfour *IC, const REALfour *right, const REALfour *left)
 	temper[leftidx] = right[gid];
 	temper[rightidx] = left[gid];
 
-    if (gid < 2)
-    {
-        temper[base+gid] = dbd[0];
-    }
-    if (gid == lastidx)
-    {
-        temper[2*base-1] = dbd[1];
-        temper[2*base-2] = dbd[1];
-    }
-
     __syncthreads();
 
     if (tididx < (base-height2) && tididx >= height2)
@@ -415,8 +412,10 @@ downTriangle(REALfour *IC, const REALfour *right, const REALfour *left)
 
 		if (tididx < (base-k) && tididx >= k)
 		{
-			temper[tididx] = eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-				temper[tididx], temper[tid_top[3]], temper[tid_top[4]].w);
+            temper[tididx] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
+				temper[tid_top[3]], temper[tid_top[4]].w);
+
+            temper[tididx].w = pressure(temper[tididx]);
 		}
 
         step2 = k-2;
@@ -439,9 +438,24 @@ downTriangle(REALfour *IC, const REALfour *right, const REALfour *left)
     {
         temper[tididx] = dbd[1];
     }
+    else if (gid == 1)
     {
-        temper[tididx] = eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-            temper[tididx], temper[tid_top[3]], temper[tid_top[4]].w);
+        temper[tididx] += eulerFinalStep(dbd[0].w, dbd[0], temper[tid_top[2]],
+            temper[tid_top[3]], temper[tid_top[4]].w);
+
+        temper[tididx].w = pressure(temper[tididx]);
+    }
+    else if (gid == (lastidx-1))
+    {
+        temper[tididx] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
+            dbd[1],dbd[1].w);
+        temper[tididx].w = pressure(temper[tididx]);
+    }
+    else
+    {
+        temper[tididx] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
+            temper[tid_top[3]], temper[tid_top[4]].w);
+        temper[tididx].w = pressure(temper[tididx]);
     }
 
     IC[gid] = temper[tididx];
@@ -482,17 +496,6 @@ wholeDiamond(REALfour *right, REALfour *left, bool full)
     {
         temper[leftidx] = right[gid];
         temper[rightidx] = left[gid];
-
-        __syncthreads();
-        if (gid < 2)
-        {
-            temper[base+gid] = dbd[0];
-        }
-        if (gid == lastidx)
-        {
-            temper[2*base-1] = dbd[1];
-            temper[2*base-2] = dbd[1];
-        }
     }
     else
     {
@@ -515,8 +518,9 @@ wholeDiamond(REALfour *right, REALfour *left, bool full)
     {
         if (tididx < (base-k) && tididx >= k)
         {
-            temper[tididx] = eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-                temper[tididx], temper[tid_top[3]], temper[tid_top[4]].w);
+            temper[tididx] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
+                temper[tid_top[3]], temper[tid_top[4]].w);
+            temper[tididx].w = pressure(temper[tididx]);
         }
 
         step2 = k-2;
@@ -541,16 +545,31 @@ wholeDiamond(REALfour *right, REALfour *left, bool full)
         {
             temper[tididx] = dbd[1];
         }
+        else if (gid == 1)
+        {
+            temper[tididx] += eulerFinalStep(dbd[0].w, dbd[0], temper[tid_top[2]],
+                temper[tid_top[3]], temper[tid_top[4]].w);
+
+            temper[tididx].w = pressure(temper[tididx]);
+        }
+        else if (gid == (lastidx-1))
+        {
+            temper[tididx] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
+                dbd[1],dbd[1].w);
+            temper[tididx].w = pressure(temper[tididx]);
+        }
         else
         {
-            temper[tididx] = eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-                temper[tididx], temper[tid_top[3]], temper[tid_top[4]].w);
+            temper[tididx] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
+                temper[tid_top[3]], temper[tid_top[4]].w);
+            temper[tididx].w = pressure(temper[tididx]);
         }
     }
     else
     {
-        temper[tididx] = eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-            temper[tididx], temper[tid_top[3]], temper[tid_top[4]].w);
+        temper[tididx] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
+            temper[tid_top[3]], temper[tid_top[4]].w);
+        temper[tididx].w = pressure(temper[tididx]);
     }
 
 
@@ -586,8 +605,9 @@ wholeDiamond(REALfour *right, REALfour *left, bool full)
 	{
 		if (tid < (blockDim.x-k) && tid >= k)
 		{
-			temper[tid] = eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-				temper[tid], temper[tid_top[3]], temper[tid_top[4]].w);
+            temper[tid] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
+                temper[tid_top[3]], temper[tid_top[4]].w);
+            temper[tid].w = pressure(temper[tid]);
 
 		}
 
@@ -692,36 +712,40 @@ splitDiamond(REALfour *right, REALfour *left)
         {
             if (tididx < (base-step2) && tididx >= step2)
             {
-                temper[tididx] = eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-                    temper[tididx], temper[tid_top[3]], temper[tid_top[4]].w);
+                temper[tididx] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
+                    temper[tid_top[3]], temper[tid_top[4]].w);
+                temper[tididx].w = pressure(temper[tididx]);
             }
         }
         else
         {
             if (tididx < (base-step2) && tididx >= step2)
             {
-                if (tididx == (height-1)) //case 1
+                if (tididx == (height-1)) //case 1 like gid = lastidx
                 {
                     temper[tididx] = dbd[1];
                 }
-                else if (tididx == height)  //case 2
+                else if (tididx == height)  //case 2 like gid = 0
                 {
                     temper[tididx] = dbd[0];
                 }
-                else if (tididx == height2) //case 0
+                else if (tididx == height2) //case 0 like gid = lastidx-1
                 {
-                    temper[tididx] = eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]], temper[tididx],
-                        dbd[1], dbd[1].w);
+                    temper[tididx] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
+                        dbd[1],dbd[1].w);
+                    temper[tididx].w = pressure(temper[tididx]);
                 }
-                else if (tididx == (height+1)) //case 3
+                else if (tididx == (height+1)) //case 3 like gid = 1
                 {
-                    temper[tididx] = eulerFinalStep(dbd[0].w, dbd[0], temper[tid_top[2]],temper[tididx],
+                    temper[tididx] += eulerFinalStep(dbd[0].w, dbd[0], temper[tid_top[2]],
                         temper[tid_top[3]], temper[tid_top[4]].w);
+                    temper[tididx].w = pressure(temper[tididx]);
                 }
                 else
                 {
-                    temper[tididx] = eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-                        temper[tididx], temper[tid_top[3]], temper[tid_top[4]].w);
+                    temper[tididx] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
+                        temper[tid_top[3]], temper[tid_top[4]].w);
+                    temper[tididx].w = pressure(temper[tididx]);
                 }
             }
 
@@ -801,36 +825,40 @@ splitDiamond(REALfour *right, REALfour *left)
         {
             if (tid < (blockDim.x-k) && tid >= k)
             {
-                temper[tid] = eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-                    temper[tid], temper[tid_top[3]], temper[tid_top[4]].w);
+                temper[tid] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
+                    temper[tid_top[3]], temper[tid_top[4]].w);
+                temper[tid].w = pressure(temper[tid]);
             }
         }
         else
         {
             if (tid < (blockDim.x-k) && tid >= k)
             {
-                if (tid == (height-1)) //case 1
+                if (tid == (height-1)) //case 1 like gid = lastidx
                 {
                     temper[tid] = dbd[1];
                 }
-                else if (tid == height)  //case 2
+                else if (tid == height)  //case 2 like gid = 0
                 {
                     temper[tid] = dbd[0];
                 }
-                else if (tid == height2) //case 0
+                else if (tid == height2) //case 0 like gid = lastidx-1
                 {
-                    temper[tid] = eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]], temper[tid],
-                        dbd[1], dbd[1].w);
+                    temper[tid] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
+                        dbd[1],dbd[1].w);
+                    temper[tid].w = pressure(temper[tid]);
                 }
-                else if (tid == (height+1)) //case 3
+                else if (tid == (height+1)) //case 3 like gid = 1
                 {
-                    temper[tid] = eulerFinalStep(dbd[0].w, dbd[0], temper[tid_top[2]], temper[tid],
+                    temper[tid] += eulerFinalStep(dbd[0].w, dbd[0], temper[tid_top[2]],
                         temper[tid_top[3]], temper[tid_top[4]].w);
+                    temper[tid].w = pressure(temper[tid]);
                 }
                 else
                 {
-                    temper[tid] = eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-                        temper[tid], temper[tid_top[3]], temper[tid_top[4]].w);
+                    temper[tid] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
+                        temper[tid_top[3]], temper[tid_top[4]].w);
+                    temper[tid].w = pressure(temper[tid]);
                 }
             }
 
@@ -942,18 +970,21 @@ CPU_diamond(REALfour *temper, int tpb)
             }
             else if (n == height2) //case 0
             {
-                temper[n] = eulerFinalStep(temper[base+n-2].w, temper[base+n-1], temper[base+n], temper[n],
+                temper[n] += eulerFinalStep(temper[base+n-2].w, temper[base+n-1], temper[base+n],
                     bd[1], bd[1].w);
+                temper[n].w = pressure(temper[n]);
             }
             else if (n == (height+1)) //case 3
             {
-                temper[n] = eulerFinalStep(bd[0].w, bd[0], temper[base+n], temper[n],
+                temper[n] += eulerFinalStep(bd[0].w, bd[0], temper[base+n],
                     temper[base+n+1], temper[base+n+2].w);
+                temper[n].w = pressure(temper[n]);
             }
             else
             {
-                temper[n] = eulerFinalStep(temper[base+n-2].w, temper[base+n-1], temper[base+n], temper[n],
+                temper[n] += eulerFinalStep(temper[base+n-2].w, temper[base+n-1], temper[base+n],
                     temper[base+n+1], temper[base+n+2].w);
+                temper[n].w = pressure(temper[n]);
             }
         }
     }
@@ -1005,18 +1036,21 @@ CPU_diamond(REALfour *temper, int tpb)
             }
             else if (n == height2) //case 0
             {
-                temper[n] = eulerFinalStep(temper[tpb+n-2].w, temper[tpb+n-1], temper[tpb+n], temper[n],
+                temper[n] += eulerFinalStep(temper[base+n-2].w, temper[base+n-1], temper[base+n],
                     bd[1], bd[1].w);
+                temper[n].w = pressure(temper[n]);
             }
             else if (n == (height+1)) //case 3
             {
-                temper[n] = eulerFinalStep(bd[0].w, bd[0], temper[tpb+n], temper[n],
-                    temper[tpb+n+1], temper[tpb+n+2].w);
+                temper[n] += eulerFinalStep(bd[0].w, bd[0], temper[base+n],
+                    temper[base+n+1], temper[base+n+2].w);
+                temper[n].w = pressure(temper[n]);
             }
             else
             {
-                temper[n] = eulerFinalStep(temper[tpb+n-2].w, temper[tpb+n-1], temper[tpb+n], temper[n],
-                    temper[tpb+n+1], temper[tpb+n+2].w);
+                temper[n] += eulerFinalStep(temper[base+n-2].w, temper[base+n-1], temper[base+n],
+                    temper[base+n+1], temper[base+n+2].w);
+                temper[n].w = pressure(temper[n]);
             }
         }
 
@@ -1063,11 +1097,10 @@ double
 classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t_end,
     REALfour *IC, REALfour *T_f, const float freq, ofstream &fwr)
 {
-    REALfour *dEuler_in, *dEuler_out, *dEuler_orig;
+    REALfour *dEuler_in, *dEuler_out;
 
     cudaMalloc((void **)&dEuler_in, sizeof(REALfour)*dv);
     cudaMalloc((void **)&dEuler_out, sizeof(REALfour)*dv);
-    cudaMalloc((void **)&dEuler_orig, sizeof(REALfour)*dv);
 
     // Copy the initial conditions to the device array.
     cudaMemcpy(dEuler_in,IC,sizeof(REALfour)*dv,cudaMemcpyHostToDevice);
@@ -1077,9 +1110,8 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t
 
     while (t_eq < t_end)
     {
-        swapKernel <<< bks,tpb >>> (dEuler_in, dEuler_orig, 0);
-        classicEuler <<< bks,tpb >>> (dEuler_in, dEuler_out, false, dEuler_orig);
-        classicEuler <<< bks,tpb >>> (dEuler_out, dEuler_in, true, dEuler_orig);
+        classicEuler <<< bks,tpb >>> (dEuler_in, dEuler_out, false);
+        classicEuler <<< bks,tpb >>> (dEuler_out, dEuler_in, true);
         t_eq += dt;
 
         if (t_eq > twrite)
@@ -1095,7 +1127,7 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t
             fwr << endl;
 
             fwr << " Energy " << t_eq << " ";
-            for (int k = 0; k<dv; k++) fwr << energy(T_f[k].w, T_f[k].x, T_f[k].y/T_f[k].x) << " ";
+            for (int k = 0; k<dv; k++) fwr << (T_f[k].z/T_f[k].x) << " ";
             fwr << endl;
 
             fwr << " Pressure " << t_eq << " ";
@@ -1110,7 +1142,6 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t
 
     cudaFree(dEuler_in);
     cudaFree(dEuler_out);
-    cudaFree(dEuler_orig);
 
     return t_eq;
 
@@ -1269,7 +1300,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
                 fwr << endl;
 
                 fwr << " Energy " << t_eq << " ";
-                for (int k = 0; k<dv; k++) fwr << energy(T_f[k].w, T_f[k].x, T_f[k].y/T_f[k].x) << " ";
+                for (int k = 0; k<dv; k++) fwr << (T_f[k].z/T_f[k].x) << " ";
                 fwr << endl;
 
                 fwr << " Pressure " << t_eq << " ";
@@ -1334,7 +1365,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
                 fwr << endl;
 
                 fwr << " Energy " << t_eq << " ";
-                for (int k = 0; k<dv; k++) fwr << energy(T_f[k].w, T_f[k].x, T_f[k].y/T_f[k].x) << " ";
+                for (int k = 0; k<dv; k++) fwr << (T_f[k].z/T_f[k].x) << " ";
                 fwr << endl;
 
                 fwr << " Pressure " << t_eq << " ";
@@ -1372,8 +1403,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
 
 int main( int argc, char *argv[] )
 {
-
-    //That is there are less than 8 arguments.
+    //That is, there are less than 8 arguments.
     if (argc < 9)
 	{
 		cout << "The Program takes 9 inputs, #Divisions, #Threads/block, deltat, finish time, output frequency..." << endl;
@@ -1456,7 +1486,8 @@ int main( int argc, char *argv[] )
 	ofstream fwr;
 	fwr.open(argv[8],ios::trunc);
 	// Write out x length and then delta x and then delta t.
-	// First item of each line is timestamp.
+	// First item of each line is variable second is timestamp.
+	// energy(IC[k].w, IC[k].x, IC[k].y/IC[k].x)
 	fwr << lx << " " << dv << " " << dx << " " << endl;
 
     fwr << " Density " << 0 << " ";
@@ -1468,7 +1499,7 @@ int main( int argc, char *argv[] )
     fwr << endl;
 
     fwr << " Energy " << 0 << " ";
-    for (int k = 0; k<dv; k++) fwr << energy(IC[k].w, IC[k].x, IC[k].y/IC[k].x) << " ";
+    for (int k = 0; k<dv; k++) fwr << IC[k].z/IC[k].x << " ";
     fwr << endl;
 
     fwr << " Pressure " << 0 << " ";
@@ -1490,6 +1521,7 @@ int main( int argc, char *argv[] )
 	cudaEventCreate( &stop );
 	cudaEventRecord( start, 0);
 
+    cout << scheme << " ";
     double tfm;
     if (scheme)
     {
@@ -1506,6 +1538,14 @@ int main( int argc, char *argv[] )
 	cudaEventRecord(stop, 0);
 	cudaEventSynchronize(stop);
 	cudaEventElapsedTime( &timed, start, stop);
+
+    cudaError_t error = cudaGetLastError();
+    if(error != cudaSuccess)
+    {
+        // print the CUDA error message and exit
+        printf("CUDA error: %s\n", cudaGetErrorString(error));
+        exit(-1);
+    }
 
     timed *= 1.e3;
 
@@ -1524,6 +1564,8 @@ int main( int argc, char *argv[] )
     	ftime.close();
     }
 
+    //energy(T_final[k].w, T_final[k].x, T_final[k].y/T_final[k].x)
+
 	fwr << " Density " << tfm << " ";
 	for (int k = 0; k<dv; k++) fwr << T_final[k].x << " ";
     fwr << endl;
@@ -1533,7 +1575,7 @@ int main( int argc, char *argv[] )
     fwr << endl;
 
     fwr << " Energy " << tfm << " ";
-    for (int k = 0; k<dv; k++) fwr << energy(T_final[k].w, T_final[k].x, T_final[k].y/T_final[k].x) << " ";
+    for (int k = 0; k<dv; k++) fwr << T_final[k].z/T_final[k].x << " ";
     fwr << endl;
 
     fwr << " Pressure " << tfm << " ";

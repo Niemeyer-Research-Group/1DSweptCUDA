@@ -32,7 +32,6 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 #include <cmath>
 #include <fstream>
 
-
 #ifndef REAL
 #define REAL  float
 #endif
@@ -349,7 +348,7 @@ double
 classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t_end,
     REAL *IC, REAL *T_f, const REAL freq, ofstream &fwr)
 {
-    REAL *dks_in, *dks_out, *dks_orig;
+    REAL *dks_in, *dks_out;
 
     cudaMalloc((void **)&dks_in, sizeof(REAL)*dv);
     cudaMalloc((void **)&dks_out, sizeof(REAL)*dv);
@@ -360,10 +359,10 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t
     double t_eq = 0.0;
     double twrite = freq;
 
-    while (t_eq < t_end)
+    while (t_eq <= t_end)
     {
-        classicKS <<< bks,tpb >>> (dks_in, dks_out, false)
-        classicKS <<< bks,tpb >>> (dks_out, dks_in, true)
+        classicKS <<< bks,tpb >>> (dks_in, dks_out, false);
+        classicKS <<< bks,tpb >>> (dks_out, dks_in, true);
         t_eq += dt;
 
         if (t_eq > twrite)

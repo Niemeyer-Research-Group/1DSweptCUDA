@@ -360,7 +360,7 @@ if cnt < 6:
                 ax[i].plot(df_sim['index'], df_sim[tfs], label="{:.3f} (s)".format(tfs), linewidth=2)
 
         hand, lbl = ax[0].get_legend_handles_labels()
-        fig.legend(hand, lbl, 'upper_right', fontsize="medium")
+        fig.legend(hand, lbl, 'upper right', fontsize="medium")
         plt.tight_layout(pad=0.2, w_pad=0.75, h_pad=1.5)
         plt.subplots_adjust(bottom=0.08, right=0.82, top=0.92)
         plt.show()
@@ -428,6 +428,7 @@ else:
                     ax[i].set_ylim([1.5,3.5])
                 else:
                     ax[i].set_ylim([0.0,1.1])
+
                 plt.tight_layout(pad=0.2, w_pad=0.75, h_pad=1.5)
                 plt.subplots_adjust(bottom=0.08, right=0.82, top=0.92)
 

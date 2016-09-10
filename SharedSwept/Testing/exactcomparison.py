@@ -57,9 +57,9 @@ if __name__ == '__main__':
 
     w = int(sys.argv[1])
     sch = int(sys.argv[2])
-    print len(sys.argv)
     cpu = sch/2
     swept = int(bool(sch))
+    print cpu, swept
 
     Fname = ["Heat","Euler"]
     prec = ["Single","Double"]
@@ -197,8 +197,6 @@ if __name__ == '__main__':
         dx = L/div
         tf = .5
         freq = .15
-        cpu = 0
-        swept = 0
         dt = [.00001*k for k in range(1,5)]
         dt_dx = [k/dx for k in dt]
         err = np.empty([4,4])
@@ -219,6 +217,7 @@ if __name__ == '__main__':
             #Main loop
             for i,dts in enumerate(dt):
                 execstr = execut +  ' {0} {1} {2} {3} {4} {5} {6} {7}'.format(div,bks,dts,tf,freq,swept,cpu,Varfile)
+                print execstr
                 exeStr = shlex.split(execstr)
                 proc = sp.Popen(exeStr)
                 sp.Popen.wait(proc)

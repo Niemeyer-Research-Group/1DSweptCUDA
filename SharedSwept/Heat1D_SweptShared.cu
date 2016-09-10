@@ -765,7 +765,6 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
 int main( int argc, char *argv[] )
 {
     //That is there are less than 8 arguments.
-    for (int k = 0; k<argc; k++) cout << k << " " << argv[k] << endl;
 
     if (argc < 9)
     {
@@ -805,18 +804,17 @@ int main( int argc, char *argv[] )
 	// Initialize arrays.
     REAL *IC, *T_final;
 
-	// cudaHostAlloc((void **) &IC, dv*sizeof(REAL), cudaHostAllocDefault);
-	// cudaHostAlloc((void **) &T_final, dv*sizeof(REAL), cudaHostAllocDefault);
+	cudaHostAlloc((void **) &IC, dv*sizeof(REAL), cudaHostAllocDefault);
+	cudaHostAlloc((void **) &T_final, dv*sizeof(REAL), cudaHostAllocDefault);
 
-    IC = (REAL *) malloc(dv*sizeof(REAL));
-    T_final = (REAL *) malloc(dv*sizeof(REAL));
+    // IC = (REAL *) malloc(dv*sizeof(REAL));
+    // T_final = (REAL *) malloc(dv*sizeof(REAL));
 
 	for (int k = 0; k<dv; k++)
 	{
 		IC[k] = initFun(k, ds, lx);
 
 	}
-
 
 	// Call out the file before the loop and write out the initial condition.
 	ofstream fwr;
@@ -891,13 +889,11 @@ int main( int argc, char *argv[] )
 	cudaEventDestroy( start );
 	cudaEventDestroy( stop );
     cudaDeviceReset();
-    // cudaFreeHost(IC);
-    // cudaFreeHost(T_final);
-    free(IC);
-    free(T_final);
+    cudaFreeHost(IC);
+    cudaFreeHost(T_final);
+    // free(IC);
+    // free(T_final);
 
 	return 0;
 
 }
-
-//END
