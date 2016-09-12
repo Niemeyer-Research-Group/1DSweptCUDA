@@ -266,7 +266,7 @@ if runb:
     sp.call("make")
 
     #Parse it out afterward.
-    t_fn.write("#_Spatial_Points\tThreads_per_Block\tTime_per_timestep_(us)\n")
+    t_fn.write("Num_Spatial_Points\tThreads_per_Block\tTime_per_timestep_(us)\n")
     t_fn.close()
 
 
@@ -298,10 +298,13 @@ if not op.isfile(timepath):
 
 times = pd.read_table(timepath, delim_whitespace = True)
 headers = times.columns.values.tolist()
+headers = [h.replace("_"," ") for h in headers]
+times.columns = headers
+print headers
 time_split = times.pivot(headers[0],headers[1],headers[2])
 plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors))
 time_split.plot(logx = True, grid = True)
-plt.ylabel("Time per timestep (us)")
+plt.ylabel(headers[2])
 plt.title(plotstr + " ")
 plt.savefig(myplot, dpi=1000, bbox_inches="tight")
 
