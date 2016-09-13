@@ -8,7 +8,7 @@ execut = 'python sweptPerformanceTest.py '
 OPTIONS = ["Heat", "Euler", "KS"]
 
 PRECISION = ["Single", "Double"]
-cy = 50
+cy = 70
 bnd = [11, 20, 5, 10]
 
 tt = time.time()
