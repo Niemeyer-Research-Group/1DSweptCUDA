@@ -49,7 +49,6 @@ def Fo(dx,dt):
     alpha = 8.418e-5
     return alpha*dt/dx**2
 
-
 def rmse(exact,sim):
     return np.sqrt(np.mean((np.array(exact)-np.array(sim))**2))
 

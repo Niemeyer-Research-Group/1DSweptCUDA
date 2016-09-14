@@ -82,6 +82,7 @@ pressureRatio(REAL cvLeft, REAL cvCenter, REAL cvRight)
 //Reconstructs the state variables if the pressure ratio is finite and positive.
 //I think it's that internal boundary condition.
 __device__ __host__
+__forceinline__
 REALfour
 limitor(REALthree cvCurrent, REALthree cvOther, REAL pRatio)
 {
@@ -305,18 +306,12 @@ upTriangle(const REALfour *IC, REALfour *right, REALfour *left)
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tid = threadIdx.x; //Block Thread ID
 
-    int tid_top[5], tid_bottom[5];
+    int tid_call[5];
 	#pragma unroll
-	for (int k = -2; k<3; k++)
-	{
-		tid_top[k+2] = tid + k + blockDim.x;
-		tid_bottom[k+2] = tid + k;
-	}
+	for (int k = -2; k<3; k++)	tid_call[k+2] = tid + k;
 
 	int leftidx = ((tid/4 & 1) * blockDim.x) + (tid/4)*2 + (tid & 3);
 	int rightidx = (blockDim.x - 4) + ((tid/4 & 1) * blockDim.x) + (tid & 3) - (tid/4)*2;
-
-	int step2;
 
     //Assign the initial values to the first row in temper, each block
     //has it's own version of temper shared among its threads.
@@ -326,8 +321,8 @@ upTriangle(const REALfour *IC, REALfour *right, REALfour *left)
 
 	if (tid > 1 && tid <(blockDim.x-2))
 	{
-		temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w, temper[tid_bottom[1]], temper[tid_bottom[2]],
-			temper[tid_bottom[3]], temper[tid_bottom[4]].w);
+		temper[tid+blockDim.x] = eulerStutterStep(temper[tid_call[0]].w, temper[tid_call[1]], temper[tid_call[2]],
+			temper[tid_call[3]], temper[tid_call[4]].w);
 	}
 
 	__syncthreads();
@@ -337,19 +332,18 @@ upTriangle(const REALfour *IC, REALfour *right, REALfour *left)
 	{
 		if (tid < (blockDim.x-k) && tid >= k)
 		{
-			temper[tid] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-				temper[tid_top[3]], temper[tid_top[4]].w);
+			temper[tid] += eulerFinalStep(temper[tid_call[0]+blockDim.x].w, temper[tid_call[1]+blockDim.x], temper[tid_call[2]+blockDim.x],
+    			temper[tid_call[3]+blockDim.x], temper[tid_call[4]+blockDim.x].w);
 
             temper[tid].w = pressure(temper[tid]);
 		}
-
-		step2 = k + 2;
+        if (tid == 0) temper[10].x = k+2;
 		__syncthreads();
 
-		if (tid < (blockDim.x-step2) && tid >= step2)
+		if (tid < (blockDim.x-(int)temper[10].x) && tid >= (int)temper[10].x)
 		{
-			temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w, temper[tid_bottom[1]], temper[tid_bottom[2]],
-				temper[tid_bottom[3]], temper[tid_bottom[4]].w);
+            temper[tid+blockDim.x] = eulerStutterStep(temper[tid_call[0]].w, temper[tid_call[1]], temper[tid_call[2]],
+    			temper[tid_call[3]], temper[tid_call[4]].w);
 		}
 
 		//Make sure the threads are synced
@@ -379,17 +373,14 @@ downTriangle(REALfour *IC, const REALfour *right, const REALfour *left)
 	int tididx = tid + 2;
 	int base = blockDim.x + 4;
 	int height = base/2;
-    int height2 = height-2;
     int lastidx = ((blockDim.x*gridDim.x)-1);
-	int step2;
 
-	int tid_top[5], tid_bottom[5];
+	int tid_call[5];
 	#pragma unroll
 	for (int k = -2; k<3; k++)
-	{
-		tid_top[k+2] = tididx + k + base;
-		tid_bottom[k+2] = tididx + k;
-	}
+    {
+        tid_call[k+2] = tididx + k;
+    }
 
 	int leftidx = height + ((tid/4 & 1) * base) + (tid & 3) - (4 + (tid/4) * 2);
 	int rightidx = height + ((tid/4 & 1) * base) + (tid/4)*2 + (tid & 3);
@@ -397,67 +388,55 @@ downTriangle(REALfour *IC, const REALfour *right, const REALfour *left)
 	temper[leftidx] = right[gid];
 	temper[rightidx] = left[gid];
 
-    __syncthreads();
-
-    if (tididx < (base-height2) && tididx >= height2)
+    if (gid == 0)
     {
-        temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w, temper[tid_bottom[1]], temper[tid_bottom[2]],
-            temper[tid_bottom[3]], temper[tid_bottom[4]].w);
+        temper[tididx] = dbd[0];
+        temper[tididx+base] = dbd[0];
+        IC[gid] = temper[tididx];
+        return;
+    }
+    else if (gid == lastidx)
+    {
+        temper[tididx] = dbd[1];
+        temper[tididx+base] = dbd[1];
+        IC[gid] = temper[tididx];
+        return;
+    }
+    else if (gid == lastidx-1)
+    {
+        tid_call[4] = tid_call[3];
+    }
+    else if (gid == 1)
+    {
+        tid_call[0] = tid_call[1];
     }
 
     __syncthreads();
 
-	for (int k = (height-4); k>4; k-=4)
+	for (int k = (height-2); k>1; k-=4)
 	{
 
 		if (tididx < (base-k) && tididx >= k)
 		{
-            temper[tididx] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-				temper[tid_top[3]], temper[tid_top[4]].w);
-
-            temper[tididx].w = pressure(temper[tididx]);
+            temper[tididx+base] = eulerStutterStep(temper[tid_call[0]].w, temper[tid_call[1]], temper[tid_call[2]],
+                temper[tid_call[3]], temper[tid_call[4]].w);
 		}
 
-        step2 = k-2;
+        if (tid == 1)  temper[tid].x = k-2;
+        __syncthreads();
 
-        if (tididx < (base-step2) && tididx >= step2)
+        if (tididx < (base-(int)temper[1].x) && tididx >= (int)temper[1].x)
         {
-            temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w, temper[tid_bottom[1]], temper[tid_bottom[2]],
-                temper[tid_bottom[3]], temper[tid_bottom[4]].w);
+            temper[tididx] += eulerFinalStep(temper[tid_call[0]+base].w, temper[tid_call[1]+base], temper[tid_call[2]+base],
+				temper[tid_call[3]+base], temper[tid_call[4]+base].w);
 
+            temper[tididx].w = pressure(temper[tididx]);
         }
 		//Make sure the threads are synced
 		__syncthreads();
 	}
 
-    if (gid == 0)
-    {
-        temper[tididx] = dbd[0];
-    }
-    else if (gid == lastidx)
-    {
-        temper[tididx] = dbd[1];
-    }
-    else if (gid == 1)
-    {
-        temper[tididx] += eulerFinalStep(dbd[0].w, dbd[0], temper[tid_top[2]],
-            temper[tid_top[3]], temper[tid_top[4]].w);
-
-        temper[tididx].w = pressure(temper[tididx]);
-    }
-    else if (gid == (lastidx-1))
-    {
-        temper[tididx] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-            dbd[1],dbd[1].w);
-        temper[tididx].w = pressure(temper[tididx]);
-    }
-    else
-    {
-        temper[tididx] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-            temper[tid_top[3]], temper[tid_top[4]].w);
-        temper[tididx].w = pressure(temper[tididx]);
-    }
-
+    //__syncthreads();
     IC[gid] = temper[tididx];
 }
 
@@ -474,127 +453,117 @@ wholeDiamond(REALfour *right, REALfour *left, bool full)
 	int tididx = tid + 2;
 	int base = blockDim.x + 4;
 	int height = base/2;
-    int height2 = height-2;
-	int step2;
     int lastidx = ((blockDim.x*gridDim.x)-1);
 
-	int tid_top[5], tid_bottom[5];
+    int tid_call[5];
 	#pragma unroll
 	for (int k = -2; k<3; k++)
-	{
-		tid_top[k+2] = tididx + k + base;
-		tid_bottom[k+2] = tididx + k;
-	}
+    {
+        tid_call[k+2] = tididx + k;
+    }
 
-	int leftidx = height + ((tid/4 & 1) * base) + (tid & 3) - (4 + (tid/4) * 2);
-	int rightidx = height + ((tid/4 & 1) * base) + (tid/4)*2 + (tid & 3);
+    uint2 idx;
+	idx.x = height + ((tid/4 & 1) * base) + (tid & 3) - (4 + (tid/4) * 2); //left set
+	idx.y = height + ((tid/4 & 1) * base) + (tid/4)*2 + (tid & 3); //right set
+
 
 	// Initialize temper. Kind of an unrolled for loop.  This is actually at
 	// Timestep 0.
 
     if (full)
     {
-        temper[leftidx] = right[gid];
-        temper[rightidx] = left[gid];
+        temper[idx.x] = right[gid];
+        temper[idx.y] = left[gid];
     }
     else
     {
         gid += blockDim.x;
-        temper[leftidx] = right[gid];
-        temper[rightidx] = left[gid];
+        temper[idx.x] = right[gid];
+        temper[idx.y] = left[gid];
     }
 
     __syncthreads();
-
-    if (tididx < (base-height2) && tididx >= height2)
-    {
-        temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w, temper[tid_bottom[1]], temper[tid_bottom[2]],
-            temper[tid_bottom[3]], temper[tid_bottom[4]].w);
-    }
-
-    __syncthreads();
-
-    for (int k = (height-4); k>4; k-=4)
-    {
-        if (tididx < (base-k) && tididx >= k)
-        {
-            temper[tididx] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-                temper[tid_top[3]], temper[tid_top[4]].w);
-            temper[tididx].w = pressure(temper[tididx]);
-        }
-
-        step2 = k-2;
-
-        if (tididx < (base-step2) && tididx >= step2)
-        {
-            temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w, temper[tid_bottom[1]], temper[tid_bottom[2]],
-                temper[tid_bottom[3]], temper[tid_bottom[4]].w);
-
-        }
-        //Make sure the threads are synced
-        __syncthreads();
-    }
 
     if (full)
     {
         if (gid == 0)
         {
             temper[tididx] = dbd[0];
+            temper[tididx+base] = dbd[0];
         }
         else if (gid == lastidx)
         {
             temper[tididx] = dbd[1];
+            temper[tididx+base] = dbd[1];
+        }
+        else if (gid == lastidx-1)
+        {
+            tid_call[4] = tid_call[3];
         }
         else if (gid == 1)
         {
-            temper[tididx] += eulerFinalStep(dbd[0].w, dbd[0], temper[tid_top[2]],
-                temper[tid_top[3]], temper[tid_top[4]].w);
+            tid_call[0] = tid_call[1];
+        }
+    }
+    __syncthreads();
+
+    if (tididx < (base-(height-2)) && tididx >= (height-2))
+    {
+        temper[tididx+base] = eulerStutterStep(temper[tid_call[0]].w, temper[tid_call[1]], temper[tid_call[2]],
+            temper[tid_call[3]], temper[tid_call[4]].w);
+    }
+
+
+    for (int k = (height-4); k>4; k-=4)
+    {
+        if (tididx < (base-k) && tididx >= k)
+        {
+            temper[tididx] += eulerFinalStep(temper[tid_call[0]+base].w, temper[tid_call[1]+base], temper[tid_call[2]+base],
+				temper[tid_call[3]+base], temper[tid_call[4]+base].w);
 
             temper[tididx].w = pressure(temper[tididx]);
         }
-        else if (gid == (lastidx-1))
+
+        if (tid == 0) temper[tid].x = k-2;
+        __syncthreads();
+
+        if (tididx < (base-(int)temper[0].x) && tididx >= (int)temper[0].x)
         {
-            temper[tididx] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-                dbd[1],dbd[1].w);
-            temper[tididx].w = pressure(temper[tididx]);
+            temper[tididx+base] = eulerStutterStep(temper[tid_call[0]].w, temper[tid_call[1]], temper[tid_call[2]],
+                temper[tid_call[3]], temper[tid_call[4]].w);
+
         }
-        else
-        {
-            temper[tididx] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-                temper[tid_top[3]], temper[tid_top[4]].w);
-            temper[tididx].w = pressure(temper[tididx]);
-        }
+        //Make sure the threads are synced
+        __syncthreads();
     }
+
+    // -------------------TOP PART------------------------------------------
+    idx.x = ((tid/4 & 1) * base) + (tid/4)*2 + (tid & 3) + 2; //left get
+    idx.y = (base-6) + ((tid/4 & 1) * base) + (tid & 3) - (tid/4)*2; //right get
+    //	int leftidx = height + ((tid/4 & 1) * base) + (tid & 3) - (4 + (tid/4) * 2);
+    //	int rightidx = height + ((tid/4 & 1) * base) + (tid/4)*2 + (tid & 3);
+    if (full)
+        if (gid > 0 &&  gid < lastidx)
+        {
+            temper[tididx] += eulerFinalStep(temper[tid_call[0]+base].w, temper[tid_call[1]+base], temper[tid_call[2]+base],
+                temper[tid_call[3]+base], temper[tid_call[4]+base].w);
+
+            temper[tididx].w = pressure(temper[tididx]);
+        }
     else
     {
-        temper[tididx] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-            temper[tid_top[3]], temper[tid_top[4]].w);
+        temper[tididx] += eulerFinalStep(temper[tid_call[0]+base].w, temper[tid_call[1]+base], temper[tid_call[2]+base],
+            temper[tid_call[3]+base], temper[tid_call[4]+base].w);
+
         temper[tididx].w = pressure(temper[tididx]);
     }
 
-
-    REALfour trade = temper[tididx];
-    __syncthreads();
-    temper[tid] = trade;
-    __syncthreads();
-
-    // -------------------TOP PART------------------------------------------
-
-    leftidx = ((tid/4 & 1) * blockDim.x) + (tid/4)*2 + (tid & 3);
-	rightidx = (blockDim.x - 4) + ((tid/4 & 1) * blockDim.x) + (tid & 3) - (tid/4)*2;
-
-    #pragma unroll
-    for (int k = -2; k<3; k++)
-    {
-        tid_top[k+2] = tid + k + blockDim.x;
-        tid_bottom[k+2] = tid + k;
-    }
     __syncthreads();
 
     if (tid > 1 && tid <(blockDim.x-2))
 	{
-		temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w, temper[tid_bottom[1]], temper[tid_bottom[2]],
-			temper[tid_bottom[3]], temper[tid_bottom[4]].w);
+        temper[tididx+base] = eulerStutterStep(temper[tid_call[0]].w, temper[tid_call[1]], temper[tid_call[2]],
+            temper[tid_call[3]], temper[tid_call[4]].w);
 	}
 	//The initial conditions are timeslice 0 so start k at 1.
 
@@ -605,19 +574,18 @@ wholeDiamond(REALfour *right, REALfour *left, bool full)
 	{
 		if (tid < (blockDim.x-k) && tid >= k)
 		{
-            temper[tid] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-                temper[tid_top[3]], temper[tid_top[4]].w);
-            temper[tid].w = pressure(temper[tid]);
+            temper[tididx] += eulerFinalStep(temper[tid_call[0]+base].w, temper[tid_call[1]+base], temper[tid_call[2]+base],
+				temper[tid_call[3]+base], temper[tid_call[4]+base].w);
 
+            temper[tididx].w = pressure(temper[tididx]);
 		}
-
-		step2 = k + 2;
+        if (tid == 0) temper[tid].x = k+2;
 		__syncthreads();
 
-		if (tid < (blockDim.x-step2) && tid >= step2)
+		if (tid < (blockDim.x-(int)temper[0].x) && tid >= (int)temper[tid].x)
 		{
-			temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w, temper[tid_bottom[1]], temper[tid_bottom[2]],
-				temper[tid_bottom[3]], temper[tid_bottom[4]].w);
+            temper[tididx+base] = eulerStutterStep(temper[tid_call[0]].w, temper[tid_call[1]], temper[tid_call[2]],
+                temper[tid_call[3]], temper[tid_call[4]].w);
 		}
 
 		//Make sure the threads are synced
@@ -625,8 +593,8 @@ wholeDiamond(REALfour *right, REALfour *left, bool full)
 
 	}
 
-    right[gid] = temper[rightidx];
-	left[gid] = temper[leftidx];
+    right[gid] = temper[idx.y];
+	left[gid] = temper[idx.x];
 
 }
 
@@ -637,282 +605,117 @@ splitDiamond(REALfour *right, REALfour *left)
 {
     extern __shared__ REALfour temper[];
 
-	//Same as upTriangle
+    //Same as upTriangle
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
 	int tid = threadIdx.x;
     int tididx = tid + 2;
 	int base = blockDim.x + 4;
 	int height = base/2;
     int height2 = height - 2;
-	int step2;
+    bool t_ht = (gid == height);
+    bool t_htm = (gid == (height-1));
 
-	int tid_top[5], tid_bottom[5];
+    int tid_call[5];
 	#pragma unroll
 	for (int k = -2; k<3; k++)
-	{
-		tid_top[k+2] = tididx + k + base;
-		tid_bottom[k+2] = tididx + k;
-	}
+    {
+        tid_call[k+2] = tididx + k;
+    }
 
-	int leftidx = height + ((tid/4 & 1) * base) + (tid & 3) - (4 + (tid/4) * 2);
-	int rightidx = height + ((tid/4 & 1) * base) + (tid/4)*2 + (tid & 3);
+    uint2 idx;
+	idx.x = height + ((tid/4 & 1) * base) + (tid & 3) - (4 + (tid/4) * 2); //left set
+	idx.y = height + ((tid/4 & 1) * base) + (tid/4)*2 + (tid & 3); //right set
 	// Initialize temper. Kind of an unrolled for loop.  This is actually at
 	// Timestep 0.
 
-    temper[leftidx] = right[gid];
-	temper[rightidx] = left[gid];
+    temper[idx.x] = right[gid];
+	temper[idx.y] = left[gid];
 
     __syncthreads();
 
+    if (t_ht)
+    {
+        temper[tididx] = dbd[0];
+        temper[tididx+base] = dbd[0];
+    }
+    else if (t_htm)
+    {
+        temper[tididx] = dbd[1];
+        temper[tididx+base] = dbd[1];
+    }
+    else if (gid == height2)
+    {
+        tid_call[4] = tid_call[3];
+    }
+    else if (gid == (height+1))
+    {
+        tid_call[0] = tid_call[1];
+    }
+
     for (int k = height2; k>0; k-=4)
     {
-        if (blockIdx.x > 0)
-        {
-            if (tididx < (base-k) && tididx >= k)
-            {
-                temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w, temper[tid_bottom[1]], temper[tid_bottom[2]],
-                    temper[tid_bottom[3]], temper[tid_bottom[4]].w);
-            }
-        }
-        else
-        {
-            if (tididx < (base-k) && tididx >= k)
-            {
-                if (tididx == (height-1)) //case 1
-                {
-                    temper[tid_top[2]] = dbd[1];
-                }
-                else if (tididx == height)  //case 2
-                {
-                    temper[tid_top[2]] = dbd[0];
-                }
-                else if (tididx == height2) //case 0
-                {
-                    temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w, temper[tid_bottom[1]], temper[tid_bottom[2]],
-                        dbd[1], dbd[1].w);
-                }
-                else if (tididx == (height+1)) //case 3
-                {
-                    temper[tid_top[2]] = eulerStutterStep(dbd[0].w, dbd[0], temper[tid_bottom[2]],
-                        temper[tid_bottom[3]], temper[tid_bottom[4]].w);
-                }
-                else
-                {
-                    temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w, temper[tid_bottom[1]], temper[tid_bottom[2]],
-                        temper[tid_bottom[3]], temper[tid_bottom[4]].w);
-                }
-            }
 
+        if (!t_ht && !t_htm && tididx < (base-k) && tididx >= k)
+        {
+            temper[tididx+base] = eulerStutterStep(temper[tid_call[0]].w, temper[tid_call[1]], temper[tid_call[2]],
+                temper[tid_call[3]], temper[tid_call[4]].w);
         }
 
-        step2 = k-2;
-        __syncthreads(); //This
+        if (tid == 0) temper[tid].x = k-2;
+        __syncthreads();
 
-        if (blockIdx.x > 0)
+        if (!t_ht && !t_htm && tididx < (base-(int)temper[0].x) && tididx >= (int)temper[0].x)
         {
-            if (tididx < (base-step2) && tididx >= step2)
-            {
-                temper[tididx] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-                    temper[tid_top[3]], temper[tid_top[4]].w);
-                temper[tididx].w = pressure(temper[tididx]);
-            }
-        }
-        else
-        {
-            if (tididx < (base-step2) && tididx >= step2)
-            {
-                if (tididx == (height-1)) //case 1 like gid = lastidx
-                {
-                    temper[tididx] = dbd[1];
-                }
-                else if (tididx == height)  //case 2 like gid = 0
-                {
-                    temper[tididx] = dbd[0];
-                }
-                else if (tididx == height2) //case 0 like gid = lastidx-1
-                {
-                    temper[tididx] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-                        dbd[1],dbd[1].w);
-                    temper[tididx].w = pressure(temper[tididx]);
-                }
-                else if (tididx == (height+1)) //case 3 like gid = 1
-                {
-                    temper[tididx] += eulerFinalStep(dbd[0].w, dbd[0], temper[tid_top[2]],
-                        temper[tid_top[3]], temper[tid_top[4]].w);
-                    temper[tididx].w = pressure(temper[tididx]);
-                }
-                else
-                {
-                    temper[tididx] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-                        temper[tid_top[3]], temper[tid_top[4]].w);
-                    temper[tididx].w = pressure(temper[tididx]);
-                }
-            }
+            temper[tididx] += eulerFinalStep(temper[tid_call[0]+base].w, temper[tid_call[1]+base], temper[tid_call[2]+base],
+				temper[tid_call[3]+base], temper[tid_call[4]+base].w);
 
+            temper[tididx].w = pressure(temper[tididx]);
         }
 
         __syncthreads();
     }
 
-    //Justify the result at 0 index.
-    REALfour trade = temper[tididx];
-    __syncthreads();
-    temper[tid] = trade;
-    __syncthreads();
 
-    leftidx = ((tid/4 & 1) * blockDim.x) + (tid/4)*2 + (tid & 3);
-	rightidx = (blockDim.x - 4) + ((tid/4 & 1) * blockDim.x) + (tid & 3) - (tid/4)*2;
-
-    #pragma unroll
-    for (int k = -2; k<3; k++)
-    {
-        tid_top[k+2] = tid + k + blockDim.x;
-        tid_bottom[k+2] = tid + k;
-    }
-
-    //The initial conditions are timslice 0 so start k at 1.
-    height -= 2;
-    height2 -= 2;
+    idx.x = ((tid/4 & 1) * base) + (tid/4)*2 + (tid & 3) + 2; //left get
+    idx.y = (base-6) + ((tid/4 & 1) * base) + (tid & 3) - (tid/4)*2; //right get
 
     __syncthreads();
 
-    //Single step start to top part.
-    if (blockIdx.x > 0)
-    {
-        if (tid > 1 && tid <(blockDim.x-2))
-        {
-            temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w, temper[tid_bottom[1]], temper[tid_bottom[2]],
-                temper[tid_bottom[3]], temper[tid_bottom[4]].w);
-        }
-    }
-    else
-    {
-        if (tid > 1 && tid <(blockDim.x-2))
-        {
-            if (tid == (height-1)) //case 1
-            {
-                temper[tid_top[2]] = dbd[1];
-            }
-            else if (tid == height)  //case 2
-            {
-                temper[tid_top[2]] = dbd[0];
-            }
-            else if (tid == height2) //case 0
-            {
-                temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w, temper[tid_bottom[1]], temper[tid_bottom[2]],
-                    dbd[1], dbd[1].w);
-            }
-            else if (tid == (height+1)) //case 3
-            {
-                temper[tid_top[2]] = eulerStutterStep(dbd[0].w, dbd[0], temper[tid_bottom[2]],
-                    temper[tid_bottom[3]], temper[tid_bottom[4]].w);
-            }
-            else
-            {
-                temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w, temper[tid_bottom[1]], temper[tid_bottom[2]],
-                    temper[tid_bottom[3]], temper[tid_bottom[4]].w);
-            }
-        }
-
-    }
+    if (!t_ht && !t_htm && tid > 1 && tid <(blockDim.x-2))
+	{
+        temper[tididx+base] = eulerStutterStep(temper[tid_call[0]].w, temper[tid_call[1]], temper[tid_call[2]],
+            temper[tid_call[3]], temper[tid_call[4]].w);
+	}
 
 	__syncthreads();
 
-    //The first new row is complete 2->blk-2 next is 4->blk-4
-	for (int k = 4; k<height; k+=4)
-	{
-        if (blockIdx.x > 0)
-        {
-            if (tid < (blockDim.x-k) && tid >= k)
-            {
-                temper[tid] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-                    temper[tid_top[3]], temper[tid_top[4]].w);
-                temper[tid].w = pressure(temper[tid]);
-            }
-        }
-        else
-        {
-            if (tid < (blockDim.x-k) && tid >= k)
-            {
-                if (tid == (height-1)) //case 1 like gid = lastidx
-                {
-                    temper[tid] = dbd[1];
-                }
-                else if (tid == height)  //case 2 like gid = 0
-                {
-                    temper[tid] = dbd[0];
-                }
-                else if (tid == height2) //case 0 like gid = lastidx-1
-                {
-                    temper[tid] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-                        dbd[1],dbd[1].w);
-                    temper[tid].w = pressure(temper[tid]);
-                }
-                else if (tid == (height+1)) //case 3 like gid = 1
-                {
-                    temper[tid] += eulerFinalStep(dbd[0].w, dbd[0], temper[tid_top[2]],
-                        temper[tid_top[3]], temper[tid_top[4]].w);
-                    temper[tid].w = pressure(temper[tid]);
-                }
-                else
-                {
-                    temper[tid] += eulerFinalStep(temper[tid_top[0]].w, temper[tid_top[1]], temper[tid_top[2]],
-                        temper[tid_top[3]], temper[tid_top[4]].w);
-                    temper[tid].w = pressure(temper[tid]);
-                }
-            }
 
-        }
-		step2 = k + 2;
-		__syncthreads();
+    //The initial conditions are timslice 0 so start k at 1.
+    for (int k = 4; k<(blockDim.x/2); k+=4)
+    {
+        if (!t_ht && !t_htm && tid < (blockDim.x-k) && tid >= k)
+        {
+            temper[tididx] += eulerFinalStep(temper[tid_call[0]+base].w, temper[tid_call[1]+base], temper[tid_call[2]+base],
+                temper[tid_call[3]+base], temper[tid_call[4]+base].w);
 
-        if (blockIdx.x > 0)
-        {
-            if (tid < (blockDim.x-step2) && tid >= step2)
-            {
-                temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w, temper[tid_bottom[1]], temper[tid_bottom[2]],
-                    temper[tid_bottom[3]], temper[tid_bottom[4]].w);
-            }
+            temper[tididx].w = pressure(temper[tididx]);
         }
-        else
+        if (tid == 0) temper[tid].x = k+2;
+        __syncthreads();
+
+        if (!t_ht && !t_htm && tid < (blockDim.x-(int)temper[0].x) && tid >= (int)temper[tid].x)
         {
-            if (tid < (blockDim.x-step2) && tid >= step2)
-            {
-                if (tid == (height-1)) //case 1
-                {
-                    temper[tid_top[2]] = dbd[1];
-                }
-                else if (tid == height)  //case 2
-                {
-                    temper[tid_top[2]] = dbd[0];
-                }
-                else if (tid == height2) //case 0
-                {
-                    temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w, temper[tid_bottom[1]], temper[tid_bottom[2]],
-                        dbd[1], dbd[1].w);
-                }
-                else if (tid == (height+1)) //case 3
-                {
-                    temper[tid_top[2]] = eulerStutterStep(dbd[0].w, dbd[0], temper[tid_bottom[2]],
-                        temper[tid_bottom[3]], temper[tid_bottom[4]].w);
-                }
-                else
-                {
-                    temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w, temper[tid_bottom[1]], temper[tid_bottom[2]],
-                        temper[tid_bottom[3]], temper[tid_bottom[4]].w);
-                }
-            }
+            temper[tididx+base] = eulerStutterStep(temper[tid_call[0]].w, temper[tid_call[1]], temper[tid_call[2]],
+                temper[tid_call[3]], temper[tid_call[4]].w);
         }
 
-		//Make sure the threads are synced
-		__syncthreads();
-	}
+        //Make sure the threads are synced
+        __syncthreads();
 
-    //After the triangle has been computed, the right and left shared arrays are
-	//stored in global memory by the global thread ID since (conveniently),
-	//they're the same size as a warp!
-	right[gid] = temper[rightidx];
-	left[gid] = temper[leftidx];
+    }
+
+    right[gid] = temper[idx.y];
+    left[gid] = temper[idx.x];
 }
 
 using namespace std;
@@ -1438,11 +1241,10 @@ int main( int argc, char *argv[] )
 
     //Declare the dimensions in constant memory.
     dimz.x = dt/dx; // dt/dx
-    dimz.y = gam; dimz.z = m_gamma;
+    dimz.y = gam;
+    dimz.z = m_gamma;
 
     cout << "Euler --- #Blocks: " << bks << " | Length: " << lx << " | Precision: " << prec << " | dt/dx: " << dimz.x << endl;
-
-
 
 	//Conditions for main input.  Unit testing kinda.
 	//dv and tpb must be powers of two.  dv must be larger than tpb and divisible by
