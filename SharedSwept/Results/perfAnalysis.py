@@ -65,7 +65,7 @@ else:
     #Output all results to html table
     df_result = pd.concat(dfs_all)
     df_result.to_html(tablefile)
-    
+
 
 #Plot most common best launch.
 df_best_idx = df_result.idxmin(axis=1)
@@ -96,21 +96,21 @@ df_best = df_result.min(axis=1)
 for prob in df_best.index.get_level_values(0).unique():
     df_now = df_best.xs(prob, level=midx_name[0])
     fig, ax = plt.subplots(1,2, figsize=(14,8))
-    
+
     ax = ax.ravel()
     fig.suptitle(prob+" Best Case", fontsize='large', fontweight="bold")
     plt.grid()
     for i,prec in enumerate(df_best.index.get_level_values(1).unique()):
         ser = df_now.xs(prec, level=midx_name[1])
         ser = ser.unstack(midx_name[2])
-        ser.plot(ax=ax[i], logx=True)
+        ser.plot(ax=ax[i], logx=True, linewidth=2)
         ax[i].set_title(prec)
         ax[i].grid(alpha=0.5)
         ax[i].set_xlabel(midx_name[-1])
         ax[i].set_ylabel("Time per timestep (us)")
-        
+
         #Set x and y probably
-        
+
     lg = ax[0].legend()
     lg.remove()
     plt.subplots_adjust(bottom=0.08, right=0.82, top=0.9)
