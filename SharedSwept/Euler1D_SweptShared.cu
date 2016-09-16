@@ -804,6 +804,7 @@ CPU_diamond(REALfour *temper, int tpb)
     //Splitting it is the whole point!
     for (int k = height2; k>0; k-=4)
     {
+
         for(int n = k; n<(base-k); n++)
         {
             if (n == (height-1)) //case 1
@@ -864,11 +865,13 @@ CPU_diamond(REALfour *temper, int tpb)
         }
     }
 
+    #pragma omp parallel for num_threads(8)
     for (int k = 0; k<tpb; k++) temper[k] = temper[k+2];
 
     height -= 2;
     height2 -= 2;
 
+    #pragma omp parallel for num_threads(8)
     for(int n = 2; n<(tpb-2); n++)
     {
         if (n == (height-1)) //case 1
@@ -899,6 +902,7 @@ CPU_diamond(REALfour *temper, int tpb)
     //Top part.
     for (int k = 4; k<height; k+=4)
     {
+
         for(int n = k; n<(tpb-k); n++)
         {
             if (n == (height-1)) //case 1
@@ -1077,27 +1081,32 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
         // h_left = (REALfour *) malloc(tpb*sizeof(REALfour));
 
         t_eq = t_fullstep;
-        omp_set_num_threads( 2 );
+
 
         //Split Diamond Begin------
 
-
+        omp_set_nested(1);
 
         #pragma omp parallel sections
         {
         #pragma omp section
         {
+
+            printf("CPU Thread: %d \n",omp_get_thread_num());
             cudaMemcpy(h_right, d_left, tpb*sizeof(REALfour), cudaMemcpyDeviceToHost);
             cudaMemcpy(h_left, d_right , tpb*sizeof(REALfour), cudaMemcpyDeviceToHost);
             double time0 = omp_get_wtime( );
+            #pragma omp parallel for num_threads(8)
             for (int k = 0; k<tpb; k++)
             {
+
                 tmpr[indices[0][k]] = h_left[k];
                 tmpr[indices[1][k]] = h_right[k];
             }
 
             CPU_diamond(tmpr, tpb);
 
+            #pragma omp parallel for num_threads(8)
             for (int k = 0; k<tpb; k++)
             {
                 h_left[k] = tmpr[indices[2][k]];
@@ -1112,6 +1121,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
         }
         #pragma omp section
         {
+            printf("GPU Thread: %d \n",omp_get_thread_num());
             wholeDiamond <<< bks-1,tpb,smem2 >>>(d_right,d_left,false);
         }
         }
@@ -1214,19 +1224,19 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
         splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
         t_eq = t_fullstep;
         swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-        swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+        cudaMemcpy(d_left,d_bin, sizeof(REALfour)*dv, cudaMemcpyDeviceToDevice);
 
         while(t_eq < t_end)
         {
             wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,true);
 
             swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
-            swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
+            cudaMemcpy(d_right,d_bin, sizeof(REALfour)*dv, cudaMemcpyDeviceToDevice);
 
             splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
 
             swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-            swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+            cudaMemcpy(d_left,d_bin, sizeof(REALfour)*dv, cudaMemcpyDeviceToDevice);
 
             t_eq += t_fullstep;
 
@@ -1255,12 +1265,12 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
                 upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
 
                 swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
-                swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
+                cudaMemcpy(d_right,d_bin, sizeof(REALfour)*dv, cudaMemcpyDeviceToDevice);
 
     			splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
 
                 swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-                swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+                cudaMemcpy(d_left,d_bin, sizeof(REALfour)*dv, cudaMemcpyDeviceToDevice);
 
                 t_eq += t_fullstep;
 

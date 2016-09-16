@@ -1,4 +1,4 @@
-import pandas as pd #use to html for storage?
+import pandas as pd
 import numpy as np
 import os
 import os.path as op
@@ -14,7 +14,8 @@ def plotItBar(axi, dat):
 
     return
 
-plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors))
+plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors)+
+    cycler('marker',['D','o','h','*','^','x','v','8']))
 
 thispath = op.abspath(op.dirname(__file__))
 sourcepath = op.dirname(thispath)
@@ -28,7 +29,8 @@ if not op.isdir(plotpath):
     os.mkdir(plotpath)
 
 readin = False
-writeout = True
+writeout = False
+savepl = False
 
 if readin:
     df_result = pd.read_csv(csvfile,index_col=range(4))
@@ -86,7 +88,9 @@ plt.xlabel("Threads per block")
 plt.ylim([0,df_launch.max()+5])
 plt.grid(alpha=0.5)
 
-plt.savefig(plotfile, bbox_inches='tight')
+if savepl:
+    plt.savefig(plotfile, bbox_inches='tight')
+
 algs = df_result.index.get_level_values("Algorithm").unique().tolist()
 algs.sort()
 probs = df_result.index.get_level_values("Problem").unique().tolist()
@@ -123,23 +127,24 @@ for prob in probs:
     for i,prec in enumerate(precs):
         ser = df_now.xs(prec, level=midx_name[1])
         ser = ser.unstack(midx_name[2])
-        ser.plot(ax=ax[i], logx=True, linewidth=2)
+        ser.plot(ax=ax[i], logx=True, logy=True, linewidth=2)
         ax[i].set_title(prec)
         ax[i].grid(alpha=0.5)
         ax[i].set_xlabel(midx_name[-1])
-        ax[i].set_ylabel("Time per timestep (us)")
-        
+        if i == 0:
+            ax[i].set_ylabel("Time per timestep (us)")
+
         ser2 = df_bdn.xs(prec, level=midx_name[1])
         ser2.plot.bar(ax=ax2[cnt], rot=0)
         ax2[cnt].set_title(prob+" "+prec, fontsize="medium")
         ax2[cnt].grid(alpha=0.5)
         ax2[cnt].set_ylabel("Frequency")
         ax2[cnt].set_xlabel("")
-        
+
         if cnt>0:
             lgg = ax2[cnt].legend()
             lgg.remove()
-            
+
         cnt += 1
 
         #Set x and y probably
@@ -149,7 +154,9 @@ for prob in probs:
     fig.subplots_adjust(bottom=0.08, right=0.82, top=0.9)
     ax[1].legend(bbox_to_anchor=(1.52,1.0), fontsize='medium')
     plotfile = op.join(plotpath,"Best configuations " + prob + ".pdf")
-    fig.savefig(plotfile, bbox_inches='tight')
+
+    if savepl:
+        fig.savefig(plotfile, bbox_inches='tight')
 
 fig2.tight_layout(pad=0.2, w_pad=0.75, h_pad=1.0)
 fig2.subplots_adjust(bottom=0.08, right=0.82, top=0.9)
@@ -157,7 +164,9 @@ hand, lbl = ax2[0].get_legend_handles_labels()
 ax2[0].legend().remove()
 fig2.legend(hand, lbl, 'upper right', title="Threads per block", fontsize="medium")
 plotfile = op.join(plotpath, "Best configuration by runtype.pdf")
-fig2.savefig(plotfile, bbox_inches='tight')  
+
+if savepl:
+    fig2.savefig(plotfile, bbox_inches='tight')
 
 
 df_classic = df_best.xs(algs[0], level="Algorithm")
@@ -186,12 +195,31 @@ ax[1].grid(alpha=0.5)
 ax[1].set_title("SweptCPUShare")
 
 plotfile = op.join(plotpath,"Speedups.pdf")
-fig.savefig(plotfile, bbox_inches='tight')
 
-# I think I should run the same test with the CPU code.  Just take best one
-# Same num spatial points but don't worry about threads per block.
-# Just use different number of threads up to 12 or 16.  And run all the even combos
-# Output the results and concatenate them in a text file.
+if savepl:
+    fig.savefig(plotfile, bbox_inches='tight')
+
+dfM = pd.read_csv("KS_MPI.csv")
+mpihead = dfM.columns.values.tolist()
+dfM = dfM.set_index(mpihead[0])
+dfK = pd.DataFrame(df_best.xs("KS",level="Problem"))
+dfK = dfK.unstack("Precision")
+dfK = dfK.unstack("Algorithm")
+dfK.columns = dfK.columns.droplevel()
+
+dfKS = dfM.join(dfK)
+dfKS.plot(logx=True, logy=True, linewidth=2,figsize=(14,8))
+plt.ylabel(headers[2])
+
+plt.title("KS MPI vs GPU implementation")
+plt.grid(alpha=0.5)
+
+tblMPI = op.join(plotpath,"KSMPI_Compare.html")
+dfKS.to_html(tblMPI)
+
+plotfile = op.join(plotpath,"KSfor_MPI_GPU.pdf")
+if savepl:
+    fig.savefig(plotfile, bbox_inches='tight')
 
 if writeout:
     df_result.to_csv(csvfile)
