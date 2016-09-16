@@ -20,17 +20,17 @@ thispath = op.abspath(op.dirname(__file__))
 sourcepath = op.dirname(thispath)
 gitpath = op.dirname(sourcepath) #Top level of git repo
 plotpath = op.join(op.join(op.join(gitpath,"ResultPlots"),"performance"),"Summary") #Folder for plots
-tablefile = op.join(plotpath,"SweptTestResults2.html")
-csvfile = op.join(thispath,"LastTestResults.csv")
+tablefile = op.join(plotpath,"SweptTestResults3.html")
+csvfile = op.join(thispath,"LastTestResults1.csv")
 
 #Gather files
 if not op.isdir(plotpath):
     os.mkdir(plotpath)
 
-on = False
-doit = False
+readin = False
+writeout = True
 
-if on:
+if readin:
     df_result = pd.read_csv(csvfile,index_col=range(4))
     midx_name = df_result.index.names
 
@@ -64,7 +64,6 @@ else:
 
     #Output all results to html table
     df_result = pd.concat(dfs_all)
-    df_result.to_html(tablefile)
 
 
 #Plot most common best launch.
@@ -87,7 +86,7 @@ plt.xlabel("Threads per block")
 plt.ylim([0,df_launch.max()+5])
 plt.grid(alpha=0.5)
 
-#plt.savefig(plotfile, bbox_inches='tight')
+plt.savefig(plotfile, bbox_inches='tight')
 algs = df_result.index.get_level_values("Algorithm").unique().tolist()
 algs.sort()
 probs = df_result.index.get_level_values("Problem").unique().tolist()
@@ -107,6 +106,7 @@ dfbound = dfbound.unstack("Algorithm")
 dfbound = dfbound.apply(pd.value_counts)
 dfbound = dfbound.transpose()
 dfbound.dropna(how="all", inplace=True)
+
 fig2, ax2 = plt.subplots(3,2, figsize=(14,8))
 fig2.suptitle("Best threads per block", fontsize='large', fontweight="bold")
 ax2 = ax2.ravel()
@@ -133,8 +133,8 @@ for prob in probs:
         ser2.plot.bar(ax=ax2[cnt], rot=0)
         ax2[cnt].set_title(prob+" "+prec, fontsize="medium")
         ax2[cnt].grid(alpha=0.5)
-        ax2[cnt].set_xlabel("Threads per block")
         ax2[cnt].set_ylabel("Frequency")
+        ax2[cnt].set_xlabel("")
         
         if cnt>0:
             lgg = ax2[cnt].legend()
@@ -149,14 +149,16 @@ for prob in probs:
     fig.subplots_adjust(bottom=0.08, right=0.82, top=0.9)
     ax[1].legend(bbox_to_anchor=(1.52,1.0), fontsize='medium')
     plotfile = op.join(plotpath,"Best configuations " + prob + ".pdf")
-#   fig.savefig(plotfile, bbox_inches='tight')
-    
+    fig.savefig(plotfile, bbox_inches='tight')
+
+fig2.tight_layout(pad=0.2, w_pad=0.75, h_pad=1.0)
 fig2.subplots_adjust(bottom=0.08, right=0.82, top=0.9)
-ax2[0].legend(bbox_to_anchor=(1.52,1.0), fontsize='medium')   
+hand, lbl = ax2[0].get_legend_handles_labels()
+ax2[0].legend().remove()
+fig2.legend(hand, lbl, 'upper right', title="Threads per block", fontsize="medium")
 plotfile = op.join(plotpath, "Best configuration by runtype.pdf")
 fig2.savefig(plotfile, bbox_inches='tight')  
 
-on = raw_input("Pause")
 
 df_classic = df_best.xs(algs[0], level="Algorithm")
 df_sweptcpu = df_best.xs(algs[1], level="Algorithm")
@@ -184,22 +186,13 @@ ax[1].grid(alpha=0.5)
 ax[1].set_title("SweptCPUShare")
 
 plotfile = op.join(plotpath,"Speedups.pdf")
-plt.savefig(plotfile, bbox_inches='tight')
-
-#Histogram of best launch bounds
-
-#Like iterate or something over the six options
-#dfbound.plot.bar(ax=ax,stacked=True)
-#hand = [item.get_text() for item in ax.get_xticklabels()]
+fig.savefig(plotfile, bbox_inches='tight')
 
 # I think I should run the same test with the CPU code.  Just take best one
 # Same num spatial points but don't worry about threads per block.
 # Just use different number of threads up to 12 or 16.  And run all the even combos
 # Output the results and concatenate them in a text file.
 
-
-
-#So that wil be 6 plots in three subplots of best case scenarios.
-
-if doit:
+if writeout:
     df_result.to_csv(csvfile)
+    df_result.to_html(tablefile)

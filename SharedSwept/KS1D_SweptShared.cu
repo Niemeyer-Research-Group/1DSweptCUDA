@@ -499,6 +499,7 @@ int main( int argc, char *argv[])
 
 	// Choose the GPGPU.  This is device 0 in my machine which has 2 devices.
 	cudaSetDevice(0);
+	if (sizeof(REAL)>6) cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
 
 	const int dv = atoi(argv[1]); //Number of spatial points
 	const int tpb = atoi(argv[2]); //Threads per Block
@@ -530,7 +531,7 @@ int main( int argc, char *argv[])
 		dx*dx, //dx^2
 		dx*dx*dx*dx, //dx^4
 		dt, //dt
-		dt*.05, //dt half
+		dt*0.5 //dt half
 	};
 
 	// Initialize arrays.

@@ -48,18 +48,23 @@ const REAL th_diff = 8.418e-5;
 
 const REAL ds = .001;
 
-__host__ __device__ REAL initFun(int xnode, REAL ds, REAL lx)
+__host__
+__device__
+REAL initFun(int xnode, REAL ds, REAL lx)
 {
     REAL a = ((REAL)xnode*ds);
     return 100.f*a*(1.f-a/lx);
 }
 
-__device__ REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
+__device__
+__forceinline__
+REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
 {
     return fo*(tLeft+tRight) + (1.f-2.f*fo)*tCenter;
 }
 
-__host__ REAL execFuncHost(REAL tLeft, REAL tRight, REAL tCenter)
+__host__
+REAL execFuncHost(REAL tLeft, REAL tRight, REAL tCenter)
 {
     return fou*(tLeft+tRight) + (1.f-2.f*fou)*tCenter;
 }
@@ -533,7 +538,6 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
         indices[3][k] = (tpb - 2) + ((k/2 & 1) * tpb) + (k & 1) -  k/2; //right
     }
 
-
 	REAL *d_IC, *d_right, *d_left, *d_bin;
 
 	cudaMalloc((void **)&d_IC, sizeof(REAL)*dv);
@@ -775,6 +779,7 @@ int main( int argc, char *argv[] )
 
 	// Choose the GPGPU.  This is device 0 in my machine which has 2 devices.
 	cudaSetDevice(0);
+    if (sizeof(REAL)>6) cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
 
     int dv = atoi(argv[1]); //Number of spatial points
 	const int tpb = atoi(argv[2]); //Threads per Blocks
@@ -833,10 +838,6 @@ int main( int argc, char *argv[] )
     //Transfer data to GPU.
 	// This puts the Fourier number in constant memory.
 	cudaMemcpyToSymbol(fo,&fou,sizeof(REAL));
-
-
-	// This initializes the device arrays on the device in global memory.
-	// They're all the same size.  Conveniently.
 
 	// Start the counter and start the clock.
 	cudaEvent_t start, stop;
