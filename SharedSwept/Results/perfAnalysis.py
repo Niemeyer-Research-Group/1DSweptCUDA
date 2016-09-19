@@ -30,7 +30,7 @@ if not op.isdir(plotpath):
 
 readin = False
 writeout = False
-savepl = False
+savepl = True
 
 if readin:
     df_result = pd.read_csv(csvfile,index_col=range(4))
@@ -199,6 +199,7 @@ plotfile = op.join(plotpath,"Speedups.pdf")
 if savepl:
     fig.savefig(plotfile, bbox_inches='tight')
 
+fig, ax = plt.subplots(1,1, figsize=(14,8))
 dfM = pd.read_csv("KS_MPI.csv")
 mpihead = dfM.columns.values.tolist()
 dfM = dfM.set_index(mpihead[0])
@@ -208,16 +209,17 @@ dfK = dfK.unstack("Algorithm")
 dfK.columns = dfK.columns.droplevel()
 
 dfKS = dfM.join(dfK)
-dfKS.plot(logx=True, logy=True, linewidth=2,figsize=(14,8))
-plt.ylabel(headers[2])
+dfKS.dropna(inplace=True)
+dfKS.plot(ax=ax, logx=True, logy=True, linewidth=2,figsize=(14,8))
+ax.set_ylabel(headers[2])
 
-plt.title("KS MPI vs GPU implementation")
-plt.grid(alpha=0.5)
+ax.set_title("KS MPI vs GPU implementation")
+ax.grid(alpha=0.5)
 
-tblMPI = op.join(plotpath,"KSMPI_Compare.html")
+tblMPI = op.join(plotpath,"KS_MPI_GPU_Comparison.html")
 dfKS.to_html(tblMPI)
 
-plotfile = op.join(plotpath,"KSfor_MPI_GPU.pdf")
+plotfile = op.join(plotpath,"KS_MPI_GPU_Comparison.pdf")
 if savepl:
     fig.savefig(plotfile, bbox_inches='tight')
 
