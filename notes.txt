@@ -1,10 +1,2 @@
 http://stackoverflow.com/questions/7875607/how-to-calculate-gflops-of-a-kernel
 
-Shared Reference completed.  Reduce register pressure?  Changed upTriangle to
-use tididx instead of tid.  Look at convo with Kyle again in the morning to see
-what plots exactly were expected.  Ask MIT for data or run myself?  Change source code output?
-Wouldn't be incredibly difficult in KS.  Then tell him and start writing maybe or plot CPU data?
-
-Run yourself
-Get mpinum procs max 1,2,4,6,8,10,12 -> max procs.
-But use numspatialpoints as base.

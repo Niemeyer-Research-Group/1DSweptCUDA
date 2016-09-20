@@ -576,10 +576,12 @@ int main( int argc, char *argv[])
 	double tfm;
 	if (scheme)
     {
+		cout << "Swept" << endl;
 		tfm = sweptWrapper(bks, tpb, dv, dsc.dt, tf, IC, T_final, freq, fwr);
 	}
 	else
 	{
+		cout << "Classic" << endl;
 		tfm = classicWrapper(bks, tpb, dv, dsc.dt, tf, IC, T_final, freq, fwr);
 	}
 

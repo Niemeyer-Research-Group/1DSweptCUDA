@@ -1,10 +1,17 @@
 import pandas as pd
 import numpy as np
 import os
+import sys
 import os.path as op
 import matplotlib.pyplot as plt
 import palettable.colorbrewer as pal
+from datetime import datetime
 from cycler import cycler
+
+#Flags for type of run.
+readin = False
+writeout = True
+savepl = True
 
 def plotItBar(axi, dat):
 
@@ -14,26 +21,30 @@ def plotItBar(axi, dat):
 
     return
 
+#Cycle through markers and colors.
 plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors)+
     cycler('marker',['D','o','h','*','^','x','v','8']))
 
+#Set up directory structure.
 thispath = op.abspath(op.dirname(__file__))
 sourcepath = op.dirname(thispath)
 gitpath = op.dirname(sourcepath) #Top level of git repo
 plotpath = op.join(op.join(op.join(gitpath,"ResultPlots"),"performance"),"Summary") #Folder for plots
-tablefile = op.join(plotpath,"SweptTestResults3.html")
-csvfile = op.join(thispath,"LastTestResults1.csv")
+tablefile = op.join(plotpath,"SweptTestResults.html")
+storepath=op.join(thispath, "allResults.h5")
+thisday = str(datetime.date(datetime.today()))
+storage = pd.HDFStore(storepath)
 
 #Gather files
 if not op.isdir(plotpath):
     os.mkdir(plotpath)
 
-readin = False
-writeout = False
-savepl = True
 
 if readin:
-    df_result = pd.read_csv(csvfile,index_col=range(4))
+    vers = zip(range(len(storage.keys())),storage.keys())
+    print vers
+    choice = int(raw_input("Choose version by index:"))
+    df_result = storage[storage.keys()[choice]]
     midx_name = df_result.index.names
 
 else:
@@ -81,7 +92,6 @@ ax = df_launch.plot.bar(rot=0, legend=False)
 
 plotItBar(ax, df_launch)
 
-#Still need to annotate
 plt.title("Best performance configuration all {:d} combinations".format(df_result.index.size))
 plt.ylabel("Frequency")
 plt.xlabel("Threads per block")
@@ -90,7 +100,9 @@ plt.grid(alpha=0.5)
 
 if savepl:
     plt.savefig(plotfile, bbox_inches='tight')
-
+    
+    
+#Get level values to iterate
 algs = df_result.index.get_level_values("Algorithm").unique().tolist()
 algs.sort()
 probs = df_result.index.get_level_values("Problem").unique().tolist()
@@ -101,7 +113,8 @@ precs.sort()
 #Now get the best scores for each.
 df_best = df_result.min(axis=1)
 
-#Also plot all the best launch bounds in barplot by runtype
+#Plot all the best launch bounds in barplot by runtype
+#Set up here, execution in following for loop.
 dfbound = pd.DataFrame(df_best_idx)
 dfbound = dfbound.unstack("Problem")
 dfbound.columns = dfbound.columns.droplevel()
@@ -131,6 +144,8 @@ for prob in probs:
         ax[i].set_title(prec)
         ax[i].grid(alpha=0.5)
         ax[i].set_xlabel(midx_name[-1])
+        
+        #Only label first axis.
         if i == 0:
             ax[i].set_ylabel("Time per timestep (us)")
 
@@ -168,14 +183,14 @@ plotfile = op.join(plotpath, "Best configuration by runtype.pdf")
 if savepl:
     fig2.savefig(plotfile, bbox_inches='tight')
 
-
+#Now plot speedups, Time of best classic/Time best Swept.
 df_classic = df_best.xs(algs[0], level="Algorithm")
 df_sweptcpu = df_best.xs(algs[1], level="Algorithm")
 df_swept = df_best.xs(algs[2], level="Algorithm")
 
 df_gpuspeed = pd.DataFrame(df_classic/df_swept)
 df_sharespeed = pd.DataFrame(df_classic/df_sweptcpu)
-df_sharespeed.dropna(inplace=True)
+df_sharespeed.dropna(inplace=True) #Drop nans for KS CPU shared.
 df_gpuspeed = df_gpuspeed.unstack("Problem")
 df_gpuspeed.columns = df_gpuspeed.columns.droplevel()
 df_gpuspeed = df_gpuspeed.unstack("Precision")
@@ -199,6 +214,7 @@ plotfile = op.join(plotpath,"Speedups.pdf")
 if savepl:
     fig.savefig(plotfile, bbox_inches='tight')
 
+#Plot MPI version results vs CUDA for KS.
 fig, ax = plt.subplots(1,1, figsize=(14,8))
 dfM = pd.read_csv("KS_MPI.csv")
 mpihead = dfM.columns.values.tolist()
@@ -224,5 +240,10 @@ if savepl:
     fig.savefig(plotfile, bbox_inches='tight')
 
 if writeout:
-    df_result.to_csv(csvfile)
+    if thisday in storage.keys():
+        fl = raw_input("You've already written to the hd5 today.  Overwrite? [y/n]")
+        if "n" in fl:
+            sys.exit(1)
+        
+    storage[thisday] = df_result
     df_result.to_html(tablefile)

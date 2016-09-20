@@ -10,9 +10,9 @@ import time
 from exactpack.solvers.riemann import Sod
 import warnings
 
-def euler_exact(t,dv,thing):
+def euler_exact(dx,t,dv,thing):
     warnings.filterwarnings("ignore")
-    r = np.linspace(0.0,1.0,dv)
+    r = np.arange(0.5*dx,1,dx)
     if thing == 'velocity':
         thing = "velocity_x"
 
@@ -82,7 +82,7 @@ if __name__ == '__main__':
     binpath = os.path.join(mainpath,'bin')
     myplotpath = os.path.join(plotpath,Fname[w])
 
-    div = 1024.0
+    div = 2048.0
     bks = 64
     color = ['r','b','k','g']
     pts = range(0,int(div),50)
@@ -216,7 +216,6 @@ if __name__ == '__main__':
             #Main loop
             for i,dts in enumerate(dt):
                 execstr = execut +  ' {0} {1} {2} {3} {4} {5} {6} {7}'.format(div,bks,dts,tf,freq,swept,cpu,Varfile)
-                print execstr
                 exeStr = shlex.split(execstr)
                 proc = sp.Popen(exeStr)
                 sp.Popen.wait(proc)
@@ -224,7 +223,9 @@ if __name__ == '__main__':
                 f = open(Varfile)
                 fin = tuple(f)
                 ar = [float(n) for n in fin[0].split()]
-                xax = np.linspace(0,ar[0],ar[1])
+                dx = ar[2]
+                dxhalf = 0.5*dx
+                xax = np.arange(dxhalf,L,dx)
 
                 for p in range(2,len(fin)):
 
@@ -234,7 +235,7 @@ if __name__ == '__main__':
                     if tm>0:
                         idx = [dts,nameV,tm]
                         dMain.append( idx + [float(n) for n in ar[2:]])
-                        exMain.append( idx + list(euler_exact(tm, div, nameV)))
+                        exMain.append( idx + list(euler_exact(dx, tm, div, nameV)))
 
                 f.close()
 
@@ -245,6 +246,7 @@ if __name__ == '__main__':
             err = pd.DataFrame(err)
             err = err.set_index(0)
             head = ['dt','tf','Error']
+	    print err
             typ = err.index.get_level_values(0).unique()
             by_var = []
 

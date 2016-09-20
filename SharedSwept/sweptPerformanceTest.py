@@ -302,7 +302,7 @@ headers = [h.replace("_"," ") for h in headers]
 times.columns = headers
 time_split = times.pivot(headers[0],headers[1],headers[2])
 plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors))
-time_split.plot(logx = True, grid=True)
+time_split.plot(logx = True, logy=True, grid=True, linewidth=2)
 plt.ylabel(headers[2])
 plt.title(plotstr + " ")
 plt.savefig(myplot, dpi=1000, bbox_inches="tight")
