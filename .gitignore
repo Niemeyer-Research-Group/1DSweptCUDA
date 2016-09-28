@@ -8,4 +8,6 @@
 *.cmake
 *.pyc
 bin/
+cubin/
 /misc/
+
