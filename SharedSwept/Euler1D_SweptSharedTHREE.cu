@@ -49,7 +49,7 @@ If not, see <https://opensource.org/licenses/MIT>.
     #define TWOVEC( ... ) make_float2(__VA_ARGS__)
     #define THREEVEC( ... ) make_float3(__VA_ARGS__)
     #define FOURVEC( ... )  make_float4(__VA_ARGS__)
-    #define ZERO        0.f
+    #define ZERO        0.0f
     #define QUARTER     0.25f
     #define HALF        0.5f
     #define ONE         1.f
@@ -66,7 +66,7 @@ If not, see <https://opensource.org/licenses/MIT>.
 
 #endif
 
-const REAL lx = TWO;
+const REAL lx = 1.0;
 REALthree bd[2];
 
 struct dimensions {
@@ -87,24 +87,35 @@ __constant__ REALthree dbd[2]; //0 is left 1 is right.
 //dimens dimension struct in global memory.
 __constant__ dimensions dimens;
 
-__device__
+__host__ __device__
 __forceinline__
 void
 readIn(REALthree *temp, const REALthree *rights, const REALthree *lefts, int td, int gd)
 {
+    #ifdef __CUDA_ARCH__
 	int leftidx = dimens.hts[4] + (((td>>2) & 1) * dimens.base) + (td & 3) - (4 + ((td>>2)<<1));
 	int rightidx = dimens.hts[4] + (((td>>2) & 1) * dimens.base) + ((td>>2)<<1) + (td & 3);
+    #else
+    int leftidx = dimz.hts[4] + (((td>>2) & 1) * dimz.base) + (td & 3) - (4 + ((td>>2)<<1));
+    int rightidx = dimz.hts[4] + (((td>>2) & 1) * dimz.base) + ((td>>2)<<1) + (td & 3);
+    #endif
+
 	temp[leftidx] = rights[gd];
 	temp[rightidx] = lefts[gd];
 }
 
-__device__
+__host__ __device__
 __forceinline__
 void
 writeOut(REALthree *temp, REALthree *rights, REALthree *lefts, int td, int gd)
 {
+    #ifdef __CUDA_ARCH__
     int leftidx = (((td>>2) & 1)  * dimens.base) + ((td>>2)<<1) + (td & 3) + 2; //left get
     int rightidx = (dimens.base-6) + (((td>>2) & 1)  * dimens.base) + (td & 3) - ((td>>2)<<1); //right get
+    #else
+    int leftidx = (((td>>2) & 1)  * dimz.base) + ((td>>2)<<1) + (td & 3) + 2;
+    int rightidx = (dimz.base-6) + (((td>>2) & 1)  * dimz.base) + (td & 3) - ((td>>2)<<1);
+    #endif
 	rights[gd] = temp[rightidx];
 	lefts[gd] = temp[leftidx];
 
@@ -386,7 +397,7 @@ downTriangle(REALthree *IC, const REALthree *right, const REALthree *left)
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
 	int tid = threadIdx.x;
     int tididx = tid + 2;
-    int k=dimens.hts[2];
+    int k = dimens.hts[2];
     int tidxTop = tididx + dimens.base;
 
 	readIn(temper, right, left, tid, gid);
@@ -432,8 +443,6 @@ wholeDiamond(REALthree *right, REALthree *left, bool full)
 	int tididx = tid + 2;
     int tidxTop = tididx + dimens.base;
 
-	readIn(temper, right, left, tid, gid);
-
     char4 truth;
 
     if (full)
@@ -442,8 +451,11 @@ wholeDiamond(REALthree *right, REALthree *left, bool full)
     }
     else
     {
+        gid += blockDim.x;
         truth.x = false, truth.y = false, truth.z = false, truth.w = false;
     }
+
+    readIn(temper, right, left, tid, gid);
 
     __syncthreads();
 
@@ -470,7 +482,7 @@ wholeDiamond(REALthree *right, REALthree *left, bool full)
         {
             temper[tidxTop] = eulerStutterStep(temper, tididx, truth.y, truth.z);
         }
-        //Make sure the threads are synced
+
         k -= 2;
         __syncthreads();
     }
@@ -495,7 +507,7 @@ wholeDiamond(REALthree *right, REALthree *left, bool full)
 
 	while(k<dimens.hts[4])
 	{
-		if (tididx< (dimens.base-k) && tididx >= k)
+		if (tididx < (dimens.base-k) && tididx >= k)
 		{
             temper[tididx] += eulerFinalStep(temper, tidxTop, truth.y, truth.z);
         }
@@ -579,6 +591,7 @@ splitDiamond(REALthree *right, REALthree *left)
 
 	__syncthreads();
     k=4;
+
     //The initial conditions are timslice 0 so start k at 1.
     while(k<dimens.hts[2])
     {
@@ -591,7 +604,7 @@ splitDiamond(REALthree *right, REALthree *left)
         k+=2;
         __syncthreads();
 
-        if (!truth.y && !truth.z < (blockDim.x-k) && tid >= k)
+        if (!truth.y && !truth.z && tid < (blockDim.x-k) && tid >= k)
         {
             temper[tidxTop] = eulerStutterStep(temper, tididx, truth.w, truth.x);
         }
@@ -610,66 +623,72 @@ using namespace std;
 
 __host__
 void
-CPU_diamond(REALthree *temper, int tpb)
+CPU_diamond(REALthree *temper, int htcpu[5])
 {
-    int step2;
 
     omp_set_num_threads(4);
 
+    temper[htcpu[2]] = bd[0];
+    temper[htcpu[2]+dimz.base] = bd[0];
+
+    temper[htcpu[1]] = bd[1];
+    temper[htcpu[1]+dimz.base] = bd[1];
+
     //Splitting it is the whole point!
-    for (int k = dimz.hts[2]; k>0; k-=4)
+    for (int k = htcpu[0]; k>0; k-=4)
     {
         #pragma omp parallel for
         for(int n = k; n<(dimz.base-k); n++)
         {
-            if (n!=dimz.hts[1] && n!=dimz.hts[2])
+            if (n!=htcpu[1] && n!=htcpu[2])
             {
-                temper[n+dimz.base] = eulerStutterStep(temper, n, n==dimz.hts[3],n==dimz.hts[0]);
+                temper[n+dimz.base] = eulerStutterStep(temper, n, (n==htcpu[3]),(n==htcpu[0]));
             }
         }
 
-        step2 = k-2;
         #pragma omp parallel for
-        for(int n = step2; n<(dimz.base-step2); n++)
+        for(int n = k-2; n<(dimz.base-(k-2)); n++)
         {
-            if (n!=dimz.hts[1] && n!=dimz.hts[2])
+            if (n!=htcpu[1] && n!=htcpu[2])
             {
-                temper[n] = eulerFinalStep(temper, n+dimz.base, n==dimz.hts[3],n==dimz.hts[0]);
+                temper[n] += eulerFinalStep(temper, n+dimz.base, n==htcpu[3],(n==htcpu[0]));
             }
         }
     }
 
     #pragma omp parallel for
-    for(int n = 4; n<(dimz.base-4); n++)
+    for(int n = 4; n < (dimz.base-4); n++)
     {
-        if (n!=dimz.hts[1] && n!=dimz.hts[2])
+        if (n!=htcpu[1] && n!=htcpu[2])
         {
-            temper[n+dimz.base] = eulerStutterStep(temper, n, n==dimz.hts[3],n==dimz.hts[0]);
+            temper[n+dimz.base] = eulerStutterStep(temper, n, (n==htcpu[3]),(n==htcpu[0]));
         }
     }
 
     //Top part.
-    for (int k = 6; k<dimz.hts[4]; k+=4)
+    for (int k = 6; k<htcpu[2]; k+=4)
     {
         #pragma omp parallel
         for(int n = k; n<(dimz.base-k); n++)
         {
-            if (n!=dimz.hts[1] && n!=dimz.hts[2])
+            if (n!=htcpu[1] && n!=htcpu[2])
             {
-                temper[n] = eulerFinalStep(temper, n+dimz.base, n==dimz.hts[3],n==dimz.hts[0]);
+                temper[n] += eulerFinalStep(temper, n + dimz.base, (n==htcpu[3]), (n==htcpu[0]));
             }
         }
 
-        step2 = k+2;
         #pragma omp parallel for
-        for(int n = step2; n<(dimz.base-step2); n++)
+        for(int n = (k+2); n<(dimz.base-(k+2)); n++)
         {
-            if (n!=dimz.hts[1] && n!=dimz.hts[2])
+            if (n!=htcpu[1] && n!=htcpu[2])
             {
-                temper[n+dimz.base] = eulerStutterStep(temper, n, n==dimz.hts[3],n==dimz.hts[0]);
+                temper[n+dimz.base] = eulerStutterStep(temper, n, (n==htcpu[3]),(n==htcpu[0]));
             }
         }
     }
+
+    // temper[htcpu[1]] = bd[1]
+    // temper[htcpu[1]] = bd[1]
 
 }
 
@@ -740,21 +759,11 @@ double
 sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, const int cpu,
     REALthree *IC, REALthree *T_f, const float freq, ofstream &fwr)
 {
-    const int base = tpb + 4;
-    const int height = base/2;
-    const size_t smem = (2*base)*sizeof(REALthree);
 
-    int indices[4][tpb];
+    const size_t smem = (2*dimz.base)*sizeof(REALthree);
 
-    for (int k = 0; k<tpb; k++)
-    {
-        //Set indices
-        indices[0][k] = height + ((k/4 & 1) * base) + (k & 3) - (4 + (k/4) *2); //left
-        indices[1][k] = height + ((k/4 & 1) * base) + (k & 3) +  (k/4)*2; // right
-        //Get indices
-        indices[2][k] = (k/4)*2 + ((k/4 & 1) * tpb) + (k & 3); //left
-        indices[3][k] = (tpb - 4) + ((k/4 & 1) * tpb) + (k & 3) -  (k/4)*2; //right
-    }
+    int htcpu[5];
+    for (int k=0; k<5; k++) htcpu[k] = dimz.hts[k]+2;
 
 	REALthree *d_IC, *d_right, *d_left;
 
@@ -803,8 +812,8 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
 
         wholeDiamond <<< bks-1,tpb,smem,st1 >>>(d_right,d_left,false);
 
-        cudaMemcpyAsync(h_right, d_left, tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st2);
-        cudaMemcpyAsync(h_left, d_right , tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st3);
+        cudaMemcpyAsync(h_left, d_left, tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st2);
+        cudaMemcpyAsync(h_right, d_right , tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st3);
 
         cudaStreamSynchronize(st2);
         cudaStreamSynchronize(st3);
@@ -812,20 +821,14 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
         time0 = omp_get_wtime( );
 
         #pragma omp parallel for num_threads(8)
-        for (int k = 0; k<tpb; k++)
-        {
-            tmpr[indices[0][k]] = h_left[k];
-            tmpr[indices[1][k]] = h_right[k];
-        }
+        for (int k = 0; k<tpb; k++)  readIn(tmpr, h_right, h_left, k, k);
 
-        CPU_diamond(tmpr, tpb);
+
+        CPU_diamond(tmpr, htcpu);
 
         #pragma omp parallel for num_threads(8)
-        for (int k = 0; k<tpb; k++)
-        {
-            h_left[k] = tmpr[indices[2][k]];
-            h_right[k] = tmpr[indices[3][k]];
-        }
+        for (int k = 0; k<tpb; k++)  writeOut(tmpr, h_right, h_left, k, k);
+
 
         time1 = omp_get_wtime( );
         tf += (time1-time0)*1.0e6; //In us
@@ -849,8 +852,8 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
 
             wholeDiamond <<< bks-1,tpb,smem,st1 >>>(d_right,d_left,false);
 
-            cudaMemcpyAsync(h_right, d_left, tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st2);
-            cudaMemcpyAsync(h_left, d_right , tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st3);
+            cudaMemcpyAsync(h_right, d_right, tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st2);
+            cudaMemcpyAsync(h_left, d_left , tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st3);
 
             cudaStreamSynchronize(st2);
             cudaStreamSynchronize(st3);
@@ -860,18 +863,15 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
             #pragma omp parallel for num_threads(8)
             for (int k = 0; k<tpb; k++)
             {
-
-                tmpr[indices[0][k]] = h_left[k];
-                tmpr[indices[1][k]] = h_right[k];
+                readIn(tmpr, h_right, h_left, k, k);
             }
 
-            CPU_diamond(tmpr, tpb);
+            CPU_diamond(tmpr, htcpu);
 
             #pragma omp parallel for num_threads(8)
             for (int k = 0; k<tpb; k++)
             {
-                h_left[k] = tmpr[indices[2][k]];
-                h_right[k] = tmpr[indices[3][k]];
+                writeOut(tmpr, h_right, h_left, k, k);
             }
 
             time1 = omp_get_wtime( );
@@ -1026,13 +1026,13 @@ int main( int argc, char *argv[] )
     dimz.gam = 1.4;
     dimz.mgam = 0.4;
 
-    bd[0].x = TWO; //Density
+    bd[0].x = ONE; //Density
     bd[1].x = 0.125;
     bd[0].y = ZERO; //Velocity
     bd[1].y = ZERO;
-    //bd[0].w = TWO; //Pressure
+    //bd[0].w = ONE; //Pressure
     //bd[1].w = 0.1;
-    bd[0].z = TWO/dimz.mgam; //Energy
+    bd[0].z = ONE/dimz.mgam; //Energy
     bd[1].z = 0.1/dimz.mgam;
 
 
@@ -1136,11 +1136,8 @@ int main( int argc, char *argv[] )
         exit(-1);
     }
 
-	// This initializes the device arrays on the device in global memory.
-	// They're all the same size.  Conveniently.
-
-	// Start the counter and start the clock.
-	cudaEvent_t start, stop;
+    // Start the counter and start the clock.
+    cudaEvent_t start, stop;
 	float timed;
 	cudaEventCreate( &start );
 	cudaEventCreate( &stop );

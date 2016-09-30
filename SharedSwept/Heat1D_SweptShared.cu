@@ -35,7 +35,12 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 #include <omp.h>
 
 #ifndef REAL
-#define REAL  float
+    #define REAL        float
+    #define ONE         1.f
+    #define TWO         2.f
+#else
+    #define ONE         1.0
+    #define TWO         2.0
 #endif
 
 using namespace std;
@@ -46,27 +51,27 @@ REAL fou;
 
 const REAL th_diff = 8.418e-5;
 
-const REAL ds = .001;
+const REAL ds = 0.001;
 
 __host__
 __device__
 REAL initFun(int xnode, REAL ds, REAL lx)
 {
     REAL a = ((REAL)xnode*ds);
-    return 100.f*a*(1.f-a/lx);
+    return 100.f*a*(ONE-a/lx);
 }
 
 __device__
 __forceinline__
 REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
 {
-    return fo*(tLeft+tRight) + (1.f-2.f*fo)*tCenter;
+    return fo*(tLeft+tRight) + (ONE - TWO*fo) * tCenter;
 }
 
 __host__
 REAL execFuncHost(REAL tLeft, REAL tRight, REAL tCenter)
 {
-    return fou*(tLeft+tRight) + (1.f-2.f*fou)*tCenter;
+    return fou*(tLeft+tRight) + (ONE - TWO*fou) * tCenter;
 }
 
 __global__
