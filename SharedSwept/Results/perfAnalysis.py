@@ -9,9 +9,13 @@ from datetime import datetime
 from cycler import cycler
 
 #Flags for type of run.
-readin =False
-writeout = 1
-savepl = 1
+readin = True
+savepl = False
+writeout = False
+
+#Don't want to overwrite with previous version.
+if readin:
+    writout=False
 
 def plotItBar(axi, dat):
 
@@ -46,6 +50,7 @@ if readin:
     choice = int(raw_input("Choose version by index:"))
     df_result = storage[storage.keys()[choice]]
     midx_name = df_result.index.names
+    headers = df_result.columns.values.tolist()
 
 else:
     files = []

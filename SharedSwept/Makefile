@@ -2,7 +2,7 @@
 # -maxrregcount=73
 
 CUDAFLAGS = -gencode arch=compute_35,code=sm_35 -lm -restrict -Xcompiler -fopenmp -Xptxas=-v
-CUDAFLAGSDOUBLE := $(CUDAFLAGS) -DREAL=double -DREALtwo=double2 -DREALthree=double3 -DREALfour=double4
+CUDAFLAGSDOUBLE := $(CUDAFLAGS) -DREAL=double -DREALtwo=double2 -DREALthree=double3 -DREALfour=double4 
 
 # It will put the compiled programs in the bin subdirectory within the directory
 # containing the makefile
