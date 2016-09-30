@@ -1,4 +1,4 @@
-import numpy as numpy
+import numpy as np
 import pandas as pd
 
 
@@ -13,33 +13,46 @@ print mxReg
 def smB(bk,vs,prec):
     return (bk+4)*vs*prec*2
 
+col = ["Threads/block", "SharedMem/Block", "Blocks/SM", "Threads/SM",
+        "Warps/SM", "Registers/SM current reg/thd", "Number of threads Total",
+        "Num Registers for max usage"
+        ]
+
 vs = [3,4]
 a = []
 pr = [4,8]
 rg = [50,76]
+tot = []
 for i,p in enumerate(pr):
+
     for v in vs:
+        atot = [bks]
         a = []
         a2 = []
         a3 = []
+
         print "Shared Memory usage " + str(p) + " bytes " + str(v) + " vec"
         for b in bks:
             a.append(smB(b,v,p))
             a2.append(min(mxSh/smB(b,v,p),16))
             a3.append(min(mxSh/smB(b,v,p),16)*b)
 
-        print bks
-        print a
-        print "Number of blocks."
-        print a2
-        print "Number of threads/SM"
-        print a3
-        print "Number of Warps/SM"
-        print [k/32 for k in a3]
-        print "Number of Registers/SM at {} reg/thread".format(rg[i])
-        print [k*rg[i] for k in a3]
-        print "Number of threads Total"
-        print [k*15 for k in a3]
-        print "Num Registers for max usage"
-        print [mxReg/k for k in a3 if k>0]
-        print "------------------"
+
+        atot.append(a)
+        atot.append(a2)
+        atot.append(a3)
+        atot.append([k/32 for k in a3])
+        atot.append([k*rg[i] for k in a3])
+        atot.append([k*15 for k in a3])
+        atot.append([mxReg/k for k in a3 if k>0])
+
+        tot.append(atot)
+
+tf = np.array(tot)
+myDF = pd.DataFrame(tf)
+
+
+myDF.columns=col
+
+
+print myDF
