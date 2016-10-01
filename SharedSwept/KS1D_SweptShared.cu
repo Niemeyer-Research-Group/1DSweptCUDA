@@ -33,7 +33,14 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 #include <fstream>
 
 #ifndef REAL
-#define REAL  float
+    #define REAL        float
+    #define TWO         2.f
+	#define FOUR        4.f
+	#define SIX			6.f
+#else
+    #define TWO         2.0
+	#define FOUR        4.0
+	#define SIX			6.0
 #endif
 
 using namespace std;
@@ -42,11 +49,11 @@ const REAL dx = 0.5;
 
 struct discConstants{
 
-	REAL dx;
-	REAL dx2;
-	REAL dx4;
-	REAL dt;
-	REAL dt_half;
+	REAL dx_i4; // 1/(4*dx)
+	REAL dx2_i; // 1/(dx^2)
+	REAL dx4_i; // 1/(dx^4)
+	REAL dt; // dt
+	REAL dt_half; // dt/2
 };
 
 __constant__ discConstants disc;
@@ -54,31 +61,32 @@ __constant__ discConstants disc;
 __host__
 REAL initFun(REAL xnode)
 {
-	return 2.0 * cos(19.0*xnode*M_PI/128.0);
+	return TWO * cos(19.0*xnode*M_PI/128.0);
 }
 
 __device__
 __forceinline__
 REAL fourthDer(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tRight, REAL tfarRight)
 {
-	return (tfarLeft - 4.f*tLeft + 6.f*tCenter - 4.f*tRight + tfarRight)/(disc.dx4);
+	return disc.dx4_i * (tfarLeft - FOUR*tLeft + SIX*tCenter - FOUR*tRight + tfarRight);
 }
 
 __device__
 __forceinline__
 REAL secondDer(REAL tLeft, REAL tRight, REAL tCenter)
 {
-	return (tLeft + tRight - 2.f*tCenter)/(disc.dx2);
+	return disc.dx2_i * (tLeft + tRight - TWO*tCenter);
 }
 
 __device__
 __forceinline__
 REAL convect(REAL tLeft, REAL tRight)
 {
-	return (tRight*tRight - tLeft*tLeft)/(4.f*disc.dx);
+	return disc.dx_i4 * (tRight*tRight - tLeft*tLeft);
 }
 
 __device__
+__forceinline__
 REAL stutterStep(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tRight, REAL tfarRight)
 {
 	return tCenter - disc.dt_half * (convect(tLeft, tRight) + secondDer(tLeft, tRight, tCenter) +
@@ -86,6 +94,7 @@ REAL stutterStep(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tRight, REAL tfar
 }
 
 __device__
+__forceinline__
 REAL finalStep(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tRight, REAL tfarRight)
 {
 	return (-disc.dt * (convect(tLeft, tRight) + secondDer(tLeft, tRight, tCenter) +
@@ -114,11 +123,13 @@ classicKS(const REAL *ks_in, REAL *ks_out, bool final)
 
 	if (final)
 	{
-		ks_out[gid] += finalStep(ks_in[(gid-2)&lastidx],ks_in[(gid-1)&lastidx],ks_in[gid],ks_in[(gid+1)&lastidx],ks_in[(gid+2)&lastidx]);
+		ks_out[gid] += finalStep(ks_in[(gid-2)&lastidx], ks_in[(gid-1)&lastidx],
+			ks_in[gid], ks_in[(gid+1)&lastidx], ks_in[(gid+2)&lastidx]);
 	}
 	else
 	{
-		ks_out[gid] = stutterStep(ks_in[(gid-2)&lastidx],ks_in[(gid-1)&lastidx],ks_in[gid],ks_in[(gid+1)&lastidx],ks_in[(gid+2)&lastidx]);
+		ks_out[gid] = stutterStep(ks_in[(gid-2)&lastidx], ks_in[(gid-1)&lastidx], ks_in[gid],
+			ks_in[(gid+1)&lastidx], ks_in[(gid+2)&lastidx]);
 	}
 }
 
@@ -527,11 +538,11 @@ int main( int argc, char *argv[])
     }
 
 	discConstants dsc = {
-		dx, //dx
-		dx*dx, //dx^2
-		dx*dx*dx*dx, //dx^4
-		dt, //dt
-		dt*0.5 //dt half
+		1.0/(FOUR*dx),
+		1.0/(dx*dx),
+		1.0/(dx*dx*dx*dx),
+		dt,
+		dt*0.5
 	};
 
 	// Initialize arrays.
@@ -546,7 +557,7 @@ int main( int argc, char *argv[])
 	// Inital condition
 	for (int k = 0; k<dv; k++)
 	{
-		IC[k] = initFun((float)k*dsc.dx);
+		IC[k] = initFun((float)k*dx);
 	}
 
 	// Call out the file before the loop and write out the initial condition.
@@ -555,7 +566,7 @@ int main( int argc, char *argv[])
 
 	// Write out x length and then delta x and then delta t.
 	// First item of each line is timestamp.
-	fwr << lx << " " << dv << " " << dsc.dx << " " << endl << " Velocity " << 0 << " ";
+	fwr << lx << " " << dv << " " << dx << " " << endl << " Velocity " << 0 << " ";
 
 	for (int k = 0; k<dv; k++) fwr << IC[k] << " ";
 

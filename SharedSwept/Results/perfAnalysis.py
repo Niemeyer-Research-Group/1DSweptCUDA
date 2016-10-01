@@ -9,9 +9,13 @@ from datetime import datetime
 from cycler import cycler
 
 #Flags for type of run.
-readin = False
-writeout = True
-savepl = True
+readin = True
+savepl = False
+writeout = False
+
+#Don't want to overwrite with previous version.
+if readin:
+    writout=False
 
 def plotItBar(axi, dat):
 
@@ -32,7 +36,7 @@ gitpath = op.dirname(sourcepath) #Top level of git repo
 plotpath = op.join(op.join(op.join(gitpath,"ResultPlots"),"performance"),"Summary") #Folder for plots
 tablefile = op.join(plotpath,"SweptTestResults.html")
 storepath=op.join(thispath, "allResults.h5")
-thisday = str(datetime.date(datetime.today()))
+thisday = "Saved"+str(datetime.date(datetime.today())).replace("-","_")
 storage = pd.HDFStore(storepath)
 
 #Gather files
@@ -46,6 +50,7 @@ if readin:
     choice = int(raw_input("Choose version by index:"))
     df_result = storage[storage.keys()[choice]]
     midx_name = df_result.index.names
+    headers = df_result.columns.values.tolist()
 
 else:
     files = []
@@ -75,12 +80,13 @@ else:
         ds.set_index(idx_real, inplace=True)
         dfs_all.append(ds)
 
-    #Output all results to html table
+    
     df_result = pd.concat(dfs_all)
 
-
+df_best = df_result.min(axis=1)
 #Plot most common best launch.
 df_best_idx = df_result.idxmin(axis=1)
+
 df_launch = df_best_idx.value_counts()
 df_launch.index = pd.to_numeric(df_launch.index)
 df_launch.sort_index(inplace=True)
@@ -162,7 +168,7 @@ for prob in probs:
 
         cnt += 1
 
-        #Set x and y probably
+        
 
     lg = ax[0].legend()
     lg.remove()
@@ -245,5 +251,6 @@ if writeout:
         if "n" in fl:
             sys.exit(1)
         
-    storage[thisday] = df_result
+    storage.put(thisday,df_result)
     df_result.to_html(tablefile)
+    storage.close()
