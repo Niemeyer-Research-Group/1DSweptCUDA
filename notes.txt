@@ -1,2 +1,0 @@
-http://stackoverflow.com/questions/7875607/how-to-calculate-gflops-of-a-kernel
-
