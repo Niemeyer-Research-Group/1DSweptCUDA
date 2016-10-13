@@ -43,6 +43,13 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 	#define SIX			6.0
 #endif
 
+#define BASE            36
+#define HEIGHT          18
+#define WARPSIZE        32
+#define TPB             256
+#define WPB             8
+#define TWOBASE         72
+
 using namespace std;
 
 const REAL dx = 0.5;
@@ -137,113 +144,149 @@ __global__
 void
 upTriangle(const REAL *IC, REAL *right, REAL *left)
 {
-	extern __shared__ REAL temper[];
+	__shared__ REAL temper[WPB][TWOBASE];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
-	int tid = threadIdx.x; //Block Thread ID
+	int wid = threadIdx.x & 31; //Thread id in warp.
+    int wtag = threadIdx.x/TPB; //Warp id in block.
+    int widx = wid + 2;
+    int widTop = widx+BASE;
 
-	int tid_top = tid + blockDim.x;
+	int leftidx = (((wid>>2) & 1) * BASE) + ((wid>>2)<<1) + (wid & 3) + 2;
+	int rightidx = 30 + (((wid>>2) & 1) * BASE) + (wid & 3) - ((tid>>2)<<1);
 
-	int leftidx = ((tid/4 & 1) * blockDim.x) + (tid/4)*2 + (tid & 3);
-	int rightidx = (blockDim.x - 4) + ((tid/4 & 1) * blockDim.x) + (tid & 3) - (tid/4)*2;
-
-	int step2;
-
+    REAL vel[2];
     //Assign the initial values to the first row in temper, each block
     //has it's own version of temper shared among its threads.
-	temper[tid] = IC[gid];
+	vel[0] = IC[gid];
 
 	__syncthreads();
 
-	if (tid > 1 && tid <(blockDim.x-2))
-	{
-		temper[tid_top] = stutterStep(temper[tid - 2], temper[tid - 1], temper[tid],
-			temper[tid + 1], temper[tid + 2]);
-	}
+    vel[1] = stutterStep(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
+        __shfl_down(vel[0],1),__shfl_down(vel[0],2));
+
+    temper[wtag][widx] = vel[0];
+    temper[wtag][widTop] = vel[1];
 
 	__syncthreads();
 
-	//The initial conditions are timslice 0 so start k at 1.
-	for (int k = 4; k<(blockDim.x/2); k+=4)
-	{
-		if (tid < (blockDim.x-k) && tid >= k)
-		{
-			temper[tid] += finalStep(temper[tid_top - 2], temper[tid_top - 1], temper[tid_top],
-				temper[tid_top + 1], temper[tid_top + 2]);
-		}
+    vel[0] += finalStep(__shfl_up(vel[1],2),__shfl_up(vel[1],1),vel[1],
+        __shfl_down(vel[1],1),__shfl_down(vel[1],2));
 
-		step2 = k + 2;
-		__syncthreads();
+    if (wid > 3 && wid < 28) temper[wtag][widx] = vel[0];
 
-		if (tid < (blockDim.x-step2) && tid >= step2)
-		{
-			temper[tid_top] = stutterStep(temper[tid - 2], temper[tid - 1], temper[tid],
-				temper[tid + 1], temper[tid + 2]);
-		}
+    vel[1] = stutterStep(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
+        __shfl_down(vel[0],1),__shfl_down(vel[0],2));
 
-		//Make sure the threads are synced
-		__syncthreads();
+    if (wid > 5 && wid < 26) temper[wtag][widTop] = vel[1];
 
-	}
+    vel[0] += finalStep(__shfl_up(vel[1],2),__shfl_up(vel[1],1),vel[1],
+        __shfl_down(vel[1],1),__shfl_down(vel[1],2));
+
+    if (wid > 7 && wid < 24) temper[wtag][widx] = vel[0];
+
+    vel[1] = stutterStep(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
+        __shfl_down(vel[0],1),__shfl_down(vel[0],2));
+
+    if (wid > 9 && wid < 22) temper[wtag][widTop] = vel[1];
+
+    vel[0] += finalStep(__shfl_up(vel[1],2),__shfl_up(vel[1],1),vel[1],
+        __shfl_down(vel[1],1),__shfl_down(vel[1],2));
+
+    if (wid > 11 && wid < 20) temper[wtag][widx] = vel[0];
+
+    vel[1] = stutterStep(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
+        __shfl_down(vel[0],1),__shfl_down(vel[0],2));
+
+    if (wid > 13 && wid < 18) temper[wtag][widTop] = vel[1];
+
+	//Make sure the threads are synced
+	__syncthreads();
+
 	//After the triangle has been computed, the right and left shared arrays are
 	//stored in global memory by the global thread ID since (conveniently),
 	//they're the same size as a warp!
-	right[gid] = temper[rightidx];
-	left[gid] = temper[leftidx];
+	right[gid] = temper[wtag][rightidx];
+	left[gid] = temper[wtag][leftidx];
 }
 
 __global__
 void
 downTriangle(REAL *IC, const REAL *right, const REAL *left)
 {
-	extern __shared__ REAL temper[];
+    __shared__ REAL temper[WPB][TWOBASE];
 
-	int gid = blockDim.x * blockIdx.x + threadIdx.x;
-	int tid = threadIdx.x;
-	int tididx = tid + 2;
-	int base = blockDim.x + 4;
-	int height = base/2;
-	int step2;
+	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
+	int wid = threadIdx.x & 31; //Thread id in warp.
+    int wtag = threadIdx.x/TPB; //Warp id in block.
+    int widx = wid + 2;
+    int widTop = wid+BASE;
 
-	int tid_top[5], tid_bottom[5];
-	#pragma unroll
-	for (int k = -2; k<3; k++)
-	{
-		tid_top[k+2] = tididx + k + base;
-		tid_bottom[k+2] = tididx + k;
-	}
+    int leftidx = HEIGHT + (((wid>>2) & 1) * BASE) + (wid & 3) - (4 + ((wid>>2) << 1));
+	int rightidx = HEIGHT + (((wid>>2) & 1) * BASE) + ((wid>>2)<<1) + (wid & 3);
 
-	int leftidx = height + ((tid/4 & 1) * base) + (tid & 3) - (4 + (tid/4) * 2);
-	int rightidx = height + ((tid/4 & 1) * base) + (tid/4)*2 + (tid & 3);
+	temper[wtag][leftidx] = right[gid];
+	temper[wtag][rightidx] = left[gid];
 
-	temper[leftidx] = right[gid];
-	temper[rightidx] = left[gid];
+    //stutter first
+    vel[0] = temper[wtag][widx];
 
-	__syncthreads();
+    __syncthreads();
 
-	for (int k = (height-2); k>0; k-=4)
-	{
-		if (tididx < (base-k) && tididx >= k)
-		{
-			temper[tid_top[2]] = stutterStep(temper[tid_bottom[0]], temper[tid_bottom[1]], temper[tid_bottom[2]],
-				temper[tid_bottom[3]], temper[tid_bottom[4]]);
+    vel[1] = stutterStep(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
+        __shfl_down(vel[0],1),__shfl_down(vel[0],2));
 
-		}
+    if (wid < 14 || wid > 17) vel[1] = temper[wtag][widTop];
 
-		step2 = k-2;
-		__syncthreads();
+    __syncthreads();
 
-		if (tididx < (base-step2) && tididx >= step2)
-		{
-			temper[tididx] += finalStep(temper[tid_top[0]], temper[tid_top[1]], temper[tid_top[2]],
-				temper[tid_top[3]], temper[tid_top[4]]);
-		}
+    vel[0] += finalStep(__shfl_up(vel[1],2),__shfl_up(vel[1],1),vel[1],
+        __shfl_down(vel[1],1),__shfl_down(vel[1],2));
 
-		//Make sure the threads are synced
-		__syncthreads();
-	}
+    if (wid < 12 || wid > 19) vel[0] = temper[wtag][widx];
 
-    IC[gid] = temper[tididx];
+    __syncthreads();
+
+    vel[1] = stutterStep(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
+        __shfl_down(vel[0],1),__shfl_down(vel[0],2));
+
+    if (wid < 10 || wid > 21) vel[1] = temper[wtag][widTop];
+
+    __syncthreads();
+
+    vel[0] += finalStep(__shfl_up(vel[1],2),__shfl_up(vel[1],1),vel[1],
+        __shfl_down(vel[1],1),__shfl_down(vel[1],2));
+
+    if (wid < 8 || wid > 23) vel[0] = temper[wtag][widx];
+
+    __syncthreads();
+
+    vel[1] = stutterStep(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
+        __shfl_down(vel[0],1),__shfl_down(vel[0],2));
+
+    if (wid < 6 || wid > 25) vel[1] = temper[wtag][widTop];
+
+    __syncthreads();
+
+    vel[0] += finalStep(__shfl_up(vel[1],2),__shfl_up(vel[1],1),vel[1],
+        __shfl_down(vel[1],1),__shfl_down(vel[1],2));
+
+    if (wid < 4 || wid > 27) vel[0] = temper[wtag][widx];
+
+    __syncthreads();
+
+    vel[1] = stutterStep(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
+        __shfl_down(vel[0],1),__shfl_down(vel[0],2));
+
+    if (wid < 1 || wid > 30) temper[wtag][widTop] = vel[1];
+
+    __syncthreads();
+
+    //This is where to do it with shared mem.
+    vel[0] += finalStep(temper[wtag][widTop-2],temper[wtag][widTop-1],temper[wtag][widTop],
+        temper[wtag][widTop+1],temper[wtag][widTop+2]);
+
+    IC[gid] = vel[0];
 }
 
 
@@ -251,108 +294,129 @@ __global__
 void
 wholeDiamond(REAL *right, REAL *left)
 {
-	extern __shared__ REAL temper[];
+    __shared__ REAL temper[WPB][TWOBASE];
 
-	int gid = blockDim.x * blockIdx.x + threadIdx.x;
-	int tid = threadIdx.x;
-	int tididx = tid + 2;
-	int base = blockDim.x + 4;
-	int height = base/2;
-	int step2;
+	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
+	int wid = threadIdx.x & 31; //Thread id in warp.
+    int wtag = threadIdx.x/TPB; //Warp id in block.
+    int widx = wid+2;
+    int widxTop = widx+BASE;
 
-	int tid_top[5], tid_bottom[5];
-	#pragma unroll
-	for (int k = -2; k<3; k++)
-	{
-		tid_top[k+2] = tididx + k + base;
-		tid_bottom[k+2] = tididx + k;
-	}
+    int leftidx = HEIGHT + (((wid>>2) & 1) * BASE) + (wid & 3) - (4 + ((wid>>2) << 1));
+	int rightidx = HEIGHT + (((wid>>2) & 1) * BASE) + ((wid>>2)<<1) + (wid & 3);
 
-	int leftidx = height + ((tid/4 & 1) * base) + (tid & 3) - (4 + (tid/4) * 2);
-	int rightidx = height + ((tid/4 & 1) * base) + (tid/4)*2 + (tid & 3);
+	temper[wtag][leftidx] = right[gid];
+	temper[wtag][rightidx] = left[gid];
 
-	temper[leftidx] = right[gid];
-	temper[rightidx] = left[gid];
+    //stutter first
+    vel[0] = temper[wtag][widx];
+
+    __syncthreads();
+
+    vel[1] = stutterStep(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
+        __shfl_down(vel[0],1),__shfl_down(vel[0],2));
+
+    if (wid < 14 || wid > 17) vel[1] = temper[wtag][widTop];
+
+    __syncthreads();
+
+    vel[0] += finalStep(__shfl_up(vel[1],2),__shfl_up(vel[1],1),vel[1],
+        __shfl_down(vel[1],1),__shfl_down(vel[1],2));
+
+    if (wid < 12 || wid > 19) vel[0] = temper[wtag][widx];
+
+    __syncthreads();
+
+    vel[1] = stutterStep(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
+        __shfl_down(vel[0],1),__shfl_down(vel[0],2));
+
+    if (wid < 10 || wid > 21) vel[1] = temper[wtag][widTop];
+
+    __syncthreads();
+
+    vel[0] += finalStep(__shfl_up(vel[1],2),__shfl_up(vel[1],1),vel[1],
+        __shfl_down(vel[1],1),__shfl_down(vel[1],2));
+
+    if (wid < 8 || wid > 23) vel[0] = temper[wtag][widx];
+
+    __syncthreads();
+
+    vel[1] = stutterStep(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
+        __shfl_down(vel[0],1),__shfl_down(vel[0],2));
+
+    if (wid < 6 || wid > 25) vel[1] = temper[wtag][widTop];
+
+    __syncthreads();
+
+    vel[0] += finalStep(__shfl_up(vel[1],2),__shfl_up(vel[1],1),vel[1],
+        __shfl_down(vel[1],1),__shfl_down(vel[1],2));
+
+    if (wid < 4 || wid > 27) vel[0] = temper[wtag][widx];
+
+    __syncthreads();
+
+    vel[1] = stutterStep(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
+        __shfl_down(vel[0],1),__shfl_down(vel[0],2));
+
+    if (wid < 1 || wid > 30) temper[wtag][widTop] = vel[1];
+
+    __syncthreads();
+
+    //This is where to do it with shared mem.
+    vel[0] += finalStep(temper[wtag][widTop-2],temper[wtag][widTop-1],temper[wtag][widTop],
+        temper[wtag][widTop+1],temper[wtag][widTop+2]);
+
+    leftidx = (((wid>>2) & 1) * BASE) + ((wid>>2)<<1) + (wid & 3) + 2;
+    rightidx = 30 + (((wid>>2) & 1) * BASE) + (wid & 3) - ((tid>>2)<<1);
+
+    __syncthreads();
+
+    vel[1] = stutterStep(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
+        __shfl_down(vel[0],1),__shfl_down(vel[0],2));
+
+    temper[wtag][widx] = vel[0];
+    temper[wtag][widTop] = vel[1];
 
 	__syncthreads();
 
-	for (int k = (height-2); k>0; k-=4)
-	{
-		if (tididx < (base-k) && tididx >= k)
-		{
-			temper[tid_top[2]] = stutterStep(temper[tid_bottom[0]], temper[tid_bottom[1]], temper[tid_bottom[2]],
-				temper[tid_bottom[3]], temper[tid_bottom[4]]);
-		}
+    vel[0] += finalStep(__shfl_up(vel[1],2),__shfl_up(vel[1],1),vel[1],
+        __shfl_down(vel[1],1),__shfl_down(vel[1],2));
 
-		step2 = k-2;
-		__syncthreads();
+    if (wid > 3 && wid < 28) temper[wtag][widx] = vel[0];
 
-		if (tididx < (base-step2) && tididx >= step2)
-		{
-			temper[tididx] += finalStep(temper[tid_top[0]], temper[tid_top[1]], temper[tid_top[2]],
-				temper[tid_top[3]], temper[tid_top[4]]);
-		}
+    vel[1] = stutterStep(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
+        __shfl_down(vel[0],1),__shfl_down(vel[0],2));
 
-		//Make sure the threads are synced
-		__syncthreads();
-	}
+    if (wid > 5 && wid < 26) temper[wtag][widTop] = vel[1];
 
-	//Shift the last row to justify it at 0.
-	REAL trade = temper[tididx];
+    vel[0] += finalStep(__shfl_up(vel[1],2),__shfl_up(vel[1],1),vel[1],
+        __shfl_down(vel[1],1),__shfl_down(vel[1],2));
+
+    if (wid > 7 && wid < 24) temper[wtag][widx] = vel[0];
+
+    vel[1] = stutterStep(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
+        __shfl_down(vel[0],1),__shfl_down(vel[0],2));
+
+    if (wid > 9 && wid < 22) temper[wtag][widTop] = vel[1];
+
+    vel[0] += finalStep(__shfl_up(vel[1],2),__shfl_up(vel[1],1),vel[1],
+        __shfl_down(vel[1],1),__shfl_down(vel[1],2));
+
+    if (wid > 11 && wid < 20) temper[wtag][widx] = vel[0];
+
+    vel[1] = stutterStep(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
+        __shfl_down(vel[0],1),__shfl_down(vel[0],2));
+
+    if (wid > 13 && wid < 18) temper[wtag][widTop] = vel[1];
+
+	//Make sure the threads are synced
 	__syncthreads();
-	temper[tid] = trade;
-	__syncthreads();
-    //-------------------TOP PART------------------------------------------
-
-	leftidx = ((tid/4 & 1) * blockDim.x) + (tid/4)*2 + (tid & 3);
-	rightidx = (blockDim.x - 4) + ((tid/4 & 1) * blockDim.x) + (tid & 3) - (tid/4)*2;
-
-	#pragma unroll
-	for (int k = -2; k<3; k++)
-	{
-		tid_top[k+2] = tid + k + blockDim.x;
-		tid_bottom[k+2] = tid + k;
-	}
-
-	__syncthreads();
-
-	if (tid > 1 && tid <(blockDim.x-2))
-	{
-		temper[tid_top[2]] = stutterStep(temper[tid_bottom[0]], temper[tid_bottom[1]], temper[tid_bottom[2]],
-			temper[tid_bottom[3]], temper[tid_bottom[4]]);
-	}
-
-	__syncthreads();
-
-	//The initial conditions are timslice 0 so start k at 1.
-	for (int k = 4; k<(blockDim.x/2); k+=4)
-	{
-		if (tid < (blockDim.x-k) && tid >= k)
-		{
-			temper[tid] += finalStep(temper[tid_top[0]], temper[tid_top[1]], temper[tid_top[2]],
-				temper[tid_top[3]], temper[tid_top[4]]);
-		}
-
-		step2 = k+2;
-		__syncthreads();
-
-		if (tid < (blockDim.x-step2) && tid >= step2)
-		{
-			temper[tid_top[2]] = stutterStep(temper[tid_bottom[0]], temper[tid_bottom[1]], temper[tid_bottom[2]],
-				temper[tid_bottom[3]], temper[tid_bottom[4]]);
-		}
-
-		//Make sure the threads are synced
-		__syncthreads();
-
-	}
 
 	//After the triangle has been computed, the right and left shared arrays are
 	//stored in global memory by the global thread ID since (conveniently),
 	//they're the same size as a warp!
-	right[gid] = temper[rightidx];
-	left[gid] = temper[leftidx];
-
+	right[gid] = temper[wtag][rightidx];
+	left[gid] = temper[wtag][leftidx];
 }
 
 double
