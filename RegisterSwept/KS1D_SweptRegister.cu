@@ -18,12 +18,13 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 */
 
 //COMPILE LINE!
-// nvcc -o ./bin/KSOut KS1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -restrict -Xcompiler -fopenmp --ptxas-options=-v
+// nvcc -o ./bin/KSRegOut KS1D_SweptRegister.cu -gencode arch=compute_35,code=sm_35 -lm -restrict --ptxas-options=-v
 
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include <cuda_runtime.h>
 #include <device_functions.h>
+#include <vector_types.h>
 
 #include <iostream>
 #include <ostream>
@@ -46,7 +47,6 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 #define BASE            36
 #define HEIGHT          18
 #define WARPSIZE        32
-#define TPB             256
 #define WPB             8
 #define TWOBASE         72
 
@@ -120,40 +120,22 @@ swapKernel(const REAL *passing_side, REAL *bin, int direction)
 
 }
 
-//Classic
-__global__
-void
-classicKS(const REAL *ks_in, REAL *ks_out, bool final)
-{
-    int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
-    int lastidx = ((blockDim.x*gridDim.x)-1);
-
-	if (final)
-	{
-		ks_out[gid] += finalStep(ks_in[(gid-2)&lastidx], ks_in[(gid-1)&lastidx],
-			ks_in[gid], ks_in[(gid+1)&lastidx], ks_in[(gid+2)&lastidx]);
-	}
-	else
-	{
-		ks_out[gid] = stutterStep(ks_in[(gid-2)&lastidx], ks_in[(gid-1)&lastidx], ks_in[gid],
-			ks_in[(gid+1)&lastidx], ks_in[(gid+2)&lastidx]);
-	}
-}
-
 __global__
 void
 upTriangle(const REAL *IC, REAL *right, REAL *left)
 {
 	__shared__ REAL temper[WPB][TWOBASE];
 
-	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
-	int wid = threadIdx.x & 31; //Thread id in warp.
-    int wtag = threadIdx.x/TPB; //Warp id in block.
+	int gid = blockDim.x*blockIdx.x*blockDim.y + threadIdx.y*blockDim.x +
+        threadIdx.x; //Global Thread ID
+
+	int wid = threadIdx.x; //Thread id in warp.
+    int wtag = threadIdx.y; //Warp id in block.
     int widx = wid + 2;
     int widTop = widx+BASE;
 
 	int leftidx = (((wid>>2) & 1) * BASE) + ((wid>>2)<<1) + (wid & 3) + 2;
-	int rightidx = 30 + (((wid>>2) & 1) * BASE) + (wid & 3) - ((tid>>2)<<1);
+	int rightidx = 30 + (((wid>>2) & 1) * BASE) + (wid & 3) - ((wid>>2)<<1);
 
     REAL vel[2];
     //Assign the initial values to the first row in temper, each block
@@ -216,9 +198,11 @@ downTriangle(REAL *IC, const REAL *right, const REAL *left)
 {
     __shared__ REAL temper[WPB][TWOBASE];
 
-	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
-	int wid = threadIdx.x & 31; //Thread id in warp.
-    int wtag = threadIdx.x/TPB; //Warp id in block.
+    int gid = blockDim.x*blockIdx.x*blockDim.y + threadIdx.y*blockDim.x +
+        threadIdx.x; //Global Thread ID
+
+	int wid = threadIdx.x; //Thread id in warp.
+    int wtag = threadIdx.y; //Warp id in block.
     int widx = wid + 2;
     int widTop = wid+BASE;
 
@@ -227,6 +211,7 @@ downTriangle(REAL *IC, const REAL *right, const REAL *left)
 
 	temper[wtag][leftidx] = right[gid];
 	temper[wtag][rightidx] = left[gid];
+    REAL vel[2];
 
     //stutter first
     vel[0] = temper[wtag][widx];
@@ -289,24 +274,26 @@ downTriangle(REAL *IC, const REAL *right, const REAL *left)
     IC[gid] = vel[0];
 }
 
-
 __global__
 void
 wholeDiamond(REAL *right, REAL *left)
 {
     __shared__ REAL temper[WPB][TWOBASE];
 
-	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
-	int wid = threadIdx.x & 31; //Thread id in warp.
-    int wtag = threadIdx.x/TPB; //Warp id in block.
+    int gid = blockDim.x*blockIdx.x*blockDim.y + threadIdx.y*blockDim.x +
+        threadIdx.x; //Global Thread ID
+
+	int wid = threadIdx.x; //Thread id in warp.
+    int wtag = threadIdx.y; //Warp id in block.
     int widx = wid+2;
-    int widxTop = widx+BASE;
+    int widTop = widx+BASE;
 
     int leftidx = HEIGHT + (((wid>>2) & 1) * BASE) + (wid & 3) - (4 + ((wid>>2) << 1));
 	int rightidx = HEIGHT + (((wid>>2) & 1) * BASE) + ((wid>>2)<<1) + (wid & 3);
 
 	temper[wtag][leftidx] = right[gid];
 	temper[wtag][rightidx] = left[gid];
+    REAL vel[2];
 
     //stutter first
     vel[0] = temper[wtag][widx];
@@ -367,7 +354,7 @@ wholeDiamond(REAL *right, REAL *left)
         temper[wtag][widTop+1],temper[wtag][widTop+2]);
 
     leftidx = (((wid>>2) & 1) * BASE) + ((wid>>2)<<1) + (wid & 3) + 2;
-    rightidx = 30 + (((wid>>2) & 1) * BASE) + (wid & 3) - ((tid>>2)<<1);
+    rightidx = 30 + (((wid>>2) & 1) * BASE) + (wid & 3) - ((wid>>2)<<1);
 
     __syncthreads();
 
@@ -419,53 +406,9 @@ wholeDiamond(REAL *right, REAL *left)
 	left[gid] = temper[wtag][leftidx];
 }
 
-double
-classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t_end,
-    REAL *IC, REAL *T_f, const REAL freq, ofstream &fwr)
-{
-    REAL *dks_in, *dks_out;
-
-    cudaMalloc((void **)&dks_in, sizeof(REAL)*dv);
-    cudaMalloc((void **)&dks_out, sizeof(REAL)*dv);
-
-    // Copy the initial conditions to the device array.
-    cudaMemcpy(dks_in,IC,sizeof(REAL)*dv,cudaMemcpyHostToDevice);
-
-    double t_eq = 0.0;
-    double twrite = freq;
-
-    while (t_eq <= t_end)
-    {
-        classicKS <<< bks,tpb >>> (dks_in, dks_out, false);
-        classicKS <<< bks,tpb >>> (dks_out, dks_in, true);
-        t_eq += dt;
-
-        if (t_eq > twrite)
-        {
-            cudaMemcpy(T_f, dks_in, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
-
-			fwr << " Velocity " << t_eq << " ";
-            for (int k = 0; k<dv; k++)
-            {
-                fwr << T_f[k] << " ";
-            }
-            fwr << endl;
-
-            twrite += freq;
-        }
-    }
-
-    cudaMemcpy(T_f, dks_in, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
-
-    cudaFree(dks_in);
-    cudaFree(dks_out);
-
-    return t_eq;
-}
-
 //The host routine.
 double
-sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
+sweptWrapper(const int bks, const int dv, REAL dt, const REAL t_end,
 	REAL *IC, REAL *T_f, const REAL freq, ofstream &fwr)
 {
 
@@ -477,25 +420,27 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
 
 	// Copy the initial conditions to the device array.
 	cudaMemcpy(d_IC,IC,sizeof(REAL)*dv,cudaMemcpyHostToDevice);
+
+    dim3 tpb(WARPSIZE, WPB);
+    cout << tpb.x << " " << tpb.y << " " << tpb.z << endl;
+
+    const int tpbSwap = WARPSIZE*WPB;
 	//Start the counter and start the clock.
 	//
 	//Every other step is a full timestep and each cycle is half tpb steps.
-	const double t_fullstep = 0.25 * dt * (double)tpb;
+	const double t_fullstep = 0.25 * dt * (double)WARPSIZE;
 	double twrite = freq;
 
-	const size_t smem1 = 2*tpb*sizeof(REAL);
-	const size_t smem2 = (2*tpb+8)*sizeof(REAL);
+	upTriangle <<< bks,tpb >>> (d_IC,d_right,d_left);
 
-	upTriangle <<< bks,tpb,smem1 >>> (d_IC,d_right,d_left);
-
-	swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
-	swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
+	swapKernel <<< bks,tpbSwap >>> (d_right, d_bin, 1);
+	swapKernel <<< bks,tpbSwap >>> (d_bin, d_right, 0);
 
 	//Split
-	wholeDiamond <<< bks,tpb,smem2 >>> (d_right,d_left);
+	wholeDiamond <<< bks,tpb >>> (d_right,d_left);
 
-	swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-	swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+	swapKernel <<< bks,tpbSwap >>> (d_left, d_bin, -1);
+	swapKernel <<< bks,tpbSwap >>> (d_bin, d_left, 0);
 
 	double t_eq = t_fullstep;
 
@@ -503,25 +448,24 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
 	while(t_eq < t_end)
 	{
 
-		wholeDiamond <<< bks,tpb,smem2 >>> (d_right,d_left);
+		wholeDiamond <<< bks,tpb >>> (d_right,d_left);
 
-		swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
-		swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
+		swapKernel <<< bks,tpbSwap >>> (d_right, d_bin, 1);
+		swapKernel <<< bks,tpbSwap >>> (d_bin, d_right, 0);
 
 		//So it always ends on a left pass since the down triangle is a right pass.
 
 		//Split
-		wholeDiamond <<< bks,tpb,smem2 >>> (d_right,d_left);
+		wholeDiamond <<< bks,tpb >>> (d_right,d_left);
 
-		swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-		swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+		swapKernel <<< bks,tpbSwap >>> (d_left, d_bin, -1);
+		swapKernel <<< bks,tpbSwap >>> (d_bin, d_left, 0);
 
 		t_eq += t_fullstep;
 
-
 	 	if (t_eq > twrite)
 		{
-			downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
+			downTriangle <<< bks,tpb >>>(d_IC,d_right,d_left);
 
 			cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
 
@@ -531,16 +475,16 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
 
 			fwr << endl;
 
-			upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
+			upTriangle <<< bks,tpb >>>(d_IC,d_right,d_left);
 
-			swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
-			swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
+			swapKernel <<< bks,tpbSwap >>> (d_right, d_bin, 1);
+			swapKernel <<< bks,tpbSwap >>> (d_bin, d_right, 0);
 
 			//Split
-			wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
+			wholeDiamond <<< bks,tpb >>>(d_right,d_left);
 
-			swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-			swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+			swapKernel <<< bks,tpbSwap >>> (d_left, d_bin, -1);
+			swapKernel <<< bks,tpbSwap >>> (d_bin, d_left, 0);
 
 			t_eq += t_fullstep;
 
@@ -549,7 +493,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
 
 	}
 
-	downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
+	downTriangle <<< bks,tpb >>>(d_IC,d_right,d_left);
 
 	cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
 
@@ -565,10 +509,10 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
 int main( int argc, char *argv[])
 {
 
-	if (argc < 9)
+	if (argc < 6)
 	{
-		cout << "The Program takes 9 inputs, #Divisions, #Threads/block, deltat, finish time, output frequency..." << endl;
-        cout << "Classic/Swept, CPU sharing Y/N (Ignored), Variable Output File, Timing Output File (optional)" << endl;
+		cout << "The Program takes 9 inputs, #Divisions, deltat, finish time, output frequency..." << endl;
+        cout << "Variable Output File, Timing Output File (optional)" << endl;
 		exit(-1);
 	}
 
@@ -577,29 +521,20 @@ int main( int argc, char *argv[])
 	if (sizeof(REAL)>6) cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
 
 	const int dv = atoi(argv[1]); //Number of spatial points
-	const int tpb = atoi(argv[2]); //Threads per Block
-    const REAL dt = atof(argv[3]); //delta T timestep
-	const float tf = atof(argv[4]); //Finish time
-    const float freq = atof(argv[5]); //Output frequency
-    const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
+    const REAL dt = atof(argv[2]); //delta T timestep
+	const float tf = atof(argv[3]); //Finish time
+    const float freq = atof(argv[4]); //Output frequency
     // const int tst = atoi(argv[7]); CPU/GPU share
-    const int bks = dv/tpb; //The number of blocks
+    const int bks = dv/(WARPSIZE*WPB); //The number of blocks
 	const float lx = dv*dx;
 	char const *prec;
 	prec = (sizeof(REAL)<6) ? "Single": "Double";
 
-	cout << "KS --- #Blocks: " << bks << " | Length: " << lx << " | Precision: " << prec << " | dt/dx: " << dt/dx << endl;
+	cout << "KS --- #Blocks: " << bks << " | Length: " << lx << " | Precision: " << prec << " | dt/dx: " << dt/dx << " argc: " << argc << endl;
 
 	//Conditions for main input.  Unit testing kinda.
 	//dv and tpb must be powers of two.  dv must be larger than tpb and divisible by
 	//tpb.
-
-	if ((dv & (tpb-1) !=0) || (tpb&31) != 0)
-    {
-        cout << "INVALID NUMERIC INPUT!! "<< endl;
-        cout << "2nd ARGUMENT MUST BE A POWER OF TWO >= 32 AND FIRST ARGUMENT MUST BE DIVISIBLE BY SECOND" << endl;
-        exit(-1);
-    }
 
 	discConstants dsc = {
 		1.0/(FOUR*dx),
@@ -626,7 +561,7 @@ int main( int argc, char *argv[])
 
 	// Call out the file before the loop and write out the initial condition.
 	ofstream fwr;
-	fwr.open(argv[8],ios::trunc);
+	fwr.open(argv[5],ios::trunc);
 
 	// Write out x length and then delta x and then delta t.
 	// First item of each line is timestamp.
@@ -647,18 +582,8 @@ int main( int argc, char *argv[])
 	cudaEventCreate( &stop );
 	cudaEventRecord( start, 0);
 
-	// Call the kernels until you reach the iteration limit.
-	double tfm;
-	if (scheme)
-    {
-		cout << "Swept" << endl;
-		tfm = sweptWrapper(bks, tpb, dv, dsc.dt, tf, IC, T_final, freq, fwr);
-	}
-	else
-	{
-		cout << "Classic" << endl;
-		tfm = classicWrapper(bks, tpb, dv, dsc.dt, tf, IC, T_final, freq, fwr);
-	}
+	cout << "Swept" << endl;
+	double tfm = sweptWrapper(bks, dv, dsc.dt, tf, IC, T_final, freq, fwr);
 
 	// Show the time and write out the final condition.
 	cudaEventRecord(stop, 0);
@@ -674,11 +599,11 @@ int main( int argc, char *argv[])
     cout << n_timesteps << " timesteps" << endl;
 	cout << "Averaged " << per_ts << " microseconds (us) per timestep" << endl;
 
-    if (argc>8)
+    if (argc>6)
     {
         ofstream ftime;
-        ftime.open(argv[9],ios::app);
-    	ftime << dv << "\t" << tpb << "\t" << per_ts << endl;
+        ftime.open(argv[6],ios::app);
+    	ftime << dv << "\t" << per_ts << endl;
     	ftime.close();
     }
 

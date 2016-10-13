@@ -196,7 +196,8 @@ if __name__ == '__main__':
         dx = L/div
         tf = .5
         freq = .15
-        dt = [.00001*k for k in range(1,5)]
+        dt = [.0000001*k for k in range(1,5)]
+        print tf/dt[1]
         dt_dx = [k/dx for k in dt]
         err = np.empty([4,4])
         for pr in prec:
@@ -219,6 +220,7 @@ if __name__ == '__main__':
                 exeStr = shlex.split(execstr)
                 proc = sp.Popen(exeStr)
                 sp.Popen.wait(proc)
+                print i, "times"
                 lbl.append("{:.4f}     {:.4f}".format(dts,dt_dx[i]))
                 f = open(Varfile)
                 fin = tuple(f)

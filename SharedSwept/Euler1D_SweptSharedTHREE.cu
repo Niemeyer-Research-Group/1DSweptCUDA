@@ -79,8 +79,6 @@ struct dimensions {
     int hts[5];
 };
 
-
-
 dimensions dimz;
 //dbd is the boundary condition in device constant memory.
 __constant__ REALthree dbd[2]; //0 is left 1 is right.
@@ -530,144 +528,6 @@ wholeDiamond(REALthree *right, REALthree *left, bool full)
 
 }
 
-//Full refers to whether or not there is a node run on the CPU.
-__global__
-void
-wholeDiamondFull(REALthree *right, REALthree *left)
-{
-
-    extern __shared__ REALthree temper[];
-
-	int gid = blockDim.x * blockIdx.x + threadIdx.x;
-	int tid = threadIdx.x;
-	int tididx = tid + 2;
-    int tidxTop = tididx + dimens.base;
-
-    const char4 truth = {gid == 0, gid == 1, gid == dimens.idxend_1, gid == dimens.idxend};
-
-    readIn(temper, right, left, tid, gid);
-
-    __syncthreads();
-
-    int k = dimens.hts[0];
-
-    if (tididx < (dimens.base-dimens.hts[2]) && tididx >= dimens.hts[2])
-    {
-        temper[tidxTop] = eulerStutterStep(temper, tididx, truth.y, truth.z);
-    }
-
-    __syncthreads();
-
-    while(k>4)
-    {
-        if (tididx < (dimens.base-k) && tididx >= k)
-        {
-            temper[tididx] += eulerFinalStep(temper, tidxTop, truth.y, truth.z);
-        }
-
-        k -= 2;
-        __syncthreads();
-
-        if (tididx < (dimens.base-k) && tididx >= k)
-        {
-            temper[tidxTop] = eulerStutterStep(temper, tididx, truth.y, truth.z);
-        }
-
-        k -= 2;
-        __syncthreads();
-    }
-
-    // -------------------TOP PART------------------------------------------
-
-    if (!truth.w  &&  !truth.x)
-    {
-        temper[tididx] += eulerFinalStep(temper, tidxTop, truth.y, truth.z);
-    }
-
-    __syncthreads();
-
-    if (tididx > 3 && tididx <(dimens.base-4))
-	{
-        temper[tidxTop] = eulerStutterStep(temper, tididx, truth.y, truth.z);
-	}
-
-    k=6;
-	__syncthreads();
-
-	while(k<dimens.hts[4])
-	{
-		if (tididx < (dimens.base-k) && tididx >= k)
-		{
-            temper[tididx] += eulerFinalStep(temper, tidxTop, truth.y, truth.z);
-        }
-
-        k+=2;
-        __syncthreads();
-
-        if (tididx < (dimens.base-k) && tididx >= k)
-        {
-            temper[tidxTop] = eulerStutterStep(temper, tididx, truth.y, truth.z);
-		}
-
-		k+=2;
-		__syncthreads();
-
-	}
-
-    writeOut(temper, right, left, tid, gid);
-
-}
-
-//Full refers to whether or not there is a node run on the CPU.
-__global__
-void
-wholeDiamondPart(REALthree *right, REALthree *left)
-{
-
-    extern __shared__ REALthree temper[];
-
-	int gid = blockDim.x * blockIdx.x + threadIdx.x + blockDim.x;
-	int tid = threadIdx.x;
-	int tididx = tid + 2;
-    int tidxTop = tididx + dimens.base;
-
-
-    readIn(temper, right, left, tid, gid);
-
-    __syncthreads();
-
-    int k = dimens.hts[0]-2;
-
-    if (tid < dimens.hts[4] && tid >= dimens.hts[0])
-    {
-        temper[tidxTop] = eulerStutterStep(temper, tididx, false, false);
-    }
-
-    __syncthreads();
-
-    while(abs(k) < dimens.hts[0])
-    {
-        if (tid < (blockDim.x - abs(k)) && tid >= abs(k))
-        {
-            temper[tididx] += eulerFinalStep(temper, tidxTop, false, false);
-        }
-
-        k -= 2;
-        __syncthreads();
-
-        if (tid < (blockDim.x - abs(k)) && tid >= abs(k))
-        {
-            temper[tidxTop] = eulerStutterStep(temper, tididx,false, false);
-        }
-
-        k -= 2;
-        __syncthreads();
-    }
-
-    writeOut(temper, right, left, tid, gid);
-
-}
-
 
 //Split one is always first.
 __global__
@@ -946,9 +806,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
 
         //Split Diamond Begin------
 
-        omp_set_nested(1);
-
-        wholeDiamondPart <<< bks-1,tpb,smem,st1 >>>(d_right,d_left);
+        wholeDiamond <<< bks-1,tpb,smem >>>(d_right, d_left, false);
 
         cudaMemcpyAsync(h_left, d_left, tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st2);
         cudaMemcpyAsync(h_right, d_right , tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st3);
@@ -956,11 +814,12 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
         cudaStreamSynchronize(st2);
         cudaStreamSynchronize(st3);
 
+        // CPU Part Start -----
+
         time0 = omp_get_wtime( );
 
         #pragma omp parallel for num_threads(8)
         for (int k = 0; k<tpb; k++)  readIn(tmpr, h_right, h_left, k, k);
-
 
         CPU_diamond(tmpr, htcpu);
 
@@ -977,24 +836,31 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
         cudaMemcpyAsync(d_right, h_right, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st2);
         cudaMemcpyAsync(d_left, h_left, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st3);
 
+        // CPU Part End -----
+
+        // Automatic synchronization with memcpy in default stream
         swapKernel <<< bks,tpb >>> (d_left, d_IC, -1);
         swapKernel <<< bks,tpb >>> (d_IC, d_left, 0);
 
         while(t_eq < t_end)
         {
 
-            wholeDiamondFull <<< bks,tpb,smem >>>(d_right,d_left);
+            wholeDiamond <<< bks,tpb,smem >>>(d_right, d_left, true);
 
             swapKernel <<< bks,tpb >>> (d_right, d_IC, 1);
             swapKernel <<< bks,tpb >>> (d_IC, d_right, 0);
 
-            wholeDiamondPart <<< bks-1,tpb,smem,st1 >>>(d_right,d_left);
+            //Split Diamond Begin------
+
+            wholeDiamond <<< bks-1,tpb,smem >>>(d_right, d_left, false);
 
             cudaMemcpyAsync(h_right, d_right, tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st2);
             cudaMemcpyAsync(h_left, d_left , tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st3);
 
             cudaStreamSynchronize(st2);
             cudaStreamSynchronize(st3);
+
+            // CPU Part End -----
 
             time0 = omp_get_wtime( );
 
@@ -1019,6 +885,10 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
             cudaMemcpyAsync(d_right, h_right, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st2);
             cudaMemcpyAsync(d_left, h_left, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st3);
 
+
+            // CPU Part End -----
+
+            // Automatic synchronization with memcpy in default stream
             swapKernel <<< bks,tpb >>> (d_left, d_IC, -1);
             swapKernel <<< bks,tpb >>> (d_IC, d_left, 0);
 
@@ -1066,7 +936,6 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
 
         cudaFreeHost(h_right);
         cudaFreeHost(h_left);
-        // cudaFreeHost(tmpr);
         cudaStreamDestroy(st1);
         cudaStreamDestroy(st2);
         cudaStreamDestroy(st3);
@@ -1220,8 +1089,6 @@ int main( int argc, char *argv[] )
 	cudaHostAlloc((void **) &T_final, dv*sizeof(REALthree), cudaHostAllocDefault);
 
     cudaFree(d_temp);
-
-    for(int k=0; k<5; k++) printf("hts k : %d\n",dimz.hts[k]);
 
     // IC = (REALthree *) malloc(dv*sizeof(REALthree));
     // T_final = (REALthree *) malloc(dv*sizeof(REALthree));
