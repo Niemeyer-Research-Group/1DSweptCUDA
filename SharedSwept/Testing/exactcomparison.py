@@ -69,6 +69,8 @@ if __name__ == '__main__':
         "SweptCPUshare"
     ]
 
+    pltsave = False
+
     timestr = Fname[w] + " " + SCHEME[sch]
     exactpath = os.path.abspath(os.path.dirname(__file__))
     mainpath = os.path.dirname(exactpath)
@@ -82,10 +84,10 @@ if __name__ == '__main__':
     binpath = os.path.join(mainpath,'bin')
     myplotpath = os.path.join(plotpath,Fname[w])
 
-    div = 2048.0
-    bks = 64
+    div = float(2**11)
+    bks = 128
     color = ['r','b','k','g']
-    pts = range(0,int(div),50)
+    pts = range(0,int(div),int(div)/50)
 
     #Heat
     if not w:
@@ -186,18 +188,21 @@ if __name__ == '__main__':
             ax2.set_xlim([0,xax[-1]])
 
             plt.tight_layout()
-            plt.savefig(myplot, dpi=1000, bbox_inches="tight")
-            #plt.show()
+
+            if pltsave:
+                plt.savefig(myplot, dpi=1000, bbox_inches="tight")
+
+            plt.show()
+
 
    #Euler territory
     else:
 
         L = 1.0
         dx = L/div
-        tf = .5
-        freq = .15
-        dt = [.0000001*k for k in range(1,5)]
-        print tf/dt[1]
+        tf = .4
+        freq = .11
+        dt = [.000001*k for k in range(1,5)]
         dt_dx = [k/dx for k in dt]
         err = np.empty([4,4])
         for pr in prec:
@@ -248,13 +253,11 @@ if __name__ == '__main__':
             err = pd.DataFrame(err)
             err = err.set_index(0)
             head = ['dt','tf','Error']
-	    print err
             typ = err.index.get_level_values(0).unique()
             by_var = []
 
             for ty in typ:
                 by_var.append(err.xs(ty))
-
 
             fig, ax = plt.subplots(2,2,figsize=(14.,8.))
             ax = ax.ravel()
@@ -279,7 +282,9 @@ if __name__ == '__main__':
             plt.suptitle(plotstr + ' | {0} spatial points                    {1}'.format(int(div)," "), fontsize="medium")
             plt.tight_layout(pad=0.2, w_pad=0.75, h_pad=1.5)
             plt.subplots_adjust(bottom=0.08, right=0.82, top=0.92)
-            plt.savefig(myplotE, dpi=1000, bbox_inches="tight")
+
+            if pltsave:
+                plt.savefig(myplotE, dpi=1000, bbox_inches="tight")
             #plt.show()
 
             simF = pd.DataFrame(dMain)
@@ -322,6 +327,7 @@ if __name__ == '__main__':
             fig2.legend(hand, lbl, 'upper_right', fontsize="medium")
             plt.tight_layout(pad=0.2, w_pad=0.75, h_pad=1.5)
             plt.subplots_adjust(bottom=0.08, right=0.82, top=0.92)
-
-            plt.savefig(myplotR, dpi=1000, bbox_inches="tight")
             plt.show()
+
+            if pltsave:
+                plt.savefig(myplotR, dpi=1000, bbox_inches="tight")
