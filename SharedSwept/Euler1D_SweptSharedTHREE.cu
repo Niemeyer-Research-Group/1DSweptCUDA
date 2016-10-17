@@ -3,7 +3,6 @@ swept rule for Partial differential equations in one dimension.  This research
 is a collaborative effort between teams at MIT, Oregon State University, and
 Purdue University.
 
-
 Copyright (C) 2015 Kyle Niemeyer, niemeyek@oregonstate.edu AND
 Daniel Magee, mageed@oregonstate.edu
 

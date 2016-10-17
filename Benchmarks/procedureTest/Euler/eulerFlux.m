@@ -13,8 +13,8 @@ pR = press(cvR);
 pL = press(cvL);
 
 halfstate(1) = rRsqrt*rLsqrt;
-halfstate(2) = (rRsqrt*uR + rLsqrt*uR)/(rRsqrt+rLsqrt);
-halfstate(3) = (rRsqrt*eR + rLsqrt*eR)/(rRsqrt+rLsqrt)*halfstate(1);
+halfstate(2) = (rRsqrt*uR + rLsqrt*uL)/(rRsqrt+rLsqrt);
+halfstate(3) = (rRsqrt*eR + rLsqrt*eL)/(rRsqrt+rLsqrt)*halfstate(1);
 
 halfstate2 = halfstate.*[1, halfstate(1), 1];
 pH = press(halfstate2);
