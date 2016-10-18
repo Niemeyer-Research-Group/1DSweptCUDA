@@ -1,9 +1,9 @@
-function [ cvNow ] = limitor( cvCurrent, cvOther, pRatio, cvR )
+function [ cvNow ] = limitor( cvCurrent, cvOther, pRatio )
 %limitor
 
 if (~isnan(pRatio) && pRatio > 0)
-    fact = min([0.5*cvR; 0.5, 0.5, 0.5]);
-    cvNow = cvCurrent + fact' * (cvOther - cvCurrent);
+    fact = min([pRatio*0.5, 0.5]);
+    cvNow = cvCurrent + fact * (cvOther - cvCurrent);
 else
     cvNow = cvCurrent;
 end

@@ -188,8 +188,8 @@ eulerFlux(REALthree cvLeft, REALthree cvRight)
     halfState.y =  (rhoLeftsqrt*uLeft + rhoRightsqrt*uRight)/halfDenom;
     halfState.z =  (rhoLeftsqrt*eLeft + rhoRightsqrt*eRight)/halfDenom;
 
-    flux.y = (cvLeft.x*uLeft*uLeft + cvRight.x*uRight*uRight + pL + pR);
-    flux.z = (cvLeft.x*uLeft*eLeft + cvRight.x*uRight*eRight + uLeft*pL + uRight*pR);
+    flux.y = (cvLeft.y*uLeft + cvRight.y*uRight + pL + pR);
+    flux.z = (cvLeft.y*eLeft + cvRight.y*eRight + uLeft*pL + uRight*pR);
 
     REAL pH = pressureHalf(halfState);
 
@@ -440,13 +440,9 @@ wholeDiamond(REALthree *right, REALthree *left, bool full)
 	int tididx = tid + 2;
     int tidxTop = tididx + dimens.base;
 
-    char4 truth;
+    char4 truth = {gid == 0, gid == 1, gid == dimens.idxend_1, gid == dimens.idxend};
 
-    if (full)
-    {
-        truth.x = (gid == 0), truth.y = (gid == 1), truth.z = (gid == dimens.idxend_1), truth.w = (gid == dimens.idxend);
-    }
-    else
+    if (!full)
     {
         gid += blockDim.x;
         truth.x = false, truth.y = false, truth.z = false, truth.w = false;
@@ -623,7 +619,7 @@ void
 CPU_diamond(REALthree *temper, int htcpu[5])
 {
 
-    omp_set_num_threads(4);
+    omp_set_num_threads(8);
 
     temper[htcpu[2]] = bd[0];
     temper[htcpu[2]+dimz.base] = bd[0];
@@ -1075,9 +1071,9 @@ int main( int argc, char *argv[] )
         exit(-1);
     }
 
-    if (dimz.dt_dx > .1)
+    if (dimz.dt_dx > .15)
     {
-        cout << "The value of dt/dx (" << dimz.dt_dx << ") is too high.  In general it must be <=.1 for stability." << endl;
+        cout << "The value of dt/dx (" << dimz.dt_dx << ") is too high.  In general it must be <=.15 for stability." << endl;
         exit(-1);
     }
 

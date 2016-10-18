@@ -36,7 +36,6 @@ import ttk
 import pandas as pd
 import palettable.colorbrewer as pal
 
-alpha = 8.418e-5
 
 OPTIONS = [
     "Heat",
@@ -44,18 +43,6 @@ OPTIONS = [
     "KS"
 ]
 
-def heatdt_tf(div,cyc,bks):
-    return .001, bks*0.001*cyc
-
-def ksdt_tf(div,cyc,bks):
-    return .005, bks*0.00125*cyc
-
-def eulerdt_tf(div,cyc,bks):
-    dx = 1.0/(div-1.0)
-    dt = float("%s" % float("%.2g" % (0.01 * dx)))
-    return dt, 0.25 * bks * cyc * dt
-
-find_dt = [heatdt_tf, eulerdt_tf, ksdt_tf]
 
 SCHEME = [
     "Classic",
@@ -107,8 +94,8 @@ if len(sys.argv) < 2:
     blkpowend.set(10)
 
     #cycles
-    cycles = Tk.IntVar(master)
-    cycles.set(100)
+    steps = Tk.IntVar(master)
+    steps.set(500000)
     prec = Tk.BooleanVar(master)
     prec.set(False)
 
@@ -165,7 +152,7 @@ if len(sys.argv) < 2:
     blk_two = Tk.Entry(entryframe, textvariable=blkpowend)
     blk_two.grid(row = 3, column = 3)
 
-    Tk.Label(entryframe, text= "Minimum number of cycles: \n (Occurs at max Threads per block) ").grid(row=6, column = 0)
+    Tk.Label(entryframe, text= "Number of timesteps: ").grid(row=6, column = 0)
     Tk.Entry(entryframe, textvariable=cycles).grid(row = 6, column = 1)
     Tk.Label()
 
@@ -204,7 +191,7 @@ if len(sys.argv) < 2:
     dv2 = divpowend.get()
     bk1 = blkpow.get()
     bk2 = blkpowend.get()
-    cyc = cycles.get()
+    st = steps.get()
     runb = runit.get()
 
 else:
@@ -217,7 +204,7 @@ else:
     dv2 = int(sys.argv[5])
     bk1 = int(sys.argv[6])
     bk2 = int(sys.argv[7])
-    cyc = int(sys.argv[8])
+    st = float(sys.argv[8])
     runb = True
 
 prob_idx = OPTIONS.index(fname)
@@ -245,6 +232,12 @@ timepath = op.join(rsltpath,timefile)
 Varfile = op.join(rsltpath,vf)
 myplot = op.join(plotpath, plotstr + ".pdf")
 
+dts = [.001, float(format(1.0/div[-1],'.0e'))*.1, .005]
+
+tfs = [st*m for m in dts]
+
+dt, tf = dts[prob_idx], tfs[prob_idx]
+
 errchk = False
 
 #Ensures "make" won't fail if there's no bin directory.
@@ -271,8 +264,7 @@ if runb:
 
 
     for tpb in blx:
-        for dvs in div:
-            dt, tf = find_dt[prob_idx](dvs,cyc,tpb)
+        for i,dvs in enumerate(div):
             freq = tf*2.0
             print "---------------------"
             print "Algorithm #divs #tpb dt endTime"

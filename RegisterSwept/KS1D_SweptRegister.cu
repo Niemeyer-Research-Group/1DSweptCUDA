@@ -47,8 +47,11 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 #define BASE            36
 #define HEIGHT          18
 #define WARPSIZE        32
-#define WPB             8
 #define TWOBASE         72
+
+#ifndef WPB
+    #define WPB             8
+#endif
 
 using namespace std;
 
@@ -590,6 +593,15 @@ int main( int argc, char *argv[])
 	cudaEventSynchronize(stop);
 	cudaEventElapsedTime( &timed, start, stop);
 
+    cudaError_t error = cudaGetLastError();
+    if(error != cudaSuccess)
+    {
+        // print the CUDA error message and exit
+        printf("CUDA error: %s\n", cudaGetErrorString(error));
+        exit(-1);
+    }
+
+
 	timed *= 1.e3;
 
 	double n_timesteps = tfm/dt;
@@ -599,11 +611,11 @@ int main( int argc, char *argv[])
     cout << n_timesteps << " timesteps" << endl;
 	cout << "Averaged " << per_ts << " microseconds (us) per timestep" << endl;
 
-    if (argc>6)
+    if (argc>5)
     {
         ofstream ftime;
         ftime.open(argv[6],ios::app);
-    	ftime << dv << "\t" << per_ts << endl;
+    	ftime << dv << "\t" << WPB*WARPSIZE << "\t" << per_ts << endl;
     	ftime.close();
     }
 
@@ -619,6 +631,7 @@ int main( int argc, char *argv[])
 
 	cudaEventDestroy( start );
 	cudaEventDestroy( stop );
+
 	cudaDeviceReset();
 
 	cudaFreeHost(IC);

@@ -9,13 +9,13 @@ from datetime import datetime
 from cycler import cycler
 
 #Flags for type of run.
-readin = True
+readin = False
 savepl = False
-writeout = False
+writeout = True
 
 #Don't want to overwrite with previous version.
 if readin:
-    writout=False
+    writeout=False
 
 def plotItBar(axi, dat):
 
@@ -42,7 +42,6 @@ storage = pd.HDFStore(storepath)
 #Gather files
 if not op.isdir(plotpath):
     os.mkdir(plotpath)
-
 
 if readin:
     vers = zip(range(len(storage.keys())),storage.keys())
@@ -80,7 +79,7 @@ else:
         ds.set_index(idx_real, inplace=True)
         dfs_all.append(ds)
 
-    
+
     df_result = pd.concat(dfs_all)
 
 df_best = df_result.min(axis=1)
@@ -106,8 +105,8 @@ plt.grid(alpha=0.5)
 
 if savepl:
     plt.savefig(plotfile, bbox_inches='tight')
-    
-    
+
+
 #Get level values to iterate
 algs = df_result.index.get_level_values("Algorithm").unique().tolist()
 algs.sort()
@@ -150,7 +149,7 @@ for prob in probs:
         ax[i].set_title(prec)
         ax[i].grid(alpha=0.5)
         ax[i].set_xlabel(midx_name[-1])
-        
+
         #Only label first axis.
         if i == 0:
             ax[i].set_ylabel("Time per timestep (us)")
@@ -168,7 +167,7 @@ for prob in probs:
 
         cnt += 1
 
-        
+
 
     lg = ax[0].legend()
     lg.remove()
@@ -246,11 +245,12 @@ if savepl:
     fig.savefig(plotfile, bbox_inches='tight')
 
 if writeout:
+    df_result.to_html(tablefile)
     if thisday in storage.keys():
         fl = raw_input("You've already written to the hd5 today.  Overwrite? [y/n]")
         if "n" in fl:
             sys.exit(1)
-        
+
     storage.put(thisday,df_result)
-    df_result.to_html(tablefile)
+    
     storage.close()

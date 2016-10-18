@@ -9,13 +9,13 @@ pRw = [(cv-cvL)./(cvL-cvLL), ...
     (cvR-cv)./(cv-cvL), ...
     (cvR-cv)./(cvRR-cvR)];
 
-tempLeft = limitor(cvL,cv,pR(1),pRw(:,1));
-tempRight = limitor(cv,cvL,1/pR(2), 1./pRw(:,2));
+tempLeft = limitor(cvL,cv,pR(1));
+tempRight = limitor(cv,cvL,1/pR(2));
 
 flux = eulerFlux(tempLeft,tempRight,press);
 
-tempLeft = limitor(cv,cvR,pR(2),pRw(:,2));
-tempRight = limitor(cvR,cv,pR(3),pRw(:,3));
+tempLeft = limitor(cv,cvR,pR(2));
+tempRight = limitor(cvR,cv,pR(3));
 
 flux = flux - eulerFlux(tempLeft,tempRight,press);
 
