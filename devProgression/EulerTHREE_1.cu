@@ -1,24 +1,5 @@
 //Three vectors no division avoidance.
 
-/* This file is the current iteration of research being done to implement the
-swept rule for Partial differential equations in one dimension.  This research
-is a collaborative effort between teams at MIT, Oregon State University, and
-Purdue University.
-
-Copyright (C) 2015 Kyle Niemeyer, niemeyek@oregonstate.edu AND
-Daniel Magee, mageed@oregonstate.edu
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the MIT license.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-
-You should have received a copy of the MIT license along with this program.
-If not, see <https://opensource.org/licenses/MIT>.
-*/
-
 //COMPILE LINE:
 // nvcc -o ./bin/EulerOut Euler1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -restrict -Xcompiler -fopenmp
 
@@ -75,8 +56,6 @@ struct dimensions {
     int hts[5];
 };
 
-
-
 dimensions dimz;
 //dbd is the boundary condition in device constant memory.
 __constant__ REALthree dbd[2]; //0 is left 1 is right.
@@ -109,7 +88,6 @@ writeOut(REALthree *temp, REALthree *rights, REALthree *lefts, int td, int gd)
 
 }
 
-
 //Calculates the pressure at the current node with the rho, u, e state variables.
 __device__ __host__
 __forceinline__
@@ -123,19 +101,14 @@ pressure(REALthree current)
     #endif
 }
 
-//Really P/rho.
+//(pRight-pCurrent)/(pCurrent-pLeft)
 __device__ __host__
 __forceinline__
 REAL
-pressureHalf(REALthree current)
+pressureRatio(REAL cvLeft, REAL cvCenter, REAL cvRight)
 {
-    #ifdef __CUDA_ARCH__
-    return dimens.mgam * (current.z - (HALF * current.y * current.y));
-    #else
-    return dimz.mgam * (current.z - (HALF * current.y * current.y));
-    #endif
+    return (cvRight- cvCenter)/(cvCenter- cvLeft);
 }
-
 
 //Reconstructs the state variables if the pressure ratio is finite and positive.
 //I think it's that internal boundary condition.
@@ -196,20 +169,8 @@ eulerFlux(REALthree cvLeft, REALthree cvRight)
 //This is the predictor step of the finite volume scheme.
 __device__ __host__
 REALthree
-eulerStutterStep(REALthree *state, int tr, char flagLeft, char flagRight)
+eulerFinalStep(REALthree *state, int tr[5])
 {
-
-    REAL pLL = (flagLeft) ? ZERO : (TWO * state[tr-1].x * state[tr-2].x * (state[tr-1].z - state[tr-2].z) +
-        (state[tr-2].y * state[tr-2].y*  state[tr-1].x - state[tr-1].y * state[tr-1].y * state[tr-2].x)) ;
-
-    REAL pL = (TWO * state[tr].x  *state[tr-1].x * (state[tr].z - state[tr-1].z) +
-        (state[tr-1].y * state[tr-1].y * state[tr].x - state[tr].y * state[tr].y * state[tr-1].x));
-
-    REAL pR = (TWO * state[tr].x * state[tr+1].x * (state[tr+1].z - state[tr].z) +
-        (state[tr].y * state[tr].y * state[tr+1].x - state[tr+1].y * state[tr+1].y * state[tr].x));
-
-    REAL pRR = (flagRight) ? ZERO : (TWO * state[tr+1].x * state[tr+2].x * (state[tr+2].z - state[tr+1].z) +
-        (state[tr+1].y * state[tr+1].y * state[tr+2].x - state[tr+2].y * state[tr+2].y * state[tr+1].x));
 
 
     //This is the temporary state bounded by the limitor function.
@@ -239,21 +200,8 @@ eulerStutterStep(REALthree *state, int tr, char flagLeft, char flagRight)
 //But the predictor variables to find the fluxes.
 __device__ __host__
 REALthree
-eulerFinalStep(REALthree *state, int tr, char flagLeft, char flagRight)
+eulerFinalStep(REALthree *state, int tr[5])
 {
-
-    REAL pLL = (flagLeft) ? ZERO : (TWO * state[tr-1].x * state[tr-2].x * (state[tr-1].z - state[tr-2].z) +
-        (state[tr-2].y * state[tr-2].y*  state[tr-1].x - state[tr-1].y * state[tr-1].y * state[tr-2].x)) ;
-
-    REAL pL = (TWO * state[tr].x  *state[tr-1].x * (state[tr].z - state[tr-1].z) +
-        (state[tr-1].y * state[tr-1].y * state[tr].x - state[tr].y * state[tr].y * state[tr-1].x));
-
-    REAL pR = (TWO * state[tr].x * state[tr+1].x * (state[tr+1].z - state[tr].z) +
-        (state[tr].y * state[tr].y * state[tr+1].x - state[tr+1].y * state[tr+1].y * state[tr].x));
-
-    REAL pRR = (flagRight) ?  ZERO : (TWO * state[tr+1].x * state[tr+2].x * (state[tr+2].z - state[tr+1].z) +
-        (state[tr+1].y * state[tr+1].y * state[tr+2].x - state[tr+2].y * state[tr+2].y * state[tr+1].x));
-
 
     //This is the temporary state bounded by the limitor function.
     REALthree tempStateLeft = (!pLL || !pL || (pLL < 0 != pL <0)) ? state[tr-1] : limitor(state[tr-1], state[tr], (state[tr-2].x*pL/(state[tr].x*pLL)));

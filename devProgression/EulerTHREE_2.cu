@@ -1,24 +1,5 @@
 //Three vectors no division avoidance.
 
-/* This file is the current iteration of research being done to implement the
-swept rule for Partial differential equations in one dimension.  This research
-is a collaborative effort between teams at MIT, Oregon State University, and
-Purdue University.
-
-Copyright (C) 2015 Kyle Niemeyer, niemeyek@oregonstate.edu AND
-Daniel Magee, mageed@oregonstate.edu
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the MIT license.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-
-You should have received a copy of the MIT license along with this program.
-If not, see <https://opensource.org/licenses/MIT>.
-*/
-
 //COMPILE LINE:
 // nvcc -o ./bin/EulerOut Euler1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -restrict -Xcompiler -fopenmp
 
@@ -75,7 +56,6 @@ struct dimensions {
     int hts[5];
 };
 
-
 dimensions dimz;
 //dbd is the boundary condition in device constant memory.
 __constant__ REALthree dbd[2]; //0 is left 1 is right.
@@ -107,7 +87,6 @@ writeOut(REALthree *temp, REALthree *rights, REALthree *lefts, int td, int gd)
 	lefts[gd] = temp[leftidx];
 
 }
-
 
 //Calculates the pressure at the current node with the rho, u, e state variables.
 __device__ __host__

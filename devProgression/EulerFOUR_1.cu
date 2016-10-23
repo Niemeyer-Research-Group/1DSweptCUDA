@@ -1,21 +1,4 @@
-/* This file is the current iteration of research being done to implement the
-swept rule for Partial differential equations in one dimension.  This research
-is a collaborative effort between teams at MIT, Oregon State University, and
-Purdue University.
-
-Copyright (C) 2015 Kyle Niemeyer, niemeyek@oregonstate.edu AND
-Daniel Magee, mageed@oregonstate.edu
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the MIT license.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-
-You should have received a copy of the MIT license along with this program.
-If not, see <https://opensource.org/licenses/MIT>.
-*/
+//Four vectors no templating.
 
 //COMPILE LINE:
 // nvcc -o ./bin/EulerOut Euler1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -03 -restrict -Xcompiler -fopenmp
@@ -156,7 +139,6 @@ limitor(REALthree cvCurrent, REALthree cvOther, REAL pRatio)
     return FOURVEC(cvCurrent);
 }
 
-
 //Left and Center then Left and right.
 //This is the meat of the flux calculation.  Fields: x is rho, y is u, z is e, w is p.
 __device__ __host__
@@ -175,9 +157,9 @@ eulerFlux(REALfour cvLeft, REALfour cvRight)
     REAL eLeft = cvLeft.z/cvLeft.x;
     REAL eRight = cvRight.z/cvRight.x;
 
-    flux.x = 0.5 * (cvLeft.x*uLeft + cvRight.x*uRight);
-    flux.y = 0.5 * (cvLeft.x*uLeft*uLeft + cvRight.x*uRight*uRight + cvLeft.w + cvRight.w);
-    flux.z = 0.5 * (cvLeft.x*uLeft*eLeft + cvRight.x*uRight*eRight + uLeft*cvLeft.w + uRight*cvRight.w);
+    flux.x = 0.5 * (cvLeft.y + cvRight.y);
+    flux.y = 0.5 * (cvLeft.y*uLeft + cvRight.y*uRight + cvLeft.w + cvRight.w);
+    flux.z = 0.5 * (cvLeft.y*eLeft + cvRight.y*eRight + uLeft*cvLeft.w + uRight*cvRight.w);
 
     REALfour halfState;
     REAL rhoLeftsqrt = sqrt(cvLeft.x); REAL rhoRightsqrt = sqrt(cvRight.x);
@@ -202,7 +184,7 @@ eulerFlux(REALfour cvLeft, REALfour cvRight)
 //This is the predictor step of the finite volume scheme.
 __device__ __host__
 REALfour
-eulerStutterClassicStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfour stateRight, REAL pfarRight)
+eulerStutterStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfour stateRight, REAL pfarRight)
 {
     REALthree fluxL, fluxR, pR;
     REALfour tempStateLeft, tempStateRight;
@@ -241,7 +223,7 @@ eulerStutterClassicStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter,
 
 __device__ __host__
 REALfour
-eulerFinalClassicStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfour stateRight, REAL pfarRight)
+eulerFinalStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfour stateRight, REAL pfarRight)
 {
     REALthree fluxL, fluxR, pR;
     REALfour tempStateLeft, tempStateRight;
@@ -258,86 +240,6 @@ eulerFinalClassicStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, R
 
     tempStateLeft = limitor(THREEVEC(stateCenter), THREEVEC(stateRight), pR.y);
     tempStateRight = limitor(THREEVEC(stateRight), THREEVEC(stateCenter), 1.0/pR.z);
-    tempStateLeft.w = pressure(tempStateLeft);
-    tempStateRight.w = pressure(tempStateRight);
-    fluxR = eulerFlux(tempStateLeft,tempStateRight);
-
-    #ifdef __CUDA_ARCH__
-    return FOURVEC(dimens.dt_dx * (fluxL-fluxR));
-    #else
-    return FOURVEC(dimz.dt_dx * (fluxL-fluxR));
-    #endif
-
-}
-
-//This is the predictor step of the finite volume scheme.
-__device__ __host__
-REALfour
-eulerStutterStep(REALfour *state, int tr[5])
-{
-    REALthree fluxL, fluxR, pR;
-    REALfour tempStateLeft, tempStateRight;
-
-    //Get the pressure ratios as a structure.
-    pR = THREEVEC(pressureRatio(state[tr[0]].w, state[tr[1]].w, state[tr[2]].w),
-        pressureRatio(state[tr[1]].w, state[tr[2]].w, state[tr[3]].w),
-        pressureRatio(state[tr[2]].w, state[tr[3]].w, state[tr[4]].w));
-
-    //This is the temporary state bounded by the limitor function.
-    tempStateLeft = limitor(THREEVEC(state[tr[1]]), THREEVEC(state[tr[2]]), pR.x);
-    tempStateRight = limitor(THREEVEC(state[tr[2]]), THREEVEC(state[tr[1]]), 1.0/pR.y);
-
-    //Pressure needs to be recalculated for the new limited state variables.
-    tempStateLeft.w = pressure(tempStateLeft);
-    tempStateRight.w = pressure(tempStateRight);
-    fluxL = eulerFlux(tempStateLeft,tempStateRight);
-
-    //Do the same thing with the right side.
-    tempStateLeft = limitor(THREEVEC(state[tr[2]]), THREEVEC(state[tr[3]]), pR.y);
-    tempStateRight = limitor(THREEVEC(state[tr[3]]), THREEVEC(state[tr[2]]), 1.0/pR.z);
-    tempStateLeft.w = pressure(tempStateLeft);
-    tempStateRight.w = pressure(tempStateRight);
-    fluxR = eulerFlux(tempStateLeft,tempStateRight);
-
-    //Add the change back to the node in question.
-    #ifdef __CUDA_ARCH__
-    tempStateRight = state[tr[2]] + FOURVEC(0.5 * dimens.dt_dx * (fluxL-fluxR));
-    #else
-    tempStateRight = state[tr[2]] + FOURVEC(0.5 * dimz.dt_dx * (fluxL-fluxR));
-    #endif
-
-    tempStateRight.w = pressure(tempStateRight);
-
-    return tempStateRight;
-
-}
-
-//Same thing as the predictor step, but this final step adds the result to the original state variables to advance to the next timestep.
-//But the predictor variables to find the fluxes.
-__device__ __host__
-REALfour
-eulerFinalStep(REALfour *state, int tr[5])
-{
-    REALthree fluxL, fluxR, pR;
-    REALfour tempStateLeft, tempStateRight;
-
-    //Get the pressure ratios as a structure.
-    pR = THREEVEC(pressureRatio(state[tr[0]].w, state[tr[1]].w, state[tr[2]].w),
-        pressureRatio(state[tr[1]].w, state[tr[2]].w, state[tr[3]].w),
-        pressureRatio(state[tr[2]].w, state[tr[3]].w, state[tr[4]].w));
-
-    //This is the temporary state bounded by the limitor function.
-    tempStateLeft = limitor(THREEVEC(state[tr[1]]), THREEVEC(state[tr[2]]), pR.x);
-    tempStateRight = limitor(THREEVEC(state[tr[2]]), THREEVEC(state[tr[1]]), 1.0/pR.y);
-
-    //Pressure needs to be recalculated for the new limited state variables.
-    tempStateLeft.w = pressure(tempStateLeft);
-    tempStateRight.w = pressure(tempStateRight);
-    fluxL = eulerFlux(tempStateLeft,tempStateRight);
-
-    //Do the same thing with the right side.
-    tempStateLeft = limitor(THREEVEC(state[tr[2]]), THREEVEC(state[tr[3]]), pR.y);
-    tempStateRight = limitor(THREEVEC(state[tr[3]]), THREEVEC(state[tr[2]]), 1.0/pR.z);
     tempStateLeft.w = pressure(tempStateLeft);
     tempStateRight.w = pressure(tempStateRight);
     fluxR = eulerFlux(tempStateLeft,tempStateRight);
@@ -380,20 +282,20 @@ classicEuler(const REALfour *euler_in, REALfour *euler_out, bool final)
         }
         else if (gid == 1)
         {
-            euler_out[gid] += eulerFinalClassicStep(dbd[0].w,dbd[0],euler_in[gid],
+            euler_out[gid] += eulerFinalStep(dbd[0].w,dbd[0],euler_in[gid],
                 euler_in[(gid+1)],euler_in[(gid+2)].w);
 
             euler_out[gid].w = pressure(euler_out[gid]);
         }
         else if (gid == dimens.idxend_1)
         {
-            euler_out[gid] += eulerFinalClassicStep(euler_in[(gid-2)].w,euler_in[(gid-1)],euler_in[gid],
+            euler_out[gid] += eulerFinalStep(euler_in[(gid-2)].w,euler_in[(gid-1)],euler_in[gid],
                 dbd[1],dbd[1].w);
             euler_out[gid].w = pressure(euler_out[gid]);
         }
         else
         {
-            euler_out[gid] += eulerFinalClassicStep(euler_in[(gid-2)].w,euler_in[(gid-1)],euler_in[gid],
+            euler_out[gid] += eulerFinalStep(euler_in[(gid-2)].w,euler_in[(gid-1)],euler_in[gid],
                 euler_in[(gid+1)],euler_in[(gid+2)].w);
             euler_out[gid].w = pressure(euler_out[gid]);
         }
@@ -410,18 +312,22 @@ classicEuler(const REALfour *euler_in, REALfour *euler_out, bool final)
         }
         else if (gid == 1)
         {
-            euler_out[gid] = eulerStutterClassicStep(dbd[0].w,dbd[0],euler_in[gid],euler_in[(gid+1)],euler_in[(gid+2)].w);
+            euler_out[gid] = eulerStutterStep(dbd[0].w,dbd[0],euler_in[gid],
+                euler_in[(gid+1)],euler_in[(gid+2)].w);
         }
         else if (gid == dimens.idxend_1)
         {
-            euler_out[gid] = eulerStutterClassicStep(euler_in[(gid-2)].w,euler_in[(gid-1)],euler_in[gid],dbd[1],dbd[1].w);
+            euler_out[gid] = eulerStutterStep(euler_in[(gid-2)].w,euler_in[(gid-1)],
+                euler_in[gid],dbd[1],dbd[1].w);
         }
         else
         {
-            euler_out[gid] = eulerStutterClassicStep(euler_in[(gid-2)].w,euler_in[(gid-1)],euler_in[gid],euler_in[(gid+1)],euler_in[(gid+2)].w);
+            euler_out[gid] = eulerStutterStep(euler_in[(gid-2)].w,euler_in[(gid-1)],
+                euler_in[gid],euler_in[(gid+1)],euler_in[(gid+2)].w);
         }
     }
 }
+
 __global__
 void
 upTriangle(const REALfour *IC, REALfour *right, REALfour *left)
@@ -439,7 +345,7 @@ upTriangle(const REALfour *IC, REALfour *right, REALfour *left)
 	for (int k = -2; k<3; k++)
     {
         tid_bottom[k+2] = tididx + k;
-        tid_top[k+2] = tididx + k + blockDim.x;
+        tid_top[k+2] = tididx + k + dimens.base;
     }
 
     //Assign the initial values to the first row in temper, each block
@@ -450,7 +356,8 @@ upTriangle(const REALfour *IC, REALfour *right, REALfour *left)
 
 	if (tid > 1 && tid <(blockDim.x-2))
 	{
-		temper[tid_top[2]] = eulerStutterStep(temper, tid_bottom);
+        temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w,temper[tid_bottom[1]],
+            temper[tid_bottom[2]],temper[tid_bottom[3]],temper[tid_bottom[4]].w);
 	}
 
 	__syncthreads();
@@ -460,16 +367,18 @@ upTriangle(const REALfour *IC, REALfour *right, REALfour *left)
 	{
 		if (tid < (blockDim.x-k) && tid >= k)
 		{
-            temper[tid] += eulerFinalStep(temper, tid_top);
+            temper[tididx] += eulerFinalStep(temper[tid_top[0]].w,temper[tid_top[1]],
+                temper[tid_top[2]],temper[tid_top[3]],temper[tid_top[4]].w);
 
-            temper[tid].w = pressure(temper[tid]);
+            temper[tididx].w = pressure(temper[tididx]);
 		}
         step2 = k+2;
 		__syncthreads();
 
 		if (tid < (blockDim.x-step2) && tid >= step2)
 		{
-            temper[tid_top[2]] = eulerStutterStep(temper, tid_bottom);
+            temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w,temper[tid_bottom[1]],
+                temper[tid_bottom[2]],temper[tid_bottom[3]],temper[tid_bottom[4]].w);
 		}
 
 		//Make sure the threads are synced
@@ -509,59 +418,74 @@ downTriangle(REALfour *IC, const REALfour *right, const REALfour *left)
 
     __syncthreads();
 
-    if (gid == 0)
+    if (tididx < (dimens.hts[4]+2) && tididx >= dimens.hts[2])
     {
-        temper[tididx] = dbd[0];
-        temper[tididx+dimens.base] = dbd[0];
-        IC[gid] = temper[tididx];
-        return;
-    }
-    else if (gid == dimens.idxend)
-    {
-        temper[tididx] = dbd[1];
-        temper[tididx+dimens.base] = dbd[1];
-        IC[gid] = temper[tididx];
-        return;
-    }
-    else if (gid == dimens.idxend_1)
-    {
-        tid_top[4] = tid_top[3];
-    }
-    else if (gid == 1)
-    {
-        tid_top[0] = tid_top[1];
+        temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w,temper[tid_bottom[1]],
+            temper[tid_bottom[2]],temper[tid_bottom[3]],temper[tid_bottom[4]].w);
     }
 
-    __syncthreads();
 
-	for (int k = dimens.hts[2]; k>1; k-=4)
+	for (int k = dimens.hts[0]; k>3; k-=4)
 	{
-		if (tididx < (dimens.base-k) && tididx >= k)
-		{
-            temper[tid_top[2]] = eulerStutterStep(temper, tid_bottom);
-		}
+        if (tididx < (dimens.base-k) && tididx >= k)
+        {
+            temper[tididx] += eulerFinalStep(temper[tid_top[0]].w,temper[tid_top[1]],
+                temper[tid_top[2]],temper[tid_top[3]],temper[tid_top[4]].w);
+
+            temper[tididx].w = pressure(temper[tididx]);
+        }
 
         step2 = k-2;
         __syncthreads();
 
         if (tididx < (dimens.base-step2) && tididx >= step2)
         {
-            temper[tididx] += eulerFinalStep(temper, tid_top);
-
-            temper[tididx].w = pressure(temper[tididx]);
+            temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w,temper[tid_bottom[1]],
+                temper[tid_bottom[2]],temper[tid_bottom[3]],temper[tid_bottom[4]].w);
         }
 		//Make sure the threads are synced
 		__syncthreads();
 	}
 
-    //__syncthreads();
+    if (gid == 0)
+    {
+        euler_out[gid] = dbd[0];
+    }
+    else if (gid == dimens.idxend)
+    {
+        euler_out[gid] = dbd[1];
+    }
+    else if (gid == 1)
+    {
+        temper[tididx] += eulerFinalStep(dbd[0].w,dbd[0],
+            temper[tid_top[2]],temper[tid_top[3]],temper[tid_top[4]].w);
+
+        temper[tididx].w = pressure(temper[tididx]);
+    }
+    else if (gid == dimens.idxend_1)
+    {
+        temper[tididx] += eulerFinalStep(temper[tid_top[0]].w,temper[tid_top[1]],
+            temper[tid_top[2]],dbd[1],dbd[1].w);
+
+        temper[tididx].w = pressure(temper[tididx]);
+    }
+    else
+    {
+        temper[tididx] += eulerFinalStep(temper[tid_top[0]].w,temper[tid_top[1]],
+            temper[tid_top[2]],temper[tid_top[3]],temper[tid_top[4]].w);
+
+        temper[tididx].w = pressure(temper[tididx]);
+    }
+
+    __syncthreads();
+
     IC[gid] = temper[tididx];
 }
 
 //Full refers to whether or not there is a node run on the CPU.
 __global__
 void
-wholeDiamond(REALfour *right, REALfour *left, const bool full)
+wholeDiamond(REALfour *right, REALfour *left)
 {
 
     extern __shared__ REALfour temper[];
@@ -579,50 +503,21 @@ wholeDiamond(REALfour *right, REALfour *left, const bool full)
         tid_top[k+2] = tididx + k + dimens.base;
     }
 
-    if (!full)
-    {
-        gid += blockDim.x;
-    }
-
-    readIn(temper, right, left, tid, gid);
-
     __syncthreads();
 
-    if (full)
+    if (tididx < (dimens.hts[4]+2) && tididx >= dimens.hts[2])
     {
-        if (gid == 0)
-        {
-            temper[tididx] = dbd[0];
-            temper[tididx+dimens.base] = dbd[0];
-        }
-        else if (gid == dimens.idxend)
-        {
-            temper[tididx] = dbd[1];
-            temper[tididx+dimens.base] = dbd[1];
-        }
-        else if (gid == dimens.idxend_1)
-        {
-            tid_top[4] = tid_top[3];
-        }
-        else if (gid == 1)
-        {
-            tid_top[0] = tid_top[1];
-        }
-    }
-    __syncthreads();
-
-    if (tididx < (dimens.base-dimens.hts[2]) && tididx >= dimens.hts[2])
-    {
-        temper[tid_top[2]] = eulerStutterStep(temper, tid_bottom);
+        temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w,temper[tid_bottom[1]],
+            temper[tid_bottom[2]],temper[tid_bottom[3]],temper[tid_bottom[4]].w);
     }
 
-    __syncthreads();
 
-    for (int k = dimens.hts[0]; k>4; k-=4)
+    for (int k = dimens.hts[0]; k>3; k-=4)
     {
         if (tididx < (dimens.base-k) && tididx >= k)
         {
-            temper[tididx] += eulerFinalStep(temper, tid_top);
+            temper[tididx] += eulerFinalStep(temper[tid_top[0]].w,temper[tid_top[1]],
+                temper[tid_top[2]],temper[tid_top[3]],temper[tid_top[4]].w);
 
             temper[tididx].w = pressure(temper[tididx]);
         }
@@ -632,53 +527,70 @@ wholeDiamond(REALfour *right, REALfour *left, const bool full)
 
         if (tididx < (dimens.base-step2) && tididx >= step2)
         {
-            temper[tid_top[2]] = eulerStutterStep(temper, tid_bottom);
+            temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w,temper[tid_bottom[1]],
+                temper[tid_bottom[2]],temper[tid_bottom[3]],temper[tid_bottom[4]].w);
         }
         //Make sure the threads are synced
         __syncthreads();
     }
 
-    // -------------------TOP PART------------------------------------------
+    if (gid == 0)
+    {
+        euler_out[gid] = dbd[0];
+    }
+    else if (gid == dimens.idxend)
+    {
+        euler_out[gid] = dbd[1];
+    }
+    else if (gid == 1)
+    {
+        temper[tididx] += eulerFinalStep(dbd[0].w,dbd[0],
+            temper[tid_top[2]],temper[tid_top[3]],temper[tid_top[4]].w);
 
-    if (full)
-        if (gid > 0 &&  gid < dimens.idxend)
-        {
-            temper[tididx] += eulerFinalStep(temper, tid_top);
+        temper[tididx].w = pressure(temper[tididx]);
+    }
+    else if (gid == dimens.idxend_1)
+    {
+        temper[tididx] += eulerFinalStep(temper[tid_top[0]].w,temper[tid_top[1]],
+            temper[tid_top[2]],dbd[1],dbd[1].w);
 
-            temper[tididx].w = pressure(temper[tididx]);
-        }
+        temper[tididx].w = pressure(temper[tididx]);
+    }
     else
     {
-        temper[tididx] += eulerFinalStep(temper, tid_top);
+        temper[tididx] += eulerFinalStep(temper[tid_top[0]].w,temper[tid_top[1]],
+            temper[tid_top[2]],temper[tid_top[3]],temper[tid_top[4]].w);
 
         temper[tididx].w = pressure(temper[tididx]);
     }
 
     __syncthreads();
 
-    if (tididx > 3 && tididx <(dimens.base-4))
+    if (tid > 1 && tid <(blockDim.x-2))
 	{
-        temper[tid_top[2]] = eulerStutterStep(temper, tid_bottom);
+        temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w,temper[tid_bottom[1]],
+            temper[tid_bottom[2]],temper[tid_bottom[3]],temper[tid_bottom[4]].w);
 	}
-	//The initial conditions are timeslice 0 so start k at 1.
 
 	__syncthreads();
 
-    //The initial conditions are timslice 0 so start k at 1.
-	for (int k = 6; k<dimens.hts[4]; k+=4)
+	//The initial conditions are timslice 0 so start k at 1.
+	for (int k = 4; k<(blockDim.x/2); k+=4)
 	{
-		if (tididx< (dimens.base-k) && tididx >= k)
+		if (tid < (blockDim.x-k) && tid >= k)
 		{
-            temper[tididx] += eulerFinalStep(temper, tid_top);
+            temper[tididx] += eulerFinalStep(temper[tid_top[0]].w,temper[tid_top[1]],
+                temper[tid_top[2]],temper[tid_top[3]],temper[tid_top[4]].w);
 
             temper[tididx].w = pressure(temper[tididx]);
 		}
         step2 = k+2;
-        __syncthreads();
+		__syncthreads();
 
-        if (tididx < (dimens.base-step2) && tididx >= step2)
-        {
-            temper[tid_top[2]] = eulerStutterStep(temper, tid_bottom);
+		if (tid < (blockDim.x-step2) && tid >= step2)
+		{
+            temper[tid_top[2]] = eulerStutterStep(temper[tid_bottom[0]].w,temper[tid_bottom[1]],
+                temper[tid_bottom[2]],temper[tid_bottom[3]],temper[tid_bottom[4]].w);
 		}
 
 		//Make sure the threads are synced
@@ -797,7 +709,6 @@ splitDiamond(REALfour *right, REALfour *left)
 }
 
 using namespace std;
-
 
 REAL
 __host__ __inline__
