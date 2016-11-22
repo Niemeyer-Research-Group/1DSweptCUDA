@@ -32,7 +32,6 @@ import shlex
 import os
 import sys
 import Tkinter as Tk
-import ttk
 import pandas as pd
 import palettable.colorbrewer as pal
 import time

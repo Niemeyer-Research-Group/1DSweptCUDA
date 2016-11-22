@@ -1,7 +1,8 @@
-function [ rh ] = fullStep( cvLL,cvL,cv,cvR,cvRR,dt_dx,press )
-%fullStep 
+function [ cvnew,pR ] = stutterStep( cvLL,cvL,cv,cvR,cvRR,dt_dx,press )
+%stutterStep Summary of this function goes here
+%   Detailed explanation goes here
 
-pL = (cvL - cvLL)./(cv - cvL);
+pR = (cvL - cvLL)./(cv - cvL);
 pC = (cv - cvL)./(cvR - cv);
 pR = (cvR - cv)./(cvRR - cvR);
 % [(press(cv)-press(cvL))/(press(cvL)-press(cvLL)), ...
@@ -17,12 +18,11 @@ tempRight = limitor2(cv,cv-cvR,pC);
 
 flux = eulerFlux(tempLeft,tempRight,press);
 
-tempLeft = limitor2(cv,cvR-cv,pC);
-tempRight = limitor2(cvR,cvR-cvRR,pR);
+tempLeft = limitor(cv,cvR-cv,pC);
+tempRight = limitor(cvR,cvR-cvRR);
 
 flux = flux - eulerFlux(tempLeft,tempRight,press);
-
-rh = 0.5*dt_dx*flux';
+cvnew = cv + 0.25*dt_dx*flux';
 
 end
 

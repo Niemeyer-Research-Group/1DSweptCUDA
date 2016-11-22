@@ -43,7 +43,6 @@ OPTIONS = [
     "KS"
 ]
 
-
 SCHEME = [
     "Classic",
     "SweptGPU",
@@ -153,7 +152,7 @@ if len(sys.argv) < 2:
     blk_two.grid(row = 3, column = 3)
 
     Tk.Label(entryframe, text= "Number of timesteps: ").grid(row=6, column = 0)
-    Tk.Entry(entryframe, textvariable=cycles).grid(row = 6, column = 1)
+    Tk.Entry(entryframe, textvariable=steps).grid(row = 6, column = 1)
     Tk.Label()
 
     res_one = Tk.Label(entryframe, text = str(2**divpow.get()))

@@ -202,7 +202,8 @@ if __name__ == '__main__':
         dx = L/div
         tf = .4
         freq = .11
-        dt = [.000001*k for k in range(1,5)]
+        dt = [1.0e-7, 1.0e-6, 1.0e-5, 1.0e-4]
+        #dt = [.000001*k for k in range(1,5)]
         dt_dx = [k/dx for k in dt]
         err = np.empty([4,4])
         for pr in prec:

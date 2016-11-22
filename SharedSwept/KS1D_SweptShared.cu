@@ -64,26 +64,53 @@ REAL initFun(REAL xnode)
 	return TWO * cos(19.0*xnode*M_PI/128.0);
 }
 
+#ifdef DIVISE
+
 __device__
 __forceinline__
 REAL fourthDer(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tRight, REAL tfarRight)
 {
-	return disc.dx4_i * (tfarLeft - FOUR*tLeft + SIX*tCenter - FOUR*tRight + tfarRight);
+	return (tfarLeft - FOUR*tLeft + SIX*tCenter - FOUR*tRight + tfarRight) / disc.dx4_i;
 }
 
 __device__
 __forceinline__
 REAL secondDer(REAL tLeft, REAL tRight, REAL tCenter)
 {
-	return disc.dx2_i * (tLeft + tRight - TWO*tCenter);
+	return (tLeft + tRight - TWO*tCenter) / disc.dx2_i;
 }
 
 __device__
 __forceinline__
 REAL convect(REAL tLeft, REAL tRight)
 {
-	return disc.dx_i4 * (tRight*tRight - tLeft*tLeft);
+	return (tRight*tRight - tLeft*tLeft) / disc.dx_i4;
 }
+
+#else
+
+__device__
+__forceinline__
+REAL fourthDer(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tRight, REAL tfarRight)
+{
+	return (tfarLeft - FOUR*tLeft + SIX*tCenter - FOUR*tRight + tfarRight) * disc.dx4_i;
+}
+
+__device__
+__forceinline__
+REAL secondDer(REAL tLeft, REAL tRight, REAL tCenter)
+{
+	return (tLeft + tRight - TWO*tCenter) * disc.dx2_i;
+}
+
+__device__
+__forceinline__
+REAL convect(REAL tLeft, REAL tRight)
+{
+	return (tRight*tRight - tLeft*tLeft) * disc.dx_i4;
+}
+
+#endif
 
 __device__
 __forceinline__
@@ -249,7 +276,7 @@ downTriangle(REAL *IC, const REAL *right, const REAL *left)
 
 __global__
 void
-wholeDiamond(REAL *right, REAL *left)
+wholeDiamond(REAL *right, REAL *left, REAL *right2, REAL *left2, bool dir)
 {
 	extern __shared__ REAL temper[];
 
@@ -258,6 +285,8 @@ wholeDiamond(REAL *right, REAL *left)
 	int tididx = tid + 2;
 	int base = blockDim.x + 4;
 	int height = base/2;
+    int lastidx = ((blockDim.x*gridDim.x)-1);
+    int gidout = (gid + dir*blockDim.x) & lastidx;
 	int step2;
 
 	int tid_top[5], tid_bottom[5];
@@ -350,8 +379,16 @@ wholeDiamond(REAL *right, REAL *left)
 	//After the triangle has been computed, the right and left shared arrays are
 	//stored in global memory by the global thread ID since (conveniently),
 	//they're the same size as a warp!
-	right[gid] = temper[rightidx];
-	left[gid] = temper[leftidx];
+	if (dir>0)
+    {
+        right[gidout] = temper[rightidx];
+        left[gid] = temper[leftidx];
+    }
+    else
+    {
+        right[gid] = temper[rightidx];
+        left[gidout] = temper[leftidx];
+    }
 
 }
 
@@ -405,11 +442,12 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
 	REAL *IC, REAL *T_f, const REAL freq, ofstream &fwr)
 {
 
-	REAL *d_IC, *d_right, *d_left, *d_bin;
+	REAL *d_IC, *d_right, *d_left, *d0_right, *d0_left;
 	cudaMalloc((void **)&d_IC, sizeof(REAL)*dv);
 	cudaMalloc((void **)&d_right, sizeof(REAL)*dv);
 	cudaMalloc((void **)&d_left, sizeof(REAL)*dv);
-	cudaMalloc((void **)&d_bin, sizeof(REAL)*dv);
+	cudaMalloc((void **)&d0_right, sizeof(REAL)*dv);
+    cudaMalloc((void **)&d0_left, sizeof(REAL)*dv);
 
 	// Copy the initial conditions to the device array.
 	cudaMemcpy(d_IC,IC,sizeof(REAL)*dv,cudaMemcpyHostToDevice);
@@ -419,19 +457,18 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
 	const double t_fullstep = 0.25 * dt * (double)tpb;
 	double twrite = freq;
 
-	const size_t smem1 = 2*tpb*sizeof(REAL);
-	const size_t smem2 = (2*tpb+8)*sizeof(REAL);
+	const size_t smem = (2*tpb+8)*sizeof(REAL);
 
-	upTriangle <<< bks,tpb,smem1 >>> (d_IC,d_right,d_left);
+	upTriangle <<< bks,tpb,smem >>> (d_IC,d_right,d_left);
 
-	swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
-	swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
+	// swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
+	// swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
 
 	//Split
-	wholeDiamond <<< bks,tpb,smem2 >>> (d_right,d_left);
+	wholeDiamond <<< bks,tpb,smem >>> (d_right, d_left, d0_right, d0_left, 1);
 
-	swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-	swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+	// swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
+	// swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
 
 	double t_eq = t_fullstep;
 
@@ -439,25 +476,25 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
 	while(t_eq < t_end)
 	{
 
-		wholeDiamond <<< bks,tpb,smem2 >>> (d_right,d_left);
+		wholeDiamond <<< bks,tpb,smem >>> (d0_right, d0_left, d_right, d_left, -1);
 
-		swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
-		swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
+		// swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
+		// swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
 
 		//So it always ends on a left pass since the down triangle is a right pass.
 
 		//Split
-		wholeDiamond <<< bks,tpb,smem2 >>> (d_right,d_left);
+		wholeDiamond <<< bks,tpb,smem >>> (d_right, d_left, d0_right, d0_left, 1);
 
-		swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-		swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+		// swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
+		// swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
 
 		t_eq += t_fullstep;
 
 
 	 	if (t_eq > twrite)
 		{
-			downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
+			downTriangle <<< bks,tpb,smem >>>(d_IC,d0_right,d0_left);
 
 			cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
 
@@ -467,16 +504,16 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
 
 			fwr << endl;
 
-			upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
+			upTriangle <<< bks,tpb,smem >>>(d_IC,d_right,d_left);
 
-			swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
-			swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
+			// swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
+			// swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
 
 			//Split
-			wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
+			wholeDiamond <<< bks,tpb,smem >>> (d_right, d_left, d0_right, d0_left, 1);
 
-			swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-			swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+			// swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
+			// swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
 
 			t_eq += t_fullstep;
 
@@ -485,14 +522,17 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
 
 	}
 
-	downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
+	downTriangle <<< bks,tpb,smem >>>(d_IC,d0_right,d0_left);
 
 	cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
 
 	cudaFree(d_IC);
 	cudaFree(d_right);
 	cudaFree(d_left);
-	cudaFree(d_bin);
+    cudaFree(d0_right);
+    cudaFree(d0_left);
+
+	//cudaFree(d_bin);
 
 	return t_eq;
 
@@ -537,13 +577,25 @@ int main( int argc, char *argv[])
         exit(-1);
     }
 
-	discConstants dsc = {
+    #ifdef DIVISE
+    discConstants dsc =
+    {
+        FOUR*dx,
+        dx*dx,
+        (dx*dx*dx*dx),
+        dt,
+        dt*0.5
+    };
+    #else
+	discConstants dsc =
+    {
 		1.0/(FOUR*dx),
 		1.0/(dx*dx),
 		1.0/(dx*dx*dx*dx),
 		dt,
 		dt*0.5
 	};
+    #endif
 
 	// Initialize arrays.
     REAL *IC, *T_final;

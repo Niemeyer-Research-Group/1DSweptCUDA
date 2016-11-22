@@ -1,22 +1,24 @@
 function [ cvnew,pR ] = stutterStep( cvLL,cvL,cv,cvR,cvRR,dt_dx,press )
-%stutterStep Summary of this function goes here
-%   Detailed explanation goes here
+%stutterStep
 
-pR = [(press(cv)-press(cvL))/(press(cvL)-press(cvLL)), ...
-    (press(cvR)-press(cv))/(press(cv)-press(cvL)), ...
-    (press(cvR)-press(cv))/(press(cvRR)-press(cvR))];
+pL = (cvL - cvLL)./(cv - cvL);
+pC = (cv - cvL)./(cvR - cv);
+pR = (cvR - cv)./(cvRR - cvR);
+% [(press(cv)-press(cvL))/(press(cvL)-press(cvLL)), ...
+%     (press(cvR)-press(cv))/(press(cv)-press(cvL)), ...
+%     (press(cvR)-press(cv))/(press(cvRR)-press(cvR))];
 
-pRw = [(cv-cvL)./(cvL-cvLL), ...
-    (cvR-cv)./(cv-cvL), ...
-    (cvR-cv)./(cvRR-cvR)];
+% pRw = [(cv-cvL)./(cvL-cvLL), ...
+%     (cvR-cv)./(cv-cvL), ...
+%     (cvR-cv)./(cvRR-cvR)];
 
-tempLeft = limitor(cvL,cv,pR(1));
-tempRight = limitor(cv,cvL,1/pR(2));
+tempLeft = limitor2(cvL,cv-cvL,pL);
+tempRight = limitor2(cv,cv-cvR,pC);
 
 flux = eulerFlux(tempLeft,tempRight,press);
 
-tempLeft = limitor(cv,cvR,pR(2));
-tempRight = limitor(cvR,cv,pR(3));
+tempLeft = limitor2(cv,cvR-cv,pC);
+tempRight = limitor2(cvR,cvR-cvRR,pR);
 
 flux = flux - eulerFlux(tempLeft,tempRight,press);
 cvnew = cv + 0.25*dt_dx*flux';

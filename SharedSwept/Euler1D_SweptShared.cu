@@ -26,7 +26,7 @@ If not, see <https://opensource.org/licenses/MIT>.
 #include <device_functions.h>
 #include "myVectorTypes.h"
 
-//First idea implemented.  Change all constantly recalculated constant values to constant mem.
+
 //How does this affect registers.
 //High hopes for CUDA 8 anyway.
 //Other ideas: More referencing in device functions/ don't carry pressure.
@@ -41,280 +41,253 @@ If not, see <https://opensource.org/licenses/MIT>.
 
 #ifndef REAL
     #define REAL        float
-    #define REALfour    float4
+    #define REALtwo     float2
     #define REALthree   float3
+    #define REALfour    float4
+
+    #define TWOVEC( ... ) make_float2(__VA_ARGS__)
     #define THREEVEC( ... ) make_float3(__VA_ARGS__)
     #define FOURVEC( ... )  make_float4(__VA_ARGS__)
+    #define ZERO        0.0f
+    #define QUARTER     0.25f
+    #define HALF        0.5f
+    #define ONE         1.f
+    #define TWO         2.f
 #else
+    #define TWOVEC( ... ) make_double2(__VA_ARGS__)
     #define THREEVEC( ... ) make_double3(__VA_ARGS__)
     #define FOURVEC( ... )  make_double4(__VA_ARGS__)
+    #define ZERO        0.0
+    #define QUARTER     0.25
+    #define HALF        0.5
+    #define ONE         1.0
+    #define TWO         2.0
+
 #endif
 
 const REAL lx = 1.0;
-REALfour bd[2];
+REALthree bd[2];
 
-struct dimensions
-{
-    REAL gam = 1.4;
-    REAL mgam = 0.4;
+struct dimensions {
+    REAL gam;
+    REAL mgam;
     REAL dt_dx;
-    unsigned int base;
-    unsigned int idxend;
-    unsigned int idxend_1;
-    unsigned int hts[5];
+    int base;
+    int idxend;
+    int idxend_1;
+    int hts[5];
 };
 
+dimensions dimz;
 //dbd is the boundary condition in device constant memory.
-__constant__ REALfour dbd[2]; //0 is left 1 is right.
+__constant__ REALthree dbd[2]; //0 is left 1 is right.
 //dimens dimension struct in global memory.
 __constant__ dimensions dimens;
+
+__host__ __device__
+__forceinline__
+void
+readIn(REALthree *temp, const REALthree *rights, const REALthree *lefts, int td, int gd)
+{
+    #ifdef __CUDA_ARCH__
+	int leftidx = dimens.hts[4] + (((td>>2) & 1) * dimens.base) + (td & 3) - (4 + ((td>>2)<<1));
+	int rightidx = dimens.hts[4] + (((td>>2) & 1) * dimens.base) + ((td>>2)<<1) + (td & 3);
+    #else
+    int leftidx = dimz.hts[4] + (((td>>2) & 1) * dimz.base) + (td & 3) - (4 + ((td>>2)<<1));
+    int rightidx = dimz.hts[4] + (((td>>2) & 1) * dimz.base) + ((td>>2)<<1) + (td & 3);
+    #endif
+
+	temp[leftidx] = rights[gd];
+	temp[rightidx] = lefts[gd];
+}
+
+__host__ __device__
+__forceinline__
+void
+writeOut(REALthree *temp, REALthree *rights, REALthree *lefts, int td, int gd)
+{
+    #ifdef __CUDA_ARCH__
+    int leftidx = (((td>>2) & 1)  * dimens.base) + ((td>>2)<<1) + (td & 3) + 2; //left get
+    int rightidx = (dimens.base-6) + (((td>>2) & 1)  * dimens.base) + (td & 3) - ((td>>2)<<1); //right get
+    #else
+    int leftidx = (((td>>2) & 1)  * dimz.base) + ((td>>2)<<1) + (td & 3) + 2;
+    int rightidx = (dimz.base-6) + (((td>>2) & 1)  * dimz.base) + (td & 3) - ((td>>2)<<1);
+    #endif
+	rights[gd] = temp[rightidx];
+	lefts[gd] = temp[leftidx];
+
+}
+
 
 //Calculates the pressure at the current node with the rho, u, e state variables.
 __device__ __host__
 __forceinline__
 REAL
-pressure(REALfour current)
+pressure(REALthree current)
 {
     #ifdef __CUDA_ARCH__
-    return dimens.mgam * (current.z - (0.5 * current.y * current.y/current.x));
+    return dimens.mgam * (current.z - (HALF * current.y * current.y/current.x));
     #else
-    return dimz.mgam * (current.z - (0.5 * current.y * current.y/current.x));
+    return dimz.mgam * (current.z - (HALF * current.y * current.y/current.x));
     #endif
 }
 
-//Calculates the pressure ratio between the right and left side pressure differences.
-//(pRight-pCurrent)/(pCurrent-pLeft)
+//Really P/rho.
 __device__ __host__
 __forceinline__
 REAL
-pressureRatio(REAL cvLeft, REAL cvCenter, REAL cvRight)
+pressureHalf(REALthree current)
 {
-    return (cvRight- cvCenter)/(cvCenter- cvLeft);
+    #ifdef __CUDA_ARCH__
+    return dimens.mgam * (current.z - (HALF * current.y * current.y));
+    #else
+    return dimz.mgam * (current.z - (HALF * current.y * current.y));
+    #endif
 }
+
 
 //Reconstructs the state variables if the pressure ratio is finite and positive.
 //I think it's that internal boundary condition.
 __device__ __host__
 __forceinline__
-REALfour
+REALthree
 limitor(REALthree cvCurrent, REALthree cvOther, REAL pRatio)
 {
-    #ifdef __CUDA_ARCH__
-    if (isfinite(pRatio) && pRatio > 0) //If it's finite and positive
-    {
-        REAL fact = ((pRatio < 1) ? pRatio : 1.0);
-        return FOURVEC(cvCurrent + 0.5 * fact * (cvOther - cvCurrent));
-
-    }
-    #else
-    if (std::isfinite(pRatio) && pRatio > 0) //If it's finite and positive
-    {
-        REAL fact = ((pRatio < 1) ? pRatio : 1.0);
-        return FOURVEC(cvCurrent + 0.5 * fact * (cvOther - cvCurrent));
-
-    }
-    #endif
-
-    return FOURVEC(cvCurrent);
+    return (cvCurrent + HALF * min(pRatio,ONE) * (cvOther - cvCurrent));
 }
 
 
 //Left and Center then Left and right.
 //This is the meat of the flux calculation.  Fields: x is rho, y is u, z is e, w is p.
 __device__ __host__
+__forceinline__
 REALthree
-eulerFlux(REALfour cvLeft, REALfour cvRight)
+eulerFlux(REALthree cvLeft, REALthree cvRight)
 {
     #ifndef __CUDA_ARCH__
     using namespace std;
     #endif
     //For the first calculation rho and p remain the same.
-    REALthree flux;
-    REAL spectreRadius;
-
     REAL uLeft = cvLeft.y/cvLeft.x;
     REAL uRight = cvRight.y/cvRight.x;
     REAL eLeft = cvLeft.z/cvLeft.x;
     REAL eRight = cvRight.z/cvRight.x;
 
-    flux.x = 0.5 * (cvLeft.x*uLeft + cvRight.x*uRight);
-    flux.y = 0.5 * (cvLeft.x*uLeft*uLeft + cvRight.x*uRight*uRight + cvLeft.w + cvRight.w);
-    flux.z = 0.5 * (cvLeft.x*uLeft*eLeft + cvRight.x*uRight*eRight + uLeft*cvLeft.w + uRight*cvRight.w);
+    REALthree halfState;
+    REAL rhoLeftsqrt = sqrt(cvLeft.x);
+    REAL rhoRightsqrt = sqrt(cvRight.x);
+    REAL pL = pressure(cvLeft);
+    REAL pR = pressure(cvRight);
 
-    REALfour halfState;
-    REAL rhoLeftsqrt = sqrt(cvLeft.x); REAL rhoRightsqrt = sqrt(cvRight.x);
     halfState.x = rhoLeftsqrt * rhoRightsqrt;
-    halfState.y = halfState.x * (rhoLeftsqrt*uLeft + rhoRightsqrt*uRight)/(rhoLeftsqrt + rhoRightsqrt);
-    halfState.z = halfState.x * (rhoLeftsqrt*eLeft + rhoRightsqrt*eRight)/(rhoLeftsqrt + rhoRightsqrt);
-    halfState.w = pressure(halfState);
+    REAL halfDenom = (rhoLeftsqrt + rhoRightsqrt);
 
-    halfState.y = halfState.y/halfState.x;
+    REALthree flux;
+    flux.x = (cvLeft.y + cvRight.y);
 
-    #ifdef __CUDA_ARCH__
-    spectreRadius = sqrt(dimens.gam * halfState.w/halfState.x) + fabs(halfState.y);
-    #else
-    spectreRadius = sqrt(dimz.gam * halfState.w/halfState.x) + fabs(halfState.y);
-    #endif
+    halfState.y =  (rhoLeftsqrt*uLeft + rhoRightsqrt*uRight)/halfDenom;
+    halfState.z =  (rhoLeftsqrt*eLeft + rhoRightsqrt*eRight)/halfDenom;
 
-    flux += 0.5 * spectreRadius * (THREEVEC(cvLeft) - THREEVEC(cvRight));
+    flux.y = (cvLeft.y*uLeft + cvRight.y*uRight + pL + pR);
+    flux.z = (cvLeft.y*eLeft + cvRight.y*eRight + uLeft*pL + uRight*pR);
 
-    return flux;
-}
-
-//This is the predictor step of the finite volume scheme.
-__device__ __host__
-REALfour
-eulerStutterClassicStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfour stateRight, REAL pfarRight)
-{
-    REALthree fluxL, fluxR, pR;
-    REALfour tempStateLeft, tempStateRight;
-
-    //Get the pressure ratios as a structure.
-    pR = THREEVEC(pressureRatio(pfarLeft,stateLeft.w,stateCenter.w),
-        pressureRatio(stateLeft.w,stateCenter.w,stateRight.w),
-        pressureRatio(stateCenter.w,stateRight.w,pfarRight));
-
-    //This is the temporary state bounded by the limitor function.
-    tempStateLeft = limitor(THREEVEC(stateLeft), THREEVEC(stateCenter), pR.x);
-    tempStateRight = limitor(THREEVEC(stateCenter), THREEVEC(stateLeft), 1.0/pR.y);
-
-    //Pressure needs to be recalculated for the new limited state variables.
-    tempStateLeft.w = pressure(tempStateLeft);
-    tempStateRight.w = pressure(tempStateRight);
-    fluxL = eulerFlux(tempStateLeft,tempStateRight);
-
-    //Do the same thing with the right side.
-    tempStateLeft = limitor(THREEVEC(stateCenter), THREEVEC(stateRight), pR.y);
-    tempStateRight = limitor(THREEVEC(stateRight), THREEVEC(stateCenter), 1.0/pR.z);
-    tempStateLeft.w = pressure(tempStateLeft);
-    tempStateRight.w = pressure(tempStateRight);
-    fluxR = eulerFlux(tempStateLeft,tempStateRight);
-
-    //Add the change back to the node in question.
-    #ifdef __CUDA_ARCH__
-    stateCenter += FOURVEC(0.5 * dimens.dt_dx * (fluxL-fluxR));
-    #else
-    stateCenter += FOURVEC(0.5 * dimz.dt_dx * (fluxL-fluxR));
-    #endif
-    stateCenter.w = pressure(stateCenter);
-
-    return stateCenter;
-}
-
-__device__ __host__
-REALfour
-eulerFinalClassicStep(REAL pfarLeft, REALfour stateLeft, REALfour stateCenter, REALfour stateRight, REAL pfarRight)
-{
-    REALthree fluxL, fluxR, pR;
-    REALfour tempStateLeft, tempStateRight;
-
-    pR = THREEVEC(pressureRatio(pfarLeft,stateLeft.w,stateCenter.w),
-        pressureRatio(stateLeft.w,stateCenter.w,stateRight.w),
-        pressureRatio(stateCenter.w,stateRight.w,pfarRight));
-
-    tempStateLeft = limitor(THREEVEC(stateLeft), THREEVEC(stateCenter), pR.x);
-    tempStateRight = limitor(THREEVEC(stateCenter), THREEVEC(stateLeft), 1.0/pR.y);
-    tempStateLeft.w = pressure(tempStateLeft);
-    tempStateRight.w = pressure(tempStateRight);
-    fluxL = eulerFlux(tempStateLeft,tempStateRight);
-
-    tempStateLeft = limitor(THREEVEC(stateCenter), THREEVEC(stateRight), pR.y);
-    tempStateRight = limitor(THREEVEC(stateRight), THREEVEC(stateCenter), 1.0/pR.z);
-    tempStateLeft.w = pressure(tempStateLeft);
-    tempStateRight.w = pressure(tempStateRight);
-    fluxR = eulerFlux(tempStateLeft,tempStateRight);
+    REAL pH = pressureHalf(halfState);
 
     #ifdef __CUDA_ARCH__
-    return FOURVEC(dimens.dt_dx * (fluxL-fluxR));
+    return (flux + (pH*dimens.gam + fabs(halfState.y)) * (cvLeft - cvRight));
     #else
-    return FOURVEC(dimz.dt_dx * (fluxL-fluxR));
+    return (flux + (pH*dimz.gam + fabs(halfState.y)) * (cvLeft - cvRight));
     #endif
+
 
 }
 
 //This is the predictor step of the finite volume scheme.
 __device__ __host__
-REALfour
-eulerStutterStep(REALfour *state, int tr[5])
+REALthree
+eulerStutterStep(REALthree *state, int tr, char flagLeft, char flagRight)
 {
-    REALthree fluxL, fluxR, pR;
-    REALfour tempStateLeft, tempStateRight;
 
-    //Get the pressure ratios as a structure.
-    pR = THREEVEC(pressureRatio(state[tr[0]].w, state[tr[1]].w, state[tr[2]].w),
-        pressureRatio(state[tr[1]].w, state[tr[2]].w, state[tr[3]].w),
-        pressureRatio(state[tr[2]].w, state[tr[3]].w, state[tr[4]].w));
+    REAL pLL = (flagLeft) ? ZERO : (TWO * state[tr-1].x * state[tr-2].x * (state[tr-1].z - state[tr-2].z) +
+        (state[tr-2].y * state[tr-2].y*  state[tr-1].x - state[tr-1].y * state[tr-1].y * state[tr-2].x)) ;
+
+    REAL pL = (TWO * state[tr].x  *state[tr-1].x * (state[tr].z - state[tr-1].z) +
+        (state[tr-1].y * state[tr-1].y * state[tr].x - state[tr].y * state[tr].y * state[tr-1].x));
+
+    REAL pR = (TWO * state[tr].x * state[tr+1].x * (state[tr+1].z - state[tr].z) +
+        (state[tr].y * state[tr].y * state[tr+1].x - state[tr+1].y * state[tr+1].y * state[tr].x));
+
+    REAL pRR = (flagRight) ? ZERO : (TWO * state[tr+1].x * state[tr+2].x * (state[tr+2].z - state[tr+1].z) +
+        (state[tr+1].y * state[tr+1].y * state[tr+2].x - state[tr+2].y * state[tr+2].y * state[tr+1].x));
+
 
     //This is the temporary state bounded by the limitor function.
-    tempStateLeft = limitor(THREEVEC(state[tr[1]]), THREEVEC(state[tr[2]]), pR.x);
-    tempStateRight = limitor(THREEVEC(state[tr[2]]), THREEVEC(state[tr[1]]), 1.0/pR.y);
+    REALthree tempStateLeft = (!pLL || !pL || (pLL < 0 != pL <0)) ? state[tr-1] : limitor(state[tr-1], state[tr], (state[tr-2].x*pL/(state[tr].x*pLL)));
+    REALthree tempStateRight = (!pL || !pR || (pL < 0 != pR <0)) ? state[tr] : limitor(state[tr], state[tr-1], (state[tr+1].x*pL/(state[tr-1].x*pR)));
 
     //Pressure needs to be recalculated for the new limited state variables.
-    tempStateLeft.w = pressure(tempStateLeft);
-    tempStateRight.w = pressure(tempStateRight);
-    fluxL = eulerFlux(tempStateLeft,tempStateRight);
+    REALthree flux = eulerFlux(tempStateLeft,tempStateRight);
 
     //Do the same thing with the right side.
-    tempStateLeft = limitor(THREEVEC(state[tr[2]]), THREEVEC(state[tr[3]]), pR.y);
-    tempStateRight = limitor(THREEVEC(state[tr[3]]), THREEVEC(state[tr[2]]), 1.0/pR.z);
-    tempStateLeft.w = pressure(tempStateLeft);
-    tempStateRight.w = pressure(tempStateRight);
-    fluxR = eulerFlux(tempStateLeft,tempStateRight);
+    tempStateLeft = (!pL || !pR || (pL < 0 != pR <0)) ? state[tr] : limitor(state[tr], state[tr+1], (state[tr-1].x*pR/(state[tr+1].x*pL)));
+    tempStateRight = (!pRR || !pR || (pRR < 0 != pR <0)) ? state[tr+1] : limitor(state[tr+1], state[tr], (state[tr+2].x*pR/(state[tr].x*pRR)));
+
+    flux -= eulerFlux(tempStateLeft,tempStateRight);
 
     //Add the change back to the node in question.
     #ifdef __CUDA_ARCH__
-    tempStateRight = state[tr[2]] + FOURVEC(0.5 * dimens.dt_dx * (fluxL-fluxR));
+    return state[tr] + (QUARTER * dimens.dt_dx * flux);
     #else
-    tempStateRight = state[tr[2]] + FOURVEC(0.5 * dimz.dt_dx * (fluxL-fluxR));
+    return state[tr] + (QUARTER * dimz.dt_dx * flux);
     #endif
 
-    tempStateRight.w = pressure(tempStateRight);
-
-    return tempStateRight;
 
 }
 
 //Same thing as the predictor step, but this final step adds the result to the original state variables to advance to the next timestep.
 //But the predictor variables to find the fluxes.
 __device__ __host__
-REALfour
-eulerFinalStep(REALfour *state, int tr[5])
+REALthree
+eulerFinalStep(REALthree *state, int tr, char flagLeft, char flagRight)
 {
-    REALthree fluxL, fluxR, pR;
-    REALfour tempStateLeft, tempStateRight;
 
-    //Get the pressure ratios as a structure.
-    pR = THREEVEC(pressureRatio(state[tr[0]].w, state[tr[1]].w, state[tr[2]].w),
-        pressureRatio(state[tr[1]].w, state[tr[2]].w, state[tr[3]].w),
-        pressureRatio(state[tr[2]].w, state[tr[3]].w, state[tr[4]].w));
+    REAL pLL = (flagLeft) ? ZERO : (TWO * state[tr-1].x * state[tr-2].x * (state[tr-1].z - state[tr-2].z) +
+        (state[tr-2].y * state[tr-2].y*  state[tr-1].x - state[tr-1].y * state[tr-1].y * state[tr-2].x)) ;
+
+    REAL pL = (TWO * state[tr].x  *state[tr-1].x * (state[tr].z - state[tr-1].z) +
+        (state[tr-1].y * state[tr-1].y * state[tr].x - state[tr].y * state[tr].y * state[tr-1].x));
+
+    REAL pR = (TWO * state[tr].x * state[tr+1].x * (state[tr+1].z - state[tr].z) +
+        (state[tr].y * state[tr].y * state[tr+1].x - state[tr+1].y * state[tr+1].y * state[tr].x));
+
+    REAL pRR = (flagRight) ?  ZERO : (TWO * state[tr+1].x * state[tr+2].x * (state[tr+2].z - state[tr+1].z) +
+        (state[tr+1].y * state[tr+1].y * state[tr+2].x - state[tr+2].y * state[tr+2].y * state[tr+1].x));
+
 
     //This is the temporary state bounded by the limitor function.
-    tempStateLeft = limitor(THREEVEC(state[tr[1]]), THREEVEC(state[tr[2]]), pR.x);
-    tempStateRight = limitor(THREEVEC(state[tr[2]]), THREEVEC(state[tr[1]]), 1.0/pR.y);
+    REALthree tempStateLeft = (!pLL || !pL || (pLL < 0 != pL <0)) ? state[tr-1] : limitor(state[tr-1], state[tr], (state[tr-2].x*pL/(state[tr].x*pLL)));
+    REALthree tempStateRight = (!pL || !pR || (pL < 0 != pR <0)) ? state[tr] : limitor(state[tr], state[tr-1], (state[tr+1].x*pL/(state[tr-1].x*pR)));
 
     //Pressure needs to be recalculated for the new limited state variables.
-    tempStateLeft.w = pressure(tempStateLeft);
-    tempStateRight.w = pressure(tempStateRight);
-    fluxL = eulerFlux(tempStateLeft,tempStateRight);
+    REALthree flux = eulerFlux(tempStateLeft,tempStateRight);
 
     //Do the same thing with the right side.
-    tempStateLeft = limitor(THREEVEC(state[tr[2]]), THREEVEC(state[tr[3]]), pR.y);
-    tempStateRight = limitor(THREEVEC(state[tr[3]]), THREEVEC(state[tr[2]]), 1.0/pR.z);
-    tempStateLeft.w = pressure(tempStateLeft);
-    tempStateRight.w = pressure(tempStateRight);
-    fluxR = eulerFlux(tempStateLeft,tempStateRight);
+    tempStateLeft = (!pL || !pR || (pL < 0 != pR <0)) ? state[tr] : limitor(state[tr], state[tr+1], (state[tr-1].x*pR/(state[tr+1].x*pL)));
+    tempStateRight = (!pRR || !pR || (pRR < 0 != pR <0))  ? state[tr+1] : limitor(state[tr+1], state[tr], (state[tr+2].x*pR/(state[tr].x*pRR)));
+
+    flux -= eulerFlux(tempStateLeft,tempStateRight);
 
     #ifdef __CUDA_ARCH__
-    return FOURVEC(dimens.dt_dx * (fluxL-fluxR));
+    return (HALF * dimens.dt_dx * flux);
     #else
-    return FOURVEC(dimz.dt_dx * (fluxL-fluxR));
+    return (HALF * dimz.dt_dx * flux);
     #endif
 
 }
 
 __global__
 void
-swapKernel(const REALfour *passing_side, REALfour *bin, int direction)
+swapKernel(const REALthree *passing_side, REALthree *bin, int direction)
 {
     int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
     int gidout = (gid + direction*blockDim.x) & dimens.idxend;
@@ -326,118 +299,77 @@ swapKernel(const REALfour *passing_side, REALfour *bin, int direction)
 //Simple scheme with dirchlet boundary condition.
 __global__
 void
-classicEuler(const REALfour *euler_in, REALfour *euler_out, bool final)
+classicEuler(REALthree *euler_in, REALthree *euler_out, const bool final)
 {
     int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 
+    const char4 truth = {gid == 0, gid == 1, gid == dimens.idxend_1, gid == dimens.idxend};
+
+    if (truth.x)
+    {
+        euler_out[gid] = dbd[0];
+        return;
+    }
+    else if (truth.w)
+    {
+        euler_out[gid] = dbd[1];
+        return;
+    }
+
     if (final)
     {
-        if (gid == 0)
-        {
-            euler_out[gid] = dbd[0];
-        }
-        else if (gid == dimens.idxend)
-        {
-            euler_out[gid] = dbd[1];
-        }
-        else if (gid == 1)
-        {
-            euler_out[gid] += eulerFinalClassicStep(dbd[0].w,dbd[0],euler_in[gid],
-                euler_in[(gid+1)],euler_in[(gid+2)].w);
-
-            euler_out[gid].w = pressure(euler_out[gid]);
-        }
-        else if (gid == dimens.idxend_1)
-        {
-            euler_out[gid] += eulerFinalClassicStep(euler_in[(gid-2)].w,euler_in[(gid-1)],euler_in[gid],
-                dbd[1],dbd[1].w);
-            euler_out[gid].w = pressure(euler_out[gid]);
-        }
-        else
-        {
-            euler_out[gid] += eulerFinalClassicStep(euler_in[(gid-2)].w,euler_in[(gid-1)],euler_in[gid],
-                euler_in[(gid+1)],euler_in[(gid+2)].w);
-            euler_out[gid].w = pressure(euler_out[gid]);
-        }
+        euler_out[gid] += eulerFinalStep(euler_in, gid, truth.y, truth.z);
     }
     else
     {
-        if (gid == 0)
-        {
-            euler_out[gid] = dbd[0];
-        }
-        else if (gid == dimens.idxend)
-        {
-            euler_out[gid] = dbd[1];
-        }
-        else if (gid == 1)
-        {
-            euler_out[gid] = eulerStutterClassicStep(dbd[0].w,dbd[0],euler_in[gid],euler_in[(gid+1)],euler_in[(gid+2)].w);
-        }
-        else if (gid == dimens.idxend_1)
-        {
-            euler_out[gid] = eulerStutterClassicStep(euler_in[(gid-2)].w,euler_in[(gid-1)],euler_in[gid],dbd[1],dbd[1].w);
-        }
-        else
-        {
-            euler_out[gid] = eulerStutterClassicStep(euler_in[(gid-2)].w,euler_in[(gid-1)],euler_in[gid],euler_in[(gid+1)],euler_in[(gid+2)].w);
-        }
+        euler_out[gid] = eulerStutterStep(euler_in, gid, truth.y, truth.z);
     }
 }
 
 __global__
 void
-upTriangle(const REALfour *IC, REALfour *right, REALfour *left)
+upTriangle(const REALthree *IC, REALthree *right, REALthree *left)
 {
 
-	extern __shared__ REALfour temper[];
+	extern __shared__ REALthree temper[];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tid = threadIdx.x; //Block Thread ID
-    int step2;
-
-    int tid_top[5], tid_bottom[5];
-	#pragma unroll
-	for (int k = -2; k<3; k++)
-    {
-        tid_bottom[k+2] = tid + k;
-        tid_top[k+2] = tid + k + blockDim.x;
-    }
-
-	int leftidx = ((tid/4 & 1) * blockDim.x) + (tid/4)*2 + (tid & 3);
-	int rightidx = (blockDim.x - 4) + ((tid/4 & 1) * blockDim.x) + (tid & 3) - (tid/4)*2;
+    int tididx = tid + 2;
+    int tidxTop = tididx + dimens.base;
+    int k=4;
 
     //Assign the initial values to the first row in temper, each block
     //has it's own version of temper shared among its threads.
-	temper[tid] = IC[gid];
+	temper[tididx] = IC[gid];
 
     __syncthreads();
 
 	if (tid > 1 && tid <(blockDim.x-2))
 	{
-		temper[tid_top[2]] = eulerStutterStep(temper, tid_bottom);
+		temper[tidxTop] = eulerStutterStep(temper, tididx, false, false);
 	}
 
 	__syncthreads();
 
 	//The initial conditions are timslice 0 so start k at 1.
-	for (int k = 4; k<(blockDim.x/2); k+=4)
+	while (k<(blockDim.x>>1))
 	{
 		if (tid < (blockDim.x-k) && tid >= k)
 		{
-            temper[tid] += eulerFinalStep(temper, tid_top);
+            temper[tididx] += eulerFinalStep(temper, tidxTop, false, false);
 
-            temper[tid].w = pressure(temper[tid]);
 		}
-        step2 = k+2;
+
+        k+=2;
 		__syncthreads();
 
-		if (tid < (blockDim.x-step2) && tid >= step2)
+		if (tid < (blockDim.x-k) && tid >= k)
 		{
-            temper[tid_top[2]] = eulerStutterStep(temper, tid_bottom);
+            temper[tidxTop] = eulerStutterStep(temper, tididx, false, false);
 		}
 
-		//Make sure the threads are synced
+		k+=2;
 		__syncthreads();
 
 	}
@@ -445,9 +377,8 @@ upTriangle(const REALfour *IC, REALfour *right, REALfour *left)
 	//After the triangle has been computed, the right and left shared arrays are
 	//stored in global memory by the global thread ID since (conveniently),
 	//they're the same size as a warp!
-	right[gid] = temper[rightidx];
-	left[gid] = temper[leftidx];
 
+    writeOut(temper, right, left, tid, gid);
 
 }
 
@@ -455,533 +386,324 @@ upTriangle(const REALfour *IC, REALfour *right, REALfour *left)
 // It returns IC which is a full 1D result at a certain time.
 __global__
 void
-downTriangle(REALfour *IC, const REALfour *right, const REALfour *left)
+downTriangle(REALthree *IC, const REALthree *right, const REALthree *left)
 {
-	extern __shared__ REALfour temper[];
+	extern __shared__ REALthree temper[];
+    //REALthree *temper_top = (REALthree*)&temper[dimens.base];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
 	int tid = threadIdx.x;
-	int tididx = tid + 2;
-    int step2;
+    int tididx = tid + 2;
+    int k = dimens.hts[2];
+    int tidxTop = tididx + dimens.base;
 
-    int tid_top[5], tid_bottom[5];
-    #pragma unroll
-    for (int k = -2; k<3; k++)
-    {
-        tid_bottom[k+2] = tididx + k;
-        tid_top[k+2] = tididx + k + dimens.base;
-    }
+	readIn(temper, right, left, tid, gid);
 
-	int leftidx = dimens.hts[4] + ((tid/4 & 1) * dimens.base) + (tid & 3) - (4 + (tid/4) * 2);
-	int rightidx = dimens.hts[4] + ((tid/4 & 1) * dimens.base) + (tid/4)*2 + (tid & 3);
-
-	temper[leftidx] = right[gid];
-	temper[rightidx] = left[gid];
+    const char4 truth = {gid == 0, gid == 1, gid == dimens.idxend_1, gid == dimens.idxend};
 
     __syncthreads();
 
-    if (gid == 0)
-    {
-        temper[tididx] = dbd[0];
-        temper[tididx+dimens.base] = dbd[0];
-        IC[gid] = temper[tididx];
-        return;
-    }
-    else if (gid == dimens.idxend)
-    {
-        temper[tididx] = dbd[1];
-        temper[tididx+dimens.base] = dbd[1];
-        IC[gid] = temper[tididx];
-        return;
-    }
-    else if (gid == dimens.idxend_1)
-    {
-        tid_top[4] = tid_top[3];
-    }
-    else if (gid == 1)
-    {
-        tid_top[0] = tid_top[1];
-    }
-
-    __syncthreads();
-
-	for (int k = dimens.hts[2]; k>1; k-=4)
+	while(k>1)
 	{
 		if (tididx < (dimens.base-k) && tididx >= k)
 		{
-            temper[tid_top[2]] = eulerStutterStep(temper, tid_bottom);
+            temper[tidxTop] = eulerStutterStep(temper, tididx, truth.y, truth.z);
 		}
 
-        step2 = k-2;
+        k-=2;
         __syncthreads();
 
-        if (tididx < (dimens.base-step2) && tididx >= step2)
+        if (!truth.x && !truth.w && tididx < (dimens.base-k) && tididx >= k)
         {
-            temper[tididx] += eulerFinalStep(temper, tid_top);
+            temper[tididx] += eulerFinalStep(temper, tidxTop, truth.y, truth.z);
 
-            temper[tididx].w = pressure(temper[tididx]);
         }
-		//Make sure the threads are synced
+
+		k-=2;
 		__syncthreads();
 	}
 
-    //__syncthreads();
+
     IC[gid] = temper[tididx];
 }
 
 //Full refers to whether or not there is a node run on the CPU.
 __global__
 void
-wholeDiamond(REALfour *right, REALfour *left, bool full)
+wholeDiamond(REALthree *right, REALthree *left, bool full)
 {
 
-    extern __shared__ REALfour temper[];
+    extern __shared__ REALthree temper[];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
 	int tid = threadIdx.x;
 	int tididx = tid + 2;
-    int step2;
+    int tidxTop = tididx + dimens.base;
 
-    int tid_top[5], tid_bottom[5];
-    #pragma unroll
-    for (int k = -2; k<3; k++)
-    {
-        tid_bottom[k+2] = tididx + k;
-        tid_top[k+2] = tididx + k + dimens.base;
-    }
+    char4 truth = {gid == 0, gid == 1, gid == dimens.idxend_1, gid == dimens.idxend};
 
-    int2 idx;
-	idx.x = dimens.hts[4] + ((tid/4 & 1) * dimens.base) + (tid & 3) - (4 + (tid/4) * 2); //left set
-	idx.y = dimens.hts[4] + ((tid/4 & 1) * dimens.base) + (tid/4)*2 + (tid & 3); //right set
-
-    if (full)
-    {
-        temper[idx.x] = right[gid];
-        temper[idx.y] = left[gid];
-    }
-    else
+    if (!full)
     {
         gid += blockDim.x;
-        temper[idx.x] = right[gid];
-        temper[idx.y] = left[gid];
+        truth.x = false, truth.y = false, truth.z = false, truth.w = false;
     }
+
+    readIn(temper, right, left, tid, gid);
 
     __syncthreads();
 
-    if (full)
-    {
-        if (gid == 0)
-        {
-            temper[tididx] = dbd[0];
-            temper[tididx+dimens.base] = dbd[0];
-        }
-        else if (gid == dimens.idxend)
-        {
-            temper[tididx] = dbd[1];
-            temper[tididx+dimens.base] = dbd[1];
-        }
-        else if (gid == dimens.idxend_1)
-        {
-            tid_top[4] = tid_top[3];
-        }
-        else if (gid == 1)
-        {
-            tid_top[0] = tid_top[1];
-        }
-    }
-    __syncthreads();
+    int k = dimens.hts[0];
 
     if (tididx < (dimens.base-dimens.hts[2]) && tididx >= dimens.hts[2])
     {
-        temper[tid_top[2]] = eulerStutterStep(temper, tid_bottom);
+        temper[tidxTop] = eulerStutterStep(temper, tididx, truth.y, truth.z);
     }
 
     __syncthreads();
 
-    for (int k = dimens.hts[0]; k>4; k-=4)
+    while(k>4)
     {
         if (tididx < (dimens.base-k) && tididx >= k)
         {
-            temper[tididx] += eulerFinalStep(temper, tid_top);
-
-            temper[tididx].w = pressure(temper[tididx]);
+            temper[tididx] += eulerFinalStep(temper, tidxTop, truth.y, truth.z);
         }
 
-        step2 = k-2;
+        k -= 2;
         __syncthreads();
 
-        if (tididx < (dimens.base-step2) && tididx >= step2)
+        if (tididx < (dimens.base-k) && tididx >= k)
         {
-            temper[tid_top[2]] = eulerStutterStep(temper, tid_bottom);
+            temper[tidxTop] = eulerStutterStep(temper, tididx, truth.y, truth.z);
         }
-        //Make sure the threads are synced
+
+        k -= 2;
         __syncthreads();
     }
 
     // -------------------TOP PART------------------------------------------
-    idx.x = ((tid/4 & 1) * dimens.base) + (tid/4)*2 + (tid & 3) + 2; //left get
-    idx.y = (dimens.base-6) + ((tid/4 & 1) * dimens.base) + (tid & 3) - (tid/4)*2; //right get
 
-    if (full)
-        if (gid > 0 &&  gid < dimens.idxend)
-        {
-            temper[tididx] += eulerFinalStep(temper, tid_top);
-
-            temper[tididx].w = pressure(temper[tididx]);
-        }
-    else
+    if (!truth.w  &&  !truth.x)
     {
-        temper[tididx] += eulerFinalStep(temper, tid_top);
-
-        temper[tididx].w = pressure(temper[tididx]);
+        temper[tididx] += eulerFinalStep(temper, tidxTop, truth.y, truth.z);
     }
 
     __syncthreads();
 
     if (tididx > 3 && tididx <(dimens.base-4))
 	{
-        temper[tid_top[2]] = eulerStutterStep(temper, tid_bottom);
+        temper[tidxTop] = eulerStutterStep(temper, tididx, truth.y, truth.z);
 	}
-	//The initial conditions are timeslice 0 so start k at 1.
 
+
+    k=6;
 	__syncthreads();
 
-    //The initial conditions are timslice 0 so start k at 1.
-	for (int k = 6; k<dimens.hts[4]; k+=4)
+	while(k<dimens.hts[4])
 	{
-		if (tididx< (dimens.base-k) && tididx >= k)
+		if (tididx < (dimens.base-k) && tididx >= k)
 		{
-            temper[tididx] += eulerFinalStep(temper, tid_top);
+            temper[tididx] += eulerFinalStep(temper, tidxTop, truth.y, truth.z);
+        }
 
-            temper[tididx].w = pressure(temper[tididx]);
-		}
-        step2 = k+2;
+        k+=2;
         __syncthreads();
 
-        if (tididx < (dimens.base-step2) && tididx >= step2)
+        if (tididx < (dimens.base-k) && tididx >= k)
         {
-            temper[tid_top[2]] = eulerStutterStep(temper, tid_bottom);
+            temper[tidxTop] = eulerStutterStep(temper, tididx, truth.y, truth.z);
 		}
 
-		//Make sure the threads are synced
+
+		k+=2;
 		__syncthreads();
 
 	}
 
-    right[gid] = temper[idx.y];
-	left[gid] = temper[idx.x];
+    writeOut(temper, right, left, tid, gid);
 
 }
+
 
 //Split one is always first.
 __global__
 void
-splitDiamond(REALfour *right, REALfour *left)
+splitDiamond(REALthree *right, REALthree *left)
 {
-    extern __shared__ REALfour temper[];
+    extern __shared__ REALthree temper[];
 
     //Same as upTriangle
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
 	int tid = threadIdx.x;
     int tididx = tid + 2;
-    int step2;
+    int tidxTop = tididx + dimens.base;
 
-    int tid_top[5], tid_bottom[5];
-    #pragma unroll
-    for (int k = -2; k<3; k++)
-    {
-        tid_bottom[k+2] = tididx + k;
-        tid_top[k+2] = tididx + k + dimens.base;
-    }
+	readIn(temper, right, left, tid, gid);
 
-    bool t_ht = (gid == dimens.hts[2]);
-    bool t_htm = (gid == dimens.hts[1]);
+    const char4 truth = {gid == dimens.hts[0], gid == dimens.hts[1], gid == dimens.hts[2], gid == dimens.hts[3]};
 
-    int2 idx;
-	idx.x = dimens.hts[4] + ((tid/4 & 1) * dimens.base) + (tid & 3) - (4 + (tid/4) * 2); //left set
-	idx.y = dimens.hts[4] + ((tid/4 & 1) * dimens.base) + (tid/4)*2 + (tid & 3); //right set
-
-    temper[idx.x] = right[gid];
-	temper[idx.y] = left[gid];
-
+    int k = dimens.hts[2];
     __syncthreads();
 
-    if (t_ht)
+    if (truth.z)
     {
         temper[tididx] = dbd[0];
-        temper[tididx+dimens.base] = dbd[0];
+        temper[tidxTop] = dbd[0];
     }
-    else if (t_htm)
+    if (truth.y)
     {
         temper[tididx] = dbd[1];
-        temper[tididx+dimens.base] = dbd[1];
-    }
-    else if (gid == dimens.hts[0])
-    {
-        tid_top[4] = tid_top[3];
-        tid_bottom[4] = tid_bottom[3];
-    }
-    else if (gid == dimens.hts[3])
-    {
-        tid_top[0] = tid_top[1];
-        tid_bottom[0] = tid_bottom[1];
+        temper[tidxTop] = dbd[1];
     }
 
     __syncthreads();
 
-    for (int k = dimens.hts[2]; k>0; k-=4)
+    while(k>0)
     {
 
-        if (!t_ht && !t_htm && tididx < (dimens.base-k) && tididx >= k)
+        if (!truth.y && !truth.z && tididx < (dimens.base-k) && tididx >= k)
         {
-            temper[tid_top[2]] = eulerStutterStep(temper, tid_bottom);
+            temper[tidxTop] = eulerStutterStep(temper, tididx, truth.w, truth.x);
         }
 
-        step2 = k-2;
+        k -= 2;
         __syncthreads();
 
-        if (!t_ht && !t_htm && tididx < (dimens.base-step2) && tididx >= step2)
+        if (!truth.y && !truth.z && tididx < (dimens.base-k) && tididx >= k)
         {
-            temper[tididx] += eulerFinalStep(temper, tid_top);
-
-            temper[tididx].w = pressure(temper[tididx]);
+            temper[tididx] += eulerFinalStep(temper, tidxTop, truth.w, truth.x);
         }
 
+        k -= 2;
         __syncthreads();
     }
 
-    idx.x = ((tid/4 & 1) * dimens.base) + (tid/4)*2 + (tid & 3) + 2; //left get
-    idx.y = (dimens.base-6) + ((tid/4 & 1) * dimens.base) + (tid & 3) - (tid/4)*2; //right get
-
-    if (!t_ht && !t_htm && tid > 1 && tid <(blockDim.x-2))
+    if (!truth.y && !truth.z && tid > 1 && tid <(blockDim.x-2))
 	{
-        temper[tid_top[2]] = eulerStutterStep(temper, tid_bottom);
+        temper[tidxTop] = eulerStutterStep(temper, tididx, truth.w, truth.x);
 	}
 
 	__syncthreads();
-
+    k=4;
 
     //The initial conditions are timslice 0 so start k at 1.
-    for (int k = 4; k<dimens.hts[2]; k+=4)
+    while(k<dimens.hts[2])
     {
-        if (!t_ht && !t_htm && tid < (blockDim.x-k) && tid >= k)
+        if (!truth.y && !truth.z && tid < (blockDim.x-k) && tid >= k)
         {
-            temper[tididx] += eulerFinalStep(temper, tid_top);
+            temper[tididx] += eulerFinalStep(temper, tidxTop, truth.w, truth.x);
 
-            temper[tididx].w = pressure(temper[tididx]);
         }
 
-        step2 = k+2;
+        k+=2;
         __syncthreads();
 
-        if (!t_ht && !t_htm && tid < (blockDim.x-step2) && tid >= step2)
+        if (!truth.y && !truth.z && tid < (blockDim.x-k) && tid >= k)
         {
-            temper[tid_top[2]] = eulerStutterStep(temper, tid_bottom);
+            temper[tidxTop] = eulerStutterStep(temper, tididx, truth.w, truth.x);
         }
 
-        //Make sure the threads are synced
+
+        k+=2;
         __syncthreads();
 
     }
 
-    right[gid] = temper[idx.y];
-    left[gid] = temper[idx.x];
+	writeOut(temper, right, left, tid, gid);
 }
+
 
 using namespace std;
 
 __host__
 void
-CPU_diamond(REALfour *temper, int tpb)
+CPU_diamond(REALthree *temper, int htcpu[5])
 {
-    int step2;
-    int base = tpb + 4;
-    int height = base/2;
-    int height2 = height-2;
+
     omp_set_num_threads(8);
 
+    temper[htcpu[2]] = bd[0];
+    temper[htcpu[2]+dimz.base] = bd[0];
+
+    temper[htcpu[1]] = bd[1];
+    temper[htcpu[1]+dimz.base] = bd[1];
+
     //Splitting it is the whole point!
-    for (int k = height2; k>0; k-=4)
+    for (int k = htcpu[0]; k>0; k-=4)
     {
         #pragma omp parallel for
-        for(int n = k; n<(base-k); n++)
+        for(int n = k; n<(dimz.base-k); n++)
         {
-            if (n == (height-1)) //case 1
+            if (n!=htcpu[1] && n!=htcpu[2])
             {
-                temper[n+base] = bd[1];
-            }
-            else if (n == height)  //case 2
-            {
-                temper[n+base] = bd[0];
-            }
-            else if (n == height2) //case 0
-            {
-                temper[n+base] = eulerStutterClassicStep(temper[n-2].w, temper[n-1], temper[n],
-                    bd[1], bd[1].w);
-            }
-            else if (n == (height+1)) //case 3
-            {
-                temper[n+base] = eulerStutterClassicStep(bd[0].w, bd[0], temper[n],
-                    temper[n+1], temper[n+2].w);
-            }
-            else
-            {
-                temper[n+base] = eulerStutterClassicStep(temper[n-2].w, temper[n-1], temper[n],
-                    temper[n+1], temper[n+2].w);
+                temper[n+dimz.base] = eulerStutterStep(temper, n, (n==htcpu[3]),(n==htcpu[0]));
             }
         }
 
-        step2 = k-2;
         #pragma omp parallel for
-        for(int n = step2; n<(base-step2); n++)
+        for(int n = k-2; n<(dimz.base-(k-2)); n++)
         {
-            if (n == (height-1)) //case 1
+            if (n!=htcpu[1] && n!=htcpu[2])
             {
-                temper[n] = bd[1];
-            }
-            else if (n == height)  //case 2
-            {
-                temper[n] = bd[0];
-            }
-            else if (n == height2) //case 0
-            {
-                temper[n] += eulerFinalClassicStep(temper[base+n-2].w, temper[base+n-1], temper[base+n],
-                    bd[1], bd[1].w);
-                temper[n].w = pressure(temper[n]);
-            }
-            else if (n == (height+1)) //case 3
-            {
-                temper[n] += eulerFinalClassicStep(bd[0].w, bd[0], temper[base+n],
-                    temper[base+n+1], temper[base+n+2].w);
-                temper[n].w = pressure(temper[n]);
-            }
-            else
-            {
-                temper[n] += eulerFinalClassicStep(temper[base+n-2].w, temper[base+n-1], temper[base+n],
-                    temper[base+n+1], temper[base+n+2].w);
-                temper[n].w = pressure(temper[n]);
+                temper[n] += eulerFinalStep(temper, n+dimz.base, n==htcpu[3],(n==htcpu[0]));
             }
         }
     }
 
-
-    for (int k = 0; k<tpb; k++) temper[k] = temper[k+2];
-
-    height -= 2;
-    height2 -= 2;
-
     #pragma omp parallel for
-    for(int n = 2; n<(tpb-2); n++)
+    for(int n = 4; n < (dimz.base-4); n++)
     {
-        if (n == (height-1)) //case 1
+        if (n!=htcpu[1] && n!=htcpu[2])
         {
-            temper[n+tpb] = bd[1];
-        }
-        else if (n == height)  //case 2
-        {
-            temper[n+tpb] = bd[0];
-        }
-        else if (n == height2) //case 0
-        {
-            temper[n+tpb] = eulerStutterClassicStep(temper[n-2].w, temper[n-1], temper[n],
-                bd[1], bd[1].w);
-        }
-        else if (n == (height+1)) //case 3
-        {
-            temper[n+tpb] = eulerStutterClassicStep(bd[0].w, bd[0], temper[n],
-                temper[n+1], temper[n+2].w);
-        }
-        else
-        {
-            temper[n+tpb] = eulerStutterClassicStep(temper[n-2].w, temper[n-1], temper[n],
-                temper[n+1], temper[n+2].w);
+            temper[n+dimz.base] = eulerStutterStep(temper, n, (n==htcpu[3]),(n==htcpu[0]));
         }
     }
 
     //Top part.
-    for (int k = 4; k<height; k+=4)
+    for (int k = 6; k<htcpu[2]; k+=4)
     {
-        #pragma omp parallel for
-        for(int n = k; n<(tpb-k); n++)
+        #pragma omp parallel
+        for(int n = k; n<(dimz.base-k); n++)
         {
-            if (n == (height-1)) //case 1
+            if (n!=htcpu[1] && n!=htcpu[2])
             {
-                temper[n] = bd[1];
-            }
-            else if (n == height)  //case 2
-            {
-                temper[n] = bd[0];
-            }
-            else if (n == height2) //case 0
-            {
-                temper[n] += eulerFinalClassicStep(temper[tpb+n-2].w, temper[tpb+n-1], temper[tpb+n],
-                    bd[1], bd[1].w);
-                temper[n].w = pressure(temper[n]);
-            }
-            else if (n == (height+1)) //case 3
-            {
-                temper[n] += eulerFinalClassicStep(bd[0].w, bd[0], temper[tpb+n],
-                    temper[tpb+n+1], temper[tpb+n+2].w);
-                temper[n].w = pressure(temper[n]);
-            }
-            else
-            {
-                temper[n] += eulerFinalClassicStep(temper[tpb+n-2].w, temper[tpb+n-1], temper[tpb+n],
-                    temper[tpb+n+1], temper[tpb+n+2].w);
-                temper[n].w = pressure(temper[n]);
+                temper[n] += eulerFinalStep(temper, n + dimz.base, (n==htcpu[3]), (n==htcpu[0]));
             }
         }
 
-        step2 = k+2;
         #pragma omp parallel for
-        for(int n = step2; n<(tpb-step2); n++)
+        for(int n = (k+2); n<(dimz.base-(k+2)); n++)
         {
-            if (n == (height-1)) //case 1
+            if (n!=htcpu[1] && n!=htcpu[2])
             {
-                temper[n+tpb] = bd[1];
-            }
-            else if (n == height)  //case 2
-            {
-                temper[n+tpb] = bd[0];
-            }
-            else if (n == height2) //case 0
-            {
-                temper[n+tpb] = eulerStutterClassicStep(temper[n-2].w, temper[n-1], temper[n],
-                    bd[1], bd[1].w);
-            }
-            else if (n == (height+1)) //case 3
-            {
-                temper[n+tpb] = eulerStutterClassicStep(bd[0].w, bd[0], temper[n],
-                    temper[n+1], temper[n+2].w);
-            }
-            else
-            {
-                temper[n+tpb] = eulerStutterClassicStep(temper[n-2].w, temper[n-1], temper[n],
-                    temper[n+1], temper[n+2].w);
+                temper[n+dimz.base] = eulerStutterStep(temper, n, (n==htcpu[3]),(n==htcpu[0]));
             }
         }
     }
+
+    // temper[htcpu[1]] = bd[1]
+    // temper[htcpu[1]] = bd[1]
+
 }
 
 REAL
 __host__ __inline__
 energy(REAL p, REAL rho, REAL u)
 {
-    return (p/(m_gamma*rho) + 0.5*rho*u*u);
+    return (p/(dimz.mgam*rho) + HALF*rho*u*u);
 }
 
 //Classic Discretization wrapper.
 double
 classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t_end,
-    REALfour *IC, REALfour *T_f, const float freq, ofstream &fwr)
+    REALthree *IC, REALthree *T_f, const float freq, ofstream &fwr)
 {
-    REALfour *dEuler_in, *dEuler_out;
+    REALthree *dEuler_in, *dEuler_out;
 
-    cudaMalloc((void **)&dEuler_in, sizeof(REALfour)*dv);
-    cudaMalloc((void **)&dEuler_out, sizeof(REALfour)*dv);
+    cudaMalloc((void **)&dEuler_in, sizeof(REALthree)*dv);
+    cudaMalloc((void **)&dEuler_out, sizeof(REALthree)*dv);
 
     // Copy the initial conditions to the device array.
-    cudaMemcpy(dEuler_in,IC,sizeof(REALfour)*dv,cudaMemcpyHostToDevice);
+    cudaMemcpy(dEuler_in,IC,sizeof(REALthree)*dv,cudaMemcpyHostToDevice);
 
     double t_eq = 0.0;
     double twrite = freq;
@@ -994,7 +716,7 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t
 
         if (t_eq > twrite)
         {
-            cudaMemcpy(T_f, dEuler_in, sizeof(REALfour)*dv, cudaMemcpyDeviceToHost);
+            cudaMemcpy(T_f, dEuler_in, sizeof(REALthree)*dv, cudaMemcpyDeviceToHost);
 
             fwr << " Density " << t_eq << " ";
             for (int k = 1; k<(dv-1); k++) fwr << T_f[k].x << " ";
@@ -1009,14 +731,14 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t
             fwr << endl;
 
             fwr << " Pressure " << t_eq << " ";
-            for (int k = 1; k<(dv-1); k++) fwr << T_f[k].w << " ";
+            for (int k = 1; k<(dv-1); k++) fwr << pressure(T_f[k]) << " ";
             fwr << endl;
 
             twrite += freq;
         }
     }
 
-    cudaMemcpy(T_f, dEuler_in, sizeof(REALfour)*dv, cudaMemcpyDeviceToHost);
+    cudaMemcpy(T_f, dEuler_in, sizeof(REALthree)*dv, cudaMemcpyDeviceToHost);
 
     cudaFree(dEuler_in);
     cudaFree(dEuler_out);
@@ -1028,41 +750,29 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t
 //The wrapper that calls the routine functions.
 double
 sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, const int cpu,
-    REALfour *IC, REALfour *T_f, const float freq, ofstream &fwr)
+    REALthree *IC, REALthree *T_f, const float freq, ofstream &fwr)
 {
-    const int base = tpb + 4;
-    const int height = base/2;
-    const size_t smem1 = 2*tpb*sizeof(REALfour);
-    const size_t smem2 = (2*base)*sizeof(REALfour);
 
-    int indices[4][tpb];
+    const size_t smem = (2*dimz.base)*sizeof(REALthree);
 
-    for (int k = 0; k<tpb; k++)
-    {
-        //Set indices
-        indices[0][k] = height + ((k/4 & 1) * base) + (k & 3) - (4 + (k/4) *2); //left
-        indices[1][k] = height + ((k/4 & 1) * base) + (k & 3) +  (k/4)*2; // right
-        //Get indices
-        indices[2][k] = (k/4)*2 + ((k/4 & 1) * tpb) + (k & 3); //left
-        indices[3][k] = (tpb - 4) + ((k/4 & 1) * tpb) + (k & 3) -  (k/4)*2; //right
-    }
+    int htcpu[5];
+    for (int k=0; k<5; k++) htcpu[k] = dimz.hts[k]+2;
 
-	REALfour *d_IC, *d_right, *d_left, *d_bin;
+	REALthree *d_IC, *d_right, *d_left;
 
-	cudaMalloc((void **)&d_IC, sizeof(REALfour)*dv);
-	cudaMalloc((void **)&d_right, sizeof(REALfour)*dv);
-	cudaMalloc((void **)&d_left, sizeof(REALfour)*dv);
-    cudaMalloc((void **)&d_bin, sizeof(REALfour)*dv);
+	cudaMalloc((void **)&d_IC, sizeof(REALthree)*dv);
+	cudaMalloc((void **)&d_right, sizeof(REALthree)*dv);
+	cudaMalloc((void **)&d_left, sizeof(REALthree)*dv);
 
 	// Copy the initial conditions to the device array.
-	cudaMemcpy(d_IC,IC,sizeof(REALfour)*dv,cudaMemcpyHostToDevice);
+	cudaMemcpy(d_IC,IC,sizeof(REALthree)*dv,cudaMemcpyHostToDevice);
 	// Start the counter and start the clock.
 	const double t_fullstep = 0.25*dt*(double)tpb;
 
-	upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
+	upTriangle <<< bks,tpb,smem >>>(d_IC,d_right,d_left);
 
-    swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
-    swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
+    swapKernel <<< bks,tpb >>> (d_right, d_IC, 1);
+    swapKernel <<< bks,tpb >>> (d_IC, d_right, 0);
 
     double t_eq;
     double twrite = freq;
@@ -1071,13 +781,16 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
 
     if (cpu)
     {
-        REALfour *tmpr = (REALfour*)malloc(smem2);
-        REALfour *h_right, *h_left;
-        cudaHostAlloc((void **) &h_right, tpb*sizeof(REALfour), cudaHostAllocDefault);
-        cudaHostAlloc((void **) &h_left, tpb*sizeof(REALfour), cudaHostAllocDefault);
+        REALthree *h_right, *h_left;
+        REALthree *tmpr = (REALthree *) malloc(smem);
+        cudaHostAlloc((void **) &h_right, tpb*sizeof(REALthree), cudaHostAllocDefault);
+        cudaHostAlloc((void **) &h_left, tpb*sizeof(REALthree), cudaHostAllocDefault);
+        double time0, time1;
+        double tf=0.0;
+        int cnt=0;
 
-        // h_right = (REALfour *) malloc(tpb*sizeof(REALfour));
-        // h_left = (REALfour *) malloc(tpb*sizeof(REALfour));
+        // h_right = (REALthree *) malloc(tpb*sizeof(REALthree));
+        // h_left = (REALthree *) malloc(tpb*sizeof(REALthree));
 
         t_eq = t_fullstep;
 
@@ -1088,85 +801,91 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
 
         //Split Diamond Begin------
 
-        omp_set_nested(1);
+        wholeDiamond <<< bks-1,tpb,smem >>>(d_right, d_left, false);
 
-        wholeDiamond <<< bks-1,tpb,smem2,st1 >>>(d_right,d_left,false);
-
-        cudaMemcpyAsync(h_right, d_left, tpb*sizeof(REALfour), cudaMemcpyDeviceToHost, st2);
-        cudaMemcpyAsync(h_left, d_right , tpb*sizeof(REALfour), cudaMemcpyDeviceToHost, st3);
+        cudaMemcpyAsync(h_left, d_left, tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st2);
+        cudaMemcpyAsync(h_right, d_right , tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st3);
 
         cudaStreamSynchronize(st2);
         cudaStreamSynchronize(st3);
 
-        double time0 = omp_get_wtime( );
+        // CPU Part Start -----
+
+        time0 = omp_get_wtime( );
 
         #pragma omp parallel for num_threads(8)
-        for (int k = 0; k<tpb; k++)
-        {
-            tmpr[indices[0][k]] = h_left[k];
-            tmpr[indices[1][k]] = h_right[k];
-        }
+        for (int k = 0; k<tpb; k++)  readIn(tmpr, h_right, h_left, k, k);
 
-        CPU_diamond(tmpr, tpb);
+        CPU_diamond(tmpr, htcpu);
 
         #pragma omp parallel for num_threads(8)
-        for (int k = 0; k<tpb; k++)
-        {
-            h_left[k] = tmpr[indices[2][k]];
-            h_right[k] = tmpr[indices[3][k]];
-        }
-
-        double time1 = omp_get_wtime( );
-        double tf = (time1-time0)*1.0e6; //In us
-
-        cout << "CPU time: " << tf << endl;
+        for (int k = 0; k<tpb; k++)  writeOut(tmpr, h_right, h_left, k, k);
 
 
+        time1 = omp_get_wtime( );
+        tf += (time1-time0)*1.0e6; //In us
+        cnt++;
 
-        cudaMemcpyAsync(d_right, h_right, tpb*sizeof(REALfour), cudaMemcpyHostToDevice,st2);
-        cudaMemcpyAsync(d_left, h_left, tpb*sizeof(REALfour), cudaMemcpyHostToDevice,st3);
+        cout << "CPU time 1: " << tf << " (us)" << endl;
 
-        swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-        swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+        cudaMemcpyAsync(d_right, h_right, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st2);
+        cudaMemcpyAsync(d_left, h_left, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st3);
+
+        // CPU Part End -----
+
+        // Automatic synchronization with memcpy in default stream
+        swapKernel <<< bks,tpb >>> (d_left, d_IC, -1);
+        swapKernel <<< bks,tpb >>> (d_IC, d_left, 0);
 
         while(t_eq < t_end)
         {
 
-            wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,true);
+            wholeDiamond <<< bks,tpb,smem >>>(d_right, d_left, true);
 
-            swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
-            swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
+            swapKernel <<< bks,tpb >>> (d_right, d_IC, 1);
+            swapKernel <<< bks,tpb >>> (d_IC, d_right, 0);
 
-            wholeDiamond <<< bks-1,tpb,smem2,st1 >>>(d_right,d_left,false);
+            //Split Diamond Begin------
 
-            cudaMemcpyAsync(h_right, d_left, tpb*sizeof(REALfour), cudaMemcpyDeviceToHost, st2);
-            cudaMemcpyAsync(h_left, d_right , tpb*sizeof(REALfour), cudaMemcpyDeviceToHost, st3);
+            wholeDiamond <<< bks-1,tpb,smem >>>(d_right, d_left, false);
+
+            cudaMemcpyAsync(h_right, d_right, tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st2);
+            cudaMemcpyAsync(h_left, d_left , tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st3);
 
             cudaStreamSynchronize(st2);
             cudaStreamSynchronize(st3);
 
-            #pragma omp parallel for num_threads(8)
-            for (int k = 0; k<tpb; k++)
-            {
+            // CPU Part End -----
 
-                tmpr[indices[0][k]] = h_left[k];
-                tmpr[indices[1][k]] = h_right[k];
-            }
-
-            CPU_diamond(tmpr, tpb);
+            time0 = omp_get_wtime( );
 
             #pragma omp parallel for num_threads(8)
             for (int k = 0; k<tpb; k++)
             {
-                h_left[k] = tmpr[indices[2][k]];
-                h_right[k] = tmpr[indices[3][k]];
+                readIn(tmpr, h_right, h_left, k, k);
             }
 
-            cudaMemcpyAsync(d_right, h_right, tpb*sizeof(REALfour), cudaMemcpyHostToDevice,st2);
-            cudaMemcpyAsync(d_left, h_left, tpb*sizeof(REALfour), cudaMemcpyHostToDevice,st3);
+            CPU_diamond(tmpr, htcpu);
 
-            swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-            swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+            #pragma omp parallel for num_threads(8)
+            for (int k = 0; k<tpb; k++)
+            {
+                writeOut(tmpr, h_right, h_left, k, k);
+            }
+
+            time1 = omp_get_wtime( );
+            tf += (time1-time0)*1.0e6; //In us
+            cnt++;
+
+            cudaMemcpyAsync(d_right, h_right, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st2);
+            cudaMemcpyAsync(d_left, h_left, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st3);
+
+
+            // CPU Part End -----
+
+            // Automatic synchronization with memcpy in default stream
+            swapKernel <<< bks,tpb >>> (d_left, d_IC, -1);
+            swapKernel <<< bks,tpb >>> (d_IC, d_left, 0);
 
             //Split Diamond End------
 
@@ -1174,9 +893,9 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
 
     	    if (t_eq > twrite)
     		{
-    			downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
+    			downTriangle <<< bks,tpb,smem >>>(d_IC,d_right,d_left);
 
-    			cudaMemcpy(T_f, d_IC, sizeof(REALfour)*dv, cudaMemcpyDeviceToHost);
+    			cudaMemcpy(T_f, d_IC, sizeof(REALthree)*dv, cudaMemcpyDeviceToHost);
 
                 fwr << " Density " << t_eq << " ";
                 for (int k = 1; k<(dv-1); k++) fwr << T_f[k].x << " ";
@@ -1191,18 +910,18 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
                 fwr << endl;
 
                 fwr << " Pressure " << t_eq << " ";
-                for (int k = 1; k<(dv-1); k++) fwr << T_f[k].w << " ";
+                for (int k = 1; k<(dv-1); k++) fwr << pressure(T_f[k]) << " ";
                 fwr << endl;
 
-    			upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
+    			upTriangle <<< bks,tpb,smem >>>(d_IC,d_right,d_left);
 
-                swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
-                swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
+                swapKernel <<< bks,tpb >>> (d_right, d_IC, 1);
+                swapKernel <<< bks,tpb >>> (d_IC, d_right, 0);
 
-    			splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
+    			splitDiamond <<< bks,tpb,smem >>>(d_right,d_left);
 
-                swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-                swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+                swapKernel <<< bks,tpb >>> (d_left, d_IC, -1);
+                swapKernel <<< bks,tpb >>> (d_IC, d_left, 0);
 
                 t_eq += t_fullstep;
 
@@ -1218,33 +937,35 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
         // free(h_right);
         // free(h_left);
         free(tmpr);
+
+        cout << "Average CPU time: " << tf/(double)cnt << " (us)" << endl;
 	}
     else
     {
-        splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
+        splitDiamond <<< bks,tpb,smem >>>(d_right,d_left);
         t_eq = t_fullstep;
-        swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-        swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+        swapKernel <<< bks,tpb >>> (d_left, d_IC, -1);
+        swapKernel <<< bks,tpb >>> (d_IC, d_left, 0);
 
         while(t_eq < t_end)
         {
-            wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,true);
+            wholeDiamond <<< bks,tpb,smem >>>(d_right, d_left, true);
 
-            swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
-            swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
+            swapKernel <<< bks,tpb >>> (d_right, d_IC, 1);
+            swapKernel <<< bks,tpb >>> (d_IC, d_right, 0);
 
-            splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
+            splitDiamond <<< bks,tpb,smem >>>(d_right,d_left);
 
-            swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-            swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+            swapKernel <<< bks,tpb >>> (d_left, d_IC, -1);
+            swapKernel <<< bks,tpb >>> (d_IC, d_left, 0);
 
             t_eq += t_fullstep;
 
             if (t_eq > twrite)
             {
-                downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
+                downTriangle <<< bks,tpb,smem >>>(d_IC,d_right,d_left);
 
-                cudaMemcpy(T_f, d_IC, sizeof(REALfour)*dv, cudaMemcpyDeviceToHost);
+                cudaMemcpy(T_f, d_IC, sizeof(REALthree)*dv, cudaMemcpyDeviceToHost);
 
                 fwr << " Density " << t_eq << " ";
             	for (int k = 1; k<(dv-1); k++) fwr << T_f[k].x << " ";
@@ -1259,18 +980,18 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
                 fwr << endl;
 
                 fwr << " Pressure " << t_eq << " ";
-                for (int k = 1; k<(dv-1); k++) fwr << T_f[k].w << " ";
+                for (int k = 1; k<(dv-1); k++) fwr << pressure(T_f[k]) << " ";
                 fwr << endl;
 
-                upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
+                upTriangle <<< bks,tpb,smem >>>(d_IC,d_right,d_left);
 
-                swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
-                swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
+                swapKernel <<< bks,tpb >>> (d_right, d_IC, 1);
+                swapKernel <<< bks,tpb >>> (d_IC, d_right, 0);
 
-    			splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
+    			splitDiamond <<< bks,tpb,smem >>>(d_right,d_left);
 
-                swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-                swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+                swapKernel <<< bks,tpb >>> (d_left, d_IC, -1);
+                swapKernel <<< bks,tpb >>> (d_IC, d_left, 0);
 
                 t_eq += t_fullstep;
 
@@ -1279,14 +1000,13 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
         }
     }
 
-	downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
+	downTriangle <<< bks,tpb,smem >>>(d_IC,d_right,d_left);
 
-	cudaMemcpy(T_f, d_IC, sizeof(REALfour)*dv, cudaMemcpyDeviceToHost);
+	cudaMemcpy(T_f, d_IC, sizeof(REALthree)*dv, cudaMemcpyDeviceToHost);
 
 	cudaFree(d_IC);
 	cudaFree(d_right);
 	cudaFree(d_left);
-    cudaFree(d_bin);
 
     return t_eq;
 }
@@ -1305,14 +1025,17 @@ int main( int argc, char *argv[] )
 	cudaSetDevice(0);
     if (sizeof(REAL)>6) cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
 
-    bd[0].x = 1.0; //Density
+    dimz.gam = 1.4;
+    dimz.mgam = 0.4;
+
+    bd[0].x = ONE; //Density
     bd[1].x = 0.125;
-    bd[0].y = 0.0; //Velocity
-    bd[1].y = 0.0;
-    bd[0].w = 1.0; //Pressure
-    bd[1].w = 0.1;
-    bd[0].z = bd[0].w/m_gamma; //Energy
-    bd[1].z = bd[1].w/m_gamma;
+    bd[0].y = ZERO; //Velocity
+    bd[1].y = ZERO;
+    //bd[0].w = ONE; //Pressure
+    //bd[1].w = 0.1;
+    bd[0].z = ONE/dimz.mgam; //Energy
+    bd[1].z = 0.1/dimz.mgam;
 
 
     const int dv = atoi(argv[1]); //Number of spatial points
@@ -1323,20 +1046,19 @@ int main( int argc, char *argv[] )
     const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
     const int share = atoi(argv[7]);
     const int bks = dv/tpb; //The number of blocks
-    const REAL dx = lx/((REAL)dv-2.0);
+    const REAL dx = lx/((REAL)dv-TWO);
     char const *prec;
     prec = (sizeof(REAL)<6) ? "Single": "Double";
 
     //Declare the dimensions in constant memory.
-    dimensions dimz;
     dimz.dt_dx = dt/dx; // dt/dx
     dimz.base = tpb+4;
     dimz.idxend = dv-1;
     dimz.idxend_1 = dv-2;
 
-    for (int k=-2; k<2; k++) dimz.hts[k] = (tpb/2) + k;
+    for (int k=-2; k<3; k++) dimz.hts[k+2] = (tpb/2) + k;
 
-    cout << "Euler --- #Blocks: " << bks << " | Length: " << lx << " | Precision: " << prec << " | dt/dx: " << dimz.x << endl;
+    cout << "Euler --- #Blocks: " << bks << " | Length: " << lx << " | Precision: " << prec << " | dt/dx: " << dimz.dt_dx << endl;
 
 	//Conditions for main input.  Unit testing kinda.
 	//dv and tpb must be powers of two.  dv must be larger than tpb and divisible by
@@ -1349,20 +1071,24 @@ int main( int argc, char *argv[] )
         exit(-1);
     }
 
-    if (dimz.x > .1)
+    if (dimz.dt_dx > .21)
     {
-        cout << "The value of dt/dx (" << dimz.x << ") is too high.  In general it must be <=.1 for stability." << endl;
+        cout << "The value of dt/dx (" << dimz.dt_dx << ") is too high.  In general it must be <=.21 for stability." << endl;
         exit(-1);
     }
 
 	// Initialize arrays.
-    REALfour *IC, *T_final;
-	cudaHostAlloc((void **) &IC, dv*sizeof(REALfour), cudaHostAllocDefault);
-	cudaHostAlloc((void **) &T_final, dv*sizeof(REALfour), cudaHostAllocDefault);
-    // IC = (REALfour *) malloc(dv*sizeof(REALfour));
-    // T_final = (REALfour *) malloc(dv*sizeof(REALfour));
+    REALthree *IC, *T_final, *d_temp;
+    cudaMalloc((void **)&d_temp, sizeof(REALthree)*tpb);
+	cudaHostAlloc((void **) &IC, dv*sizeof(REALthree), cudaHostAllocDefault);
+	cudaHostAlloc((void **) &T_final, dv*sizeof(REALthree), cudaHostAllocDefault);
 
+    cudaFree(d_temp);
 
+    // IC = (REALthree *) malloc(dv*sizeof(REALthree));
+    // T_final = (REALthree *) malloc(dv*sizeof(REALthree));
+
+    #pragma omp parallel for num_threads(8)
 	for (int k = 0; k<dv; k++)
 	{
         if (k<dv/2)
@@ -1396,19 +1122,24 @@ int main( int argc, char *argv[] )
     fwr << endl;
 
     fwr << " Pressure " << 0 << " ";
-    for (int k = 1; k<(dv-1); k++) fwr << IC[k].w << " ";
+    for (int k = 1; k<(dv-1); k++) fwr << pressure(IC[k]) << " ";
     fwr << endl;
 
     //Transfer data to GPU.
 	// This puts the Fourier number in constant memory.
 	cudaMemcpyToSymbol(dimens,&dimz,sizeof(dimensions));
-    cudaMemcpyToSymbol(dbd,&bd,2*sizeof(REALfour));
+    cudaMemcpyToSymbol(dbd,&bd,2*sizeof(REALthree));
 
-	// This initializes the device arrays on the device in global memory.
-	// They're all the same size.  Conveniently.
+    cudaError_t error1 = cudaGetLastError();
+    if(error1 != cudaSuccess)
+    {
+        // print the CUDA error message and exit
+        printf("CUDA error ahead: %s\n", cudaGetErrorString(error1));
+        exit(-1);
+    }
 
-	// Start the counter and start the clock.
-	cudaEvent_t start, stop;
+    // Start the counter and start the clock.
+    cudaEvent_t start, stop;
 	float timed;
 	cudaEventCreate( &start );
 	cudaEventCreate( &stop );
@@ -1472,7 +1203,7 @@ int main( int argc, char *argv[] )
     fwr << endl;
 
     fwr << " Pressure " << tfm << " ";
-    for (int k = 1; k<(dv-1); k++) fwr << T_final[k].w << " ";
+    for (int k = 1; k<(dv-1); k++) fwr << pressure(T_final[k]) << " ";
     fwr << endl;
 
 	fwr.close();

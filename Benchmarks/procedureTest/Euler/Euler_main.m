@@ -5,7 +5,8 @@ close all
 bd = [1, 0, 1/0.4; 0.125, 0, 0.1/0.4];
 bd = bd';
 
-xrng = 1024;
+xrng = 2048;
+dt= 5e-5;
 
 temper = zeros(3,xrng+4);
 pR = temper;
@@ -26,13 +27,13 @@ x = linspace(0,1,xrng+1);
 dx = x(2);
 x = dx*0.5 + x;
 x = [-dx*1.5, -dx*0.5, x, 1+dx*1.5];
-dt= 5e-5;
 dtdx = dt/dx;
+fprintf('dt_dx = %.4f\n',dtdx)
 
 ti = {'Density','Velocity','Energy'};
 
 t = dt;
-ts = .15;
+ts = 0.05;
 t2 = 0.05;
 
 tic

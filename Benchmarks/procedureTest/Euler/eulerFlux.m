@@ -23,7 +23,7 @@ flux(1) = (cvL(2) + cvR(2));
 flux(2) = (cvL(2)*uL + cvR(2)*uR + pR + pL); 
 flux(3) = (cvL(2)*eL + cvR(2)*eR + pR*uR + pL*uL);
 
-flux = flux + (sqrt(1.4*pH/halfstate(1))+abs(halfstate(2))) * (cvL'-cvR');
+flux = flux + (sqrt(1.4*pH/halfstate(1))+abs(halfstate(2))) * (cvL-cvR);
 
 
 end

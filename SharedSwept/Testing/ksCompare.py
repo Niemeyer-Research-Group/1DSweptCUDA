@@ -54,3 +54,11 @@ for pr in prec:
         dMain[swept,:] = rs[2:]
 
     comp(pr,dMain[0,:],dMain[1,:])
+
+
+            for ty in typ:
+
+                ax[i].set_title(typ[i], fontsize="medium")
+                ax[i].hold(True)
+                ax[i].grid(alpha=0.5)
+                df = 
