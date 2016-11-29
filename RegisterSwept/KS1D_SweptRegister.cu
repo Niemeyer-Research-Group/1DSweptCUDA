@@ -18,7 +18,7 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 */
 
 //COMPILE LINE!
-// nvcc -o ./bin/KSRegOut KS1D_SweptRegister.cu -gencode arch=compute_35,code=sm_35 -lm -restrict --ptxas-options=-v
+// nvcc -o ./bin/KSRegOut KS1D_SweptRegister.cu -gencode arch=compute_35,code=sm_35 -lm -DREAL=double -restrict --ptxas-options=-v
 
 #include <cuda.h>
 #include <cuda_runtime_api.h>
@@ -35,13 +35,36 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 
 #ifndef REAL
     #define REAL        float
+    #define ONE         1.f
     #define TWO         2.f
 	#define FOUR        4.f
 	#define SIX			6.f
 #else
+    #define ONE         1.0
     #define TWO         2.0
 	#define FOUR        4.0
 	#define SIX			6.0
+
+__device__ inline
+double __shfl_down(double item, unsigned int amt)
+{
+  int2 a = *reinterpret_cast<int2*>(&item);
+  a.x = __shfl_down(a.x, amt);
+  a.y = __shfl_down(a.y, amt);
+
+  return *reinterpret_cast<double*>(&a);
+}
+
+__device__ inline
+double __shfl_up(double item, unsigned int amt)
+{
+  int2 a = *reinterpret_cast<int2*>(&item);
+  a.x = __shfl_up(a.x, amt);
+  a.y = __shfl_up(a.y, amt);
+
+  return *reinterpret_cast<double*>(&a);
+}
+
 #endif
 
 #define BASE            36
@@ -540,9 +563,9 @@ int main( int argc, char *argv[])
 	//tpb.
 
 	discConstants dsc = {
-		1.0/(FOUR*dx),
-		1.0/(dx*dx),
-		1.0/(dx*dx*dx*dx),
+		ONE/(FOUR*dx),
+		ONE/(dx*dx),
+		ONE/(dx*dx*dx*dx),
 		dt,
 		dt*0.5
 	};

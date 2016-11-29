@@ -67,6 +67,31 @@ REAL initFun(REAL xnode)
 	return TWO * cos(19.0*xnode*M_PI/128.0);
 }
 
+#ifdef DIVISE
+
+__device__
+__forceinline__
+REAL fourthDer(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tRight, REAL tfarRight)
+{
+	return (tfarLeft - FOUR*tLeft + SIX*tCenter - FOUR*tRight + tfarRight)/(disc.dx4);
+}
+
+__device__
+__forceinline__
+REAL secondDer(REAL tLeft, REAL tRight, REAL tCenter)
+{
+	return (tLeft + tRight - TWO*tCenter)/(disc.dx2);
+}
+
+__device__
+__forceinline__
+REAL convect(REAL tLeft, REAL tRight)
+{
+	return (tRight*tRight - tLeft*tLeft)/(disc.dxTimes4);
+}
+
+#else
+
 __device__
 __forceinline__
 REAL fourthDer(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tRight, REAL tfarRight)
@@ -87,6 +112,8 @@ REAL convect(REAL tLeft, REAL tRight)
 {
 	return (tRight*tRight - tLeft*tLeft)*(disc.dxTimes4);
 }
+
+#endif
 
 __device__
 REAL stutterStep(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tRight, REAL tfarRight)
@@ -536,6 +563,16 @@ int main( int argc, char *argv[])
         exit(-1);
     }
 
+	#ifdef DIVISE
+	discConstants dsc = {
+		(FOUR*dx), //dx
+		(dx*dx), //dx^2
+		(dx*dx*dx*dx), //dx^4
+		dt, //dt
+		dt*0.5 //dt half
+	};
+
+	#else
 	discConstants dsc = {
 		ONE/(FOUR*dx), //dx
 		ONE/(dx*dx), //dx^2
@@ -543,7 +580,7 @@ int main( int argc, char *argv[])
 		dt, //dt
 		dt*0.5 //dt half
 	};
-
+	#endif
 	// Initialize arrays.
     REAL *IC, *T_final;
 
