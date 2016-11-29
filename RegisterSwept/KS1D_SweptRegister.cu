@@ -44,10 +44,11 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
     #define TWO         2.0
 	#define FOUR        4.0
 	#define SIX			6.0
-
-__device__ inline
+/*
+__device__ __forceinline__
 double __shfl_down(double item, unsigned int amt)
 {
+  
   int2 a = *reinterpret_cast<int2*>(&item);
   a.x = __shfl_down(a.x, amt);
   a.y = __shfl_down(a.y, amt);
@@ -55,7 +56,7 @@ double __shfl_down(double item, unsigned int amt)
   return *reinterpret_cast<double*>(&a);
 }
 
-__device__ inline
+__device__ __forceinline__
 double __shfl_up(double item, unsigned int amt)
 {
   int2 a = *reinterpret_cast<int2*>(&item);
@@ -64,7 +65,7 @@ double __shfl_up(double item, unsigned int amt)
 
   return *reinterpret_cast<double*>(&a);
 }
-
+*/
 #endif
 
 #define BASE            36

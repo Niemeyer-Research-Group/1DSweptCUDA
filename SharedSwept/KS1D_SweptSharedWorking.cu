@@ -34,7 +34,7 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 
 
 #ifndef REAL
-#define REAL  float
+#define REAL        float
 #define ONE         1.f
 #define TWO         2.f
 #define FOUR        4.f

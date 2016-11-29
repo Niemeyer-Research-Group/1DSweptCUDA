@@ -14,7 +14,7 @@ OPTIONS.pop(1)
 print OPTIONS
 
 tt = time.time()
-for opt in OPTIONS:
+for opt in [OPTIONS[-1]]:
     for pr in PRECISION:
         for sch in range(3):
                 if OPTIONS.index(opt) == 2 and sch == 2:

@@ -22,11 +22,11 @@ div = [2**k for k in range(11, 21)]
 blx = [2**k for k in range(5, 11)]
 wps = [int(k/32) for k in blx]
 
-tf = 1000.0
 dt = 0.005
+tf = dt*5e4
 freq = tf*2.0
 prog = "./bin/KSRegOut"
-compStr = "nvcc -o " + prog + " KS1D_SweptRegister.cu -DREAL=double -gencode arch=compute_35,code=sm_35 -lm -restrict "
+compStr = "nvcc -o " + prog + " KS1D_SweptRegister.cu -DREAL=double -gencode arch=compute_35,code=sm_35 -lm -restrict -Xptxas=-v "
 
 for wp,tpb in zip(wps,blx):
     compit = shlex.split(compStr + "-DWPB=" + str(wp))

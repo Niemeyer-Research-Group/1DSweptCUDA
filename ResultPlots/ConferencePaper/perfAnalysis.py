@@ -86,6 +86,7 @@ df_best = df_result.min(axis=1)
 #Plot most common best launch.
 df_best_idx = df_result.idxmin(axis=1)
 
+
 #df_launch = df_best_idx.value_counts()
 #df_launch.index = pd.to_numeric(df_launch.index)
 #df_launch.sort_index(inplace=True)
@@ -183,7 +184,7 @@ for prob in probs:
 
 #fig2.tight_layout(pad=0.2, w_pad=0.75, h_pad=1.0)
 #fig2.subplots_adjust(bottom=0.08, right=0.82, top=0.9)
-#hand, lbl = ax2[0].get_legend_handles_labels()
+#hand, lbl = ax2[0].get_legend_handles_labels() 
 #ax2[0].legend().remove()
 #fig2.legend(hand, lbl, 'upper right', title="Threads per block", fontsize="medium")
 #plotfile = op.join(plotpath, "Best configuration by runtype.pdf")
@@ -244,6 +245,26 @@ plotfile = op.join(plotpath,"KS_MPI_GPU_Comparison.pdf")
 if savepl:
     fig.savefig(plotfile, bbox_inches='tight')
 
+dfKS.dropna(inplace=True)
+dfKS.plot(ax=ax, logx=True, logy=True, linewidth=2,figsize=(14,8))
+ax.set_ylabel(headers[2])
+
+ax.set_title("KS MPI vs GPU implementation")
+ax.grid(alpha=0.5)
+
+tblMPI = op.join(plotpath,"KS_MPI_GPU_Comparison.html")
+dfKS.to_html(tblMPI)
+
+plotfile = op.join(plotpath,"KS_MPI_GPU_Comparison.pdf")
+if savepl:
+    fig.savefig(plotfile, bbox_inches='tight')
+
+if writeout:
+    df_result.to_html(tablefile)
+    if thisday in storage.keys():
+        fl = raw_input("You've already written to the hd5 today.  Overwrite? [y/n]")
+        if "n" in fl:
+            sys.exit(1)
 if writeout:
     df_result.to_html(tablefile)
     if thisday in storage.keys():

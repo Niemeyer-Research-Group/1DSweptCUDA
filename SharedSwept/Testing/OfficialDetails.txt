@@ -1,0 +1,4 @@
+KS Official:
+SweptGPU
+Size	TPB		dt		tf
+4096	512		5e-6	100

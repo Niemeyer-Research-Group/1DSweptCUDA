@@ -94,9 +94,9 @@ if __name__ == '__main__':
 
         dx = .001
         L = dx * (div-1)
-        tf = 200
-        freq = 60
-        dt = [.0015,.0010,.0005,.0001]
+        tf = 20
+        freq = 8
+        dt = [10**k for k in range(-7,-2)]
         # dt, var, tf
 
         for pr in prec:
@@ -162,8 +162,8 @@ if __name__ == '__main__':
             exF = exF.set_index(0)
             typ = simF.index.get_level_values(0).unique()
             rt = typ[0]
-            simF = simF.xs( rt )
-            exF = exF.xs( rt )
+            simF = pd.DataFrame(simF.xs( rt ))
+            exF = pd.DataFrame(exF.xs( rt ))
             simF = simF.set_index(1)
             exF = exF.set_index(1)
             simF.columns = xax

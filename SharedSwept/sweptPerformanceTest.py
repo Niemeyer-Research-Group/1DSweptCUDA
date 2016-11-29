@@ -214,7 +214,7 @@ cpu = schsym/2
 div = [2**k for k in range(dv1, dv2+1)]
 blx = [2**k for k in range(bk1, bk2+1)]
 
-timeout = '_Timing.txt'
+timeout = '_Timing_Divide.txt'
 rsltout = '_Result.dat'
 timename = fname + "_" + precise + "_" + sch
 binf = fname + precise + 'Out'
