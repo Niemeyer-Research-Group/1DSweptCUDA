@@ -10,9 +10,11 @@ OPTIONS = ["Heat", "Euler", "KS"]
 PRECISION = ["Single", "Double"]
 bnd = [11, 20, 5, 10]
 st = 5e4 #Number of timesteps
+OPTIONS.pop(1)
+print OPTIONS
 
 tt = time.time()
-for opt in OPTIONS[1:]:
+for opt in OPTIONS:
     for pr in PRECISION:
         for sch in range(3):
                 if OPTIONS.index(opt) == 2 and sch == 2:

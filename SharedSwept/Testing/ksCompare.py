@@ -10,6 +10,7 @@ def comp(typ,cl,sw):
     diff = np.sum(np.abs(cl-sw))
     if diff < 1e-7:
         print "-------!!!!----------\nKS " + typ + " passed!\n"
+        print diff
     else:
         print "-------!!!!----------\nKS " + typ + " failed!\n"
         print "The total difference is: {0}".format(diff)
@@ -32,7 +33,7 @@ binpath = op.join(mainpath,'bin')
 
 div = 8192
 bks = 64
-tf = 200
+tf = 500
 freq = 2*tf
 dt = .005
 cpu = 0
