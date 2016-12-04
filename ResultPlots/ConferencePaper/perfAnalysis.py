@@ -27,7 +27,7 @@ def plotItBar(axi, dat):
 
 #Cycle through markers and colors.
 plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors)+
-    cycler('marker',['D','o','h','*','^','x','v','8']))
+    cycler('marker',['D','o','v','*','^','x']))
 
 #Set up directory structure.
 thispath = op.abspath(op.dirname(__file__))

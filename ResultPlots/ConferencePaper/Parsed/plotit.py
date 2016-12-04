@@ -2,36 +2,54 @@ import numpy as np
 import os
 import sys
 import os.path as op
-import matplotlib.pyplot as plt
+import matplotlib as mpl
+import mpl.pyplot as plt
 import palettable.colorbrewer as pal
 from datetime import datetime
 from cycler import cycler
 
-plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors)+
-    cycler('marker',['D','o','h','*','^','x','v','8']))
+#plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors)+
+#    cycler('marker',['D','o','v','*','^','x','h','8']))
+
+mpl.rcParams['lines.markersize'] = 10
+mpl.rcParams['lines.linewidth'] = 3
     
 thispath = op.abspath(op.dirname(__file__))
 mpi = np.genfromtxt('MPICompare.txt')
 heat = np.genfromtxt('HeatComplete.txt')
 KSdiv = np.genfromtxt('Divides.txt')
 KSall = np.genfromtxt('KSComplete.txt')
-
 ylbl = "Time per timestep (us)"
 xlbl = "Number of spatial points"
 
 #mpi
-mpiLabels = ['MPISwept', 'MPIClassic', 'Classic', 'GPUSwept', 'Register']
+fig, (ax1,ax2) = plt.subplots(1,2, figsize=(14,8))
+plt.suptitle("MPI and GPU performance",fontsize='large', fontweight="bold")
+mpiLabels = ['MPIClassic', 'MPISwept', 'GPUClassic', 'GPUShared']
 for i,mp in enumerate(mpiLabels):
-    plt.loglog(mpi[:,0],mpi[:,i+1])
-    plt.hold(True)
+    ax1.loglog(mpi[:,0],mpi[:,i+1])
+    ax1.hold(True)
     
-plt.legend(mpiLabels, loc='upper left', fontsize='medium')
-plt.grid(alpha=0.5)
-plt.title("MPI and GPU implementation comparison")
-plt.ylabel(ylbl)
-plt.xlabel(xlbl)
+ax2.semilogx(mpi[:,0],mpi[:,-2],mpi[:,0],mpi[:,-1])
+ax1.hold(True)
+
+ax1.legend(mpiLabels, loc='upper left', fontsize='medium')
+ax2.legend(["Classic", "Shared"], loc='upper left', fontsize='medium')
+
+ax1.grid(alpha=0.5)
+ax2.grid(alpha=0.5)
+
+ax1.set_ylabel(ylbl)
+ax2.set_ylabel("Speedup vs MPI")
+
+ax1.set_xlabel(xlbl)
+ax2.set_xlabel(xlbl)
+
 plotfile = op.join(thispath,"mpiPlot.pdf")
-plt.xlim([heat[0,0],heat[-1,0]])
+ax1.set_xlim([heat[0,0],heat[-1,0]])
+ax2.set_xlim([heat[0,0],heat[-1,0]])
+
+fig.subplots_adjust(bottom=0.08, right=0.92, top=0.92)
 plt.savefig(plotfile, bbox_inches='tight')
 
 #KSdiv
@@ -59,7 +77,7 @@ plt.savefig(plotfile, bbox_inches='tight')
 #Heat complete
 prec = ["Double", "Single"]
 ksorder = mpiLabels[2:]
-heatorder = ['Classic', 'GPUSwept', 'Hybrid']
+heatorder = ['Classic', 'GPUShared', 'Hybrid']
 ho=[prec[0]+" "+rd for rd in heatorder]+[prec[1]+" "+rd for rd in heatorder]
 
 fig, (ax1,ax2) = plt.subplots(1,2, figsize=(14,8))
@@ -70,7 +88,6 @@ ax1.loglog(heat[:,0],heat[:,6], heat[:,0], heat[:,7], heat[:,0], heat[:,8])
 ax1.legend(ho, loc='upper left', fontsize='medium')
 ax1.set_ylabel(ylbl)
 ax1.set_xlabel(xlbl)
-ax1.set_title("a")
 ax1.set_xlim([heat[0,0],heat[-1,0]])
 
 ho.pop(3)
@@ -84,13 +101,14 @@ ax1.grid(alpha=0.5)
 ax2.grid(alpha=0.5)
 ax2.set_xlabel(xlbl)
 ax2.set_ylabel("Speedup vs Classic")
-ax2.set_title("b")
 fig.tight_layout(pad=0.2, w_pad=0.75, h_pad=1.5)
 fig.subplots_adjust(bottom=0.08, right=0.92, top=0.92)
 plotfile = op.join(thispath,"heatComplete.pdf")
 ax2.set_xlim([heat[0,0],heat[-1,0]])
 plt.savefig(plotfile, bbox_inches='tight')
 
+reg = ["Register"]
+ksorder += reg
 
 #KS complete
 ko=[prec[0]+" "+ rd for rd in ksorder]+[prec[1]+" "+ rd for rd in ksorder]
@@ -104,7 +122,6 @@ ax1.legend(ko, loc='upper left', fontsize='medium')
 ax1.set_ylabel(ylbl)
 ax1.set_xlabel(xlbl)
 ax1.set_xlim([heat[0,0],heat[-1,0]])
-ax1.set_title("a")
 
 ko.pop(3)
 ko.pop(0)
@@ -117,7 +134,6 @@ ax1.grid(alpha=0.5)
 ax2.grid(alpha=0.5)
 ax2.set_xlabel(xlbl)
 ax2.set_ylabel("Speedup vs Classic")
-ax2.set_title("b")
 fig.tight_layout(pad=0.2, w_pad=0.75, h_pad=1.0)
 fig.subplots_adjust(bottom=0.08, right=0.92, top=0.92)
 plotfile = op.join(thispath,"KSallComplete.pdf")
