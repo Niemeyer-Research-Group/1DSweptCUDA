@@ -57,11 +57,11 @@ div = 4096
 dx = .001
 L = dx * (div-1)
 bks = 512
-tf = 10.0
 freq = 1000
 d = [1,5]
 dts = [10**(k//2) * d[k%2]for k in range(-10,-4)]
 print dts
+tft = 50.0
 cpu = 0
 swept = 0
 j=1
@@ -79,6 +79,7 @@ for i,pb in enumerate(prob):
 	tn = []
 
         for dt in dts:
+	    tf = tft-0.5*dt
             execstr = execut +  ' {0} {1} {2} {3} {4} {5} {6} {7}'.format(div,bks,dt,tf,freq,swept,cpu,Varfile)
 
             exeStr = shlex.split(execstr)
