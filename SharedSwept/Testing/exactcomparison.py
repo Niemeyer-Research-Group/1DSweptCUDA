@@ -36,7 +36,7 @@ def heat_exact(t,L,divs):
         c  = 2
         ser = heats(c,L,xr,t)
         h = np.copy(ser)
-        for k in range(500):
+        for k in range(5000):
             c += 2
             ser = heats(c,L,xr,t)
             h += ser
@@ -164,7 +164,7 @@ if __name__ == '__main__':
             rt = typ[0]
             simF = pd.DataFrame(simF.xs( rt ))
             exF = pd.DataFrame(exF.xs( rt ))
-            simF = simF.set_index(1)
+            simF = simF.set_index(1)p.genfromtxt(Varfile, skip_header=2))
             exF = exF.set_index(1)
             simF.columns = xax
             exF.columns = xax

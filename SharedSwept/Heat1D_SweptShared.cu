@@ -495,7 +495,7 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const float 
     double t_eq = 0.0;
     double twrite = freq;
 
-    while (t_eq < t_end)
+    while (t_eq <= t_end)
     {
         classicHeat <<< bks,tpb >>> (dheat_in, dheat_out);
         classicHeat <<< bks,tpb >>> (dheat_out, dheat_in);

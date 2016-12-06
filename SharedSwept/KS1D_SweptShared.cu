@@ -190,7 +190,6 @@ upTriangle(const REAL *IC, REAL *right, REAL *left)
 
 	__syncthreads();
 
-	//The initial conditions are timslice 0 so start k at 1.
 	for (int k = 4; k<(blockDim.x/2); k+=4)
 	{
 		if (tid < (blockDim.x-k) && tid >= k)
@@ -212,9 +211,7 @@ upTriangle(const REAL *IC, REAL *right, REAL *left)
 		__syncthreads();
 
 	}
-	//After the triangle has been computed, the right and left shared arrays are
-	//stored in global memory by the global thread ID since (conveniently),
-	//they're the same size as a warp!
+
 	right[gid] = temper[rightidx];
 	left[gid] = temper[leftidx];
 }
