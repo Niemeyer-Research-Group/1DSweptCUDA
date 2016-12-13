@@ -1,5 +1,5 @@
 /* This file is the current iteration of research being done to implement the
-swept rule for Partial differential equations in one dimension.  This research
+swept rule for Partial differential equations in one discion.  This research
 is a collaborative effort between teams at MIT, Oregon State University, and
 Purdue University.
 
@@ -57,9 +57,39 @@ struct discConstants{
 	REAL dx4;
 	REAL dt;
 	REAL dt_half;
+	int base;
+    int idxend;
+    int idxend_1;
+    int hts[5];
 };
 
 __constant__ discConstants disc;
+
+__device__
+__forceinline__
+void
+readIn(REAL *temp, const REAL *rights, const REAL *lefts, int td, int gd)
+{
+	int leftidx = disc.hts[4] + (((td>>2) & 1) * disc.base) + (td & 3) - (4 + ((td>>2)<<1)); //left to shared
+	int rightidx = disc.hts[4] + (((td>>2) & 1) * disc.base) + ((td>>2)<<1) + (td & 3); //right to shared
+
+	temp[leftidx] = rights[gd];
+	temp[rightidx] = lefts[gd];
+}
+
+__device__
+__forceinline__
+void
+writeOut(REAL *temp, REAL *rights, REAL *lefts, int td, int gd)
+{
+
+    int leftidx = (((td>>2) & 1)  * disc.base) + ((td>>2)<<1) + (td & 3) + 2; //left from shared
+    int rightidx = (disc.base-6) + (((td>>2) & 1)  * disc.base) + (td & 3) - ((td>>2)<<1); //right from shared
+
+	rights[gd] = temp[rightidx];
+	lefts[gd] = temp[leftidx];
+
+}
 
 __host__
 REAL initFun(REAL xnode)
@@ -116,17 +146,17 @@ REAL convect(REAL tLeft, REAL tRight)
 #endif
 
 __device__
-REAL stutterStep(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tRight, REAL tfarRight)
+REAL stutterStep(REAL *u, int loc[5])
 {
-	return tCenter - disc.dt_half * (convect(tLeft, tRight) + secondDer(tLeft, tRight, tCenter) +
-		fourthDer(tfarLeft, tLeft, tCenter, tRight, tfarRight));
+	return u[loc[2]] - disc.dt_half * (convect(u[loc[1]], u[loc[3]]) + secondDer(u[loc[1]], u[loc[3]], u[loc[2]]) +
+		fourthDer(u[loc[0]], u[loc[1]], u[loc[2]], u[loc[3]], u[loc[4]]));
 }
 
 __device__
-REAL finalStep(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tRight, REAL tfarRight)
+REAL finalStep(REAL *u, int loc)
 {
-	return (-disc.dt * (convect(tLeft, tRight) + secondDer(tLeft, tRight, tCenter) +
-			fourthDer(tfarLeft, tLeft, tCenter, tRight, tfarRight)));
+	return (-disc.dt * (convect(u[loc[1]], u[loc[3]]) + secondDer(u[loc[1]], u[loc[3]], u[loc[2]]) +
+		fourthDer(u[loc[0]], u[loc[1]], u[loc[2]], u[loc[3]], u[loc[4]])));
 }
 
 __global__
@@ -148,15 +178,13 @@ classicKS(const REAL *ks_in, REAL *ks_out, bool final)
 {
     int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
     int lastidx = ((blockDim.x*gridDim.x)-1);
+	int gidz[5];
+	
+	#pragma unroll
+	for (int k=-2; k<3; k++) gidz = (gid+k)&lastidx;
 
-	if (final)
-	{
-		ks_out[gid] += finalStep(ks_in[(gid-2)&lastidx],ks_in[(gid-1)&lastidx],ks_in[gid],ks_in[(gid+1)&lastidx],ks_in[(gid+2)&lastidx]);
-	}
-	else
-	{
-		ks_out[gid] = stutterStep(ks_in[(gid-2)&lastidx],ks_in[(gid-1)&lastidx],ks_in[gid],ks_in[(gid+1)&lastidx],ks_in[(gid+2)&lastidx]);
-	}
+	if (final) { ks_out[gid] += finalStep(ks_in, gidz) };
+	else { ks_out[gid] = stutterStep(ks_in, gidz) };
 }
 
 __global__

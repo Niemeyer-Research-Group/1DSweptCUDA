@@ -164,7 +164,7 @@ if __name__ == '__main__':
             rt = typ[0]
             simF = pd.DataFrame(simF.xs( rt ))
             exF = pd.DataFrame(exF.xs( rt ))
-            simF = simF.set_index(1)p.genfromtxt(Varfile, skip_header=2))
+            simF = simF.set_index(1)
             exF = exF.set_index(1)
             simF.columns = xax
             exF.columns = xax
