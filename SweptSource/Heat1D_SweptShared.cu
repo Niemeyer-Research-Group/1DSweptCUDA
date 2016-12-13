@@ -121,6 +121,8 @@ upTriangle(const REAL *IC, REAL *right, REAL *left)
 	int shft_rd; //Initialize the shift to the read row (opposite of written)
 	int leftidx = tid/2 + ((tid/2 & 1) * blockDim.x) + (tid & 1);
 	int rightidx = (blockDim.x - 2) + ((tid/2 & 1) * blockDim.x) + (tid & 1) -  tid/2;
+    int lastidx = ((blockDim.x*gridDim.x)-1);
+    int gidout = (gid + blockDim.x) & lastidx;
 
     //Assign the initial values to the first row in temper, each warp (in this
 	//case each block) has it's own version of temper shared among its threads.
@@ -239,6 +241,7 @@ wholeDiamond(REAL *right, REAL *left, bool full)
 	int shft_wr;
 	int leftidx = height - tid/2 + ((tid/2 & 1) * base) + (tid & 1) - 2;
 	int rightidx = height + tid/2 + ((tid/2 & 1) * base) + (tid & 1);
+    int gidout;
 
 
     //if (blockIdx.x > (gridDim.x-3)) printf("gid: %i, gidin: %i \n",gid,gidin);
@@ -248,12 +251,14 @@ wholeDiamond(REAL *right, REAL *left, bool full)
     {
         temper[leftidx] = right[gid];
         temper[rightidx] = left[gid];
+        gidout = (gid + blockDim.x) & lastidx;
     }
     else
     {
         gid += blockDim.x;
         temper[leftidx] = right[gid];
         temper[rightidx] = left[gid];
+        gidout = (gid - blockDim.x) & lastidx;
     }
 
     __syncthreads();
@@ -350,6 +355,7 @@ splitDiamond(REAL *right, REAL *left)
     int tid1 = tid + 1;
     int tid2 = ((gid == ht1) ? tid : tid + 2);
     int tid0 = ((gid == height) ? tid+2 : tid);
+    gidout = (gid - blockDim.x) & lastidx;
 
 	// Initialize temper.
 
