@@ -15,7 +15,7 @@ default:	$(OUT_DIR)/HeatSingleOut $(OUT_DIR)/KSSingleOut $(OUT_DIR)/EulerSingleO
 $(OUT_DIR)/HeatSingleOut:	Heat1D_SweptShared.cu
 	nvcc -o $@ $< $(CUDAFLAGS)
 
-$(OUT_DIR)/KSSingleOut:	KS1D_SweptSharedWorking.cu
+$(OUT_DIR)/KSSingleOut:	KS1D_SweptShared.cu
 	nvcc -o $@ $< $(CUDAFLAGS)
 
 $(OUT_DIR)/EulerSingleOut:	Euler1D_SweptShared.cu
@@ -24,7 +24,7 @@ $(OUT_DIR)/EulerSingleOut:	Euler1D_SweptShared.cu
 $(OUT_DIR)/HeatDoubleOut:	Heat1D_SweptShared.cu
 	nvcc -o $@ $< $(CUDAFLAGSDOUBLE)
 
-$(OUT_DIR)/KSDoubleOut:	KS1D_SweptSharedWorking.cu
+$(OUT_DIR)/KSDoubleOut:	KS1D_SweptShared.cu
 	nvcc -o $@ $< $(CUDAFLAGSDOUBLE)
 
 $(OUT_DIR)/EulerDoubleOut:	Euler1D_SweptShared.cu
