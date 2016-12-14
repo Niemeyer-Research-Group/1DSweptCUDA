@@ -299,7 +299,7 @@ swapKernel(const REALthree *passing_side, REALthree *bin, int direction)
 //Simple scheme with dirchlet boundary condition.
 __global__
 void
-classicEuler(REALthree *euler_in, REALthree *euler_out, const bool final)
+classicEuler(REALthree *euler_in, REALthree *euler_out, const bool finalstep)
 {
     int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 
@@ -316,7 +316,7 @@ classicEuler(REALthree *euler_in, REALthree *euler_out, const bool final)
         return;
     }
 
-    if (final)
+    if (finalstep)
     {
         euler_out[gid] += eulerFinalStep(euler_in, gid, truth.y, truth.z);
     }
@@ -758,11 +758,13 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
     int htcpu[5];
     for (int k=0; k<5; k++) htcpu[k] = dimz.hts[k]+2;
 
-	REALthree *d_IC, *d_right, *d_left;
+	REALthree *d_IC, *d_right, *d_left, *d2_right, *d2_left;
 
 	cudaMalloc((void **)&d_IC, sizeof(REALthree)*dv);
 	cudaMalloc((void **)&d_right, sizeof(REALthree)*dv);
 	cudaMalloc((void **)&d_left, sizeof(REALthree)*dv);
+    cudaMalloc((void **)&d2_right, sizeof(REALthree)*dv);
+	cudaMalloc((void **)&d2_left, sizeof(REALthree)*dv);
 
 	// Copy the initial conditions to the device array.
 	cudaMemcpy(d_IC,IC,sizeof(REALthree)*dv,cudaMemcpyHostToDevice);
