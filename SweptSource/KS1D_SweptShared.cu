@@ -195,11 +195,11 @@ classicKS(const REAL *ks_in, REAL *ks_out, bool finally)
 	#pragma unroll
 	for (int k=-2; k<3; k++) gidz[k+2] = (gid+k)&lastidx;
 
-	if (finally) { 
-	ks_out[gid] += finalStep(ks_in, gidz); 
+	if (finally) {
+	ks_out[gid] += finalStep(ks_in, gidz);
 	}
-	else { 
-	ks_out[gid] = stutterStep(ks_in, gidz); 
+	else {
+	ks_out[gid] = stutterStep(ks_in, gidz);
 	}
 }
 

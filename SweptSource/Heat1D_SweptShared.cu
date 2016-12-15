@@ -331,7 +331,7 @@ wholeDiamond(const REAL *inRight, const REAL *inLeft, REAL *outRight, REAL *outL
 
 	}
 
-    if (full) 
+    if (full)
     {
         outRight[gidout] = temper[rightidx];
         outLeft[gid] = temper[leftidx];
@@ -868,7 +868,6 @@ int main( int argc, char *argv[] )
 	cudaEventCreate( &stop );
 	cudaEventRecord( start, 0);
 
-
     // Call the kernels until you reach the iteration limit.
 	double tfm;
     if (scheme)
@@ -916,9 +915,6 @@ int main( int argc, char *argv[] )
     cudaDeviceReset();
     cudaFreeHost(IC);
     cudaFreeHost(T_final);
-    // free(IC);
-    // free(T_final);
 
 	return 0;
-
 }
