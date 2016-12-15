@@ -31,8 +31,8 @@ sp.Popen.wait(proc)
 
 binpath = op.join(mainpath,'bin')
 
-div = 8192
-bks = 64
+div = 2048
+bks = 256
 tf = 500
 freq = 2*tf
 dt = .005

@@ -89,7 +89,7 @@ __forceinline__
 void
 writeOutRight(REAL *temp, REAL *rights, REAL *lefts, int td, int gd, int bd)
 {
-	int gdskew = (gid + bd) & disc.idxend;
+	int gdskew = (gd + bd) & disc.idxend;
     int leftidx = (((td>>2) & 1)  * disc.base) + ((td>>2)<<1) + (td & 3) + 2;
     int rightidx = (disc.base-6) + (((td>>2) & 1)  * disc.base) + (td & 3) - ((td>>2)<<1);
 	rights[gdskew] = temp[rightidx];
@@ -102,7 +102,7 @@ __forceinline__
 void
 writeOutLeft(REAL *temp, REAL *rights, REAL *lefts, int td, int gd, int bd)
 {
-	int gdskew = (gid - bd) & disc.idxend;
+	int gdskew = (gd - bd) & disc.idxend;
     int leftidx = (((td>>2) & 1)  * disc.base) + ((td>>2)<<1) + (td & 3) + 2;
     int rightidx = (disc.base-6) + (((td>>2) & 1)  * disc.base) + (td & 3) - ((td>>2)<<1);
 	rights[gd] = temp[rightidx];
@@ -158,14 +158,14 @@ REAL convect(REAL tLeft, REAL tRight)
 #endif
 
 __device__
-REAL stutterStep(REAL *u, int loc[5])
+REAL stutterStep(const REAL *u, int loc[5])
 {
 	return u[loc[2]] - disc.dt_half * (convect(u[loc[1]], u[loc[3]]) + secondDer(u[loc[1]], u[loc[3]], u[loc[2]]) +
 		fourthDer(u[loc[0]], u[loc[1]], u[loc[2]], u[loc[3]], u[loc[4]]));
 }
 
 __device__
-REAL finalStep(REAL *u, int loc)
+REAL finalStep(const REAL *u, int loc[5])
 {
 	return (-disc.dt * (convect(u[loc[1]], u[loc[3]]) + secondDer(u[loc[1]], u[loc[3]], u[loc[2]]) +
 		fourthDer(u[loc[0]], u[loc[1]], u[loc[2]], u[loc[3]], u[loc[4]])));
@@ -186,17 +186,21 @@ swapKernel(const REAL *passing_side, REAL *bin, int direction)
 //Classic
 __global__
 void
-classicKS(const REAL *ks_in, REAL *ks_out, bool final)
+classicKS(const REAL *ks_in, REAL *ks_out, bool finally)
 {
     int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
     int lastidx = ((blockDim.x*gridDim.x)-1);
 	int gidz[5];
 
 	#pragma unroll
-	for (int k=-2; k<3; k++) gidz = (gid+k)&lastidx;
+	for (int k=-2; k<3; k++) gidz[k+2] = (gid+k)&lastidx;
 
-	if (final) { ks_out[gid] += finalStep(ks_in, gidz) };
-	else { ks_out[gid] = stutterStep(ks_in, gidz) };
+	if (finally) { 
+	ks_out[gid] += finalStep(ks_in, gidz); 
+	}
+	else { 
+	ks_out[gid] = stutterStep(ks_in, gidz); 
+	}
 }
 
 __global__
