@@ -545,7 +545,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
     REAL *IC, REAL *T_f, const float freq, ofstream &fwr)
 {
     const int base = (tpb + 2);
-    const int ht = base/2;
+    //const int ht = base/2;
     const size_t smem = (base*2)*sizeof(REAL);
 
     // int indices[4][tpb];

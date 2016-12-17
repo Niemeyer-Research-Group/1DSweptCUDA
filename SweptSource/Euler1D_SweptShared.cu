@@ -99,7 +99,7 @@ readIn(REALthree *temp, const REALthree *rights, const REALthree *lefts, int td,
 __host__ __device__
 __forceinline__
 void
-writeOutRight(REAL *temp, REAL *rights, REAL *lefts, int td, int gd, int bd)
+writeOutRight(REALthree *temp, REALthree *rights, REALthree *lefts, int td, int gd, int bd)
 {
     #ifdef __CUDA_ARCH__
     int gdskew = (gd + bd) & dimens.idxend;
@@ -114,10 +114,10 @@ writeOutRight(REAL *temp, REAL *rights, REAL *lefts, int td, int gd, int bd)
 	lefts[gd] = temp[leftidx];
 }
 
-__device__
+__host__ __device__
 __forceinline__
 void
-writeOutLeft(REAL *temp, REAL *rights, REAL *lefts, int td, int gd, int bd)
+writeOutLeft(REALthree *temp, REALthree *rights, REALthree *lefts, int td, int gd, int bd)
 {
     #ifdef __CUDA_ARCH__
     int gdskew = (gd - bd) & dimens.idxend;
@@ -348,7 +348,6 @@ upTriangle(const REALthree *IC, REALthree *outRight, REALthree *outLeft)
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tididx = threadIdx.x + 2; //Block Thread ID
     int tidxTop = tididx + dimens.base;
-    int gidout = (gid + blockDim.x) & dimens.idxend;
     int k=4;
 
     //Assign the initial values to the first row in temper, each block
@@ -401,12 +400,11 @@ void
 downTriangle(REALthree *IC, const REALthree *inRight, const REALthree *inLeft)
 {
 	extern __shared__ REALthree temper[];
-    //REALthree *temper_top = (REALthree*)&temper[dimens.base];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
     int tididx = threadIdx.x + 2;
-    int k = dimens.hts[2];
     int tidxTop = tididx + dimens.base;
+    int k = dimens.hts[2];
 
 	readIn(temper, inRight, inLeft, threadIdx.x, gid);
 
@@ -534,6 +532,7 @@ wholeDiamond(REALthree *inRight, REALthree *inLeft, REALthree *outRight, REALthr
     {
         writeOutLeft(temper, outRight, outLeft, threadIdx.x, gid, blockDim.x);
     }
+
 }
 
 
@@ -618,7 +617,7 @@ splitDiamond(REALthree *inRight, REALthree *inLeft, REALthree *outRight, REALthr
 
     }
 
-	wwriteOutLeft(temper, outRight, outLeft, threadIdx.x, gid, blockDim.x);
+	writeOutLeft(temper, outRight, outLeft, threadIdx.x, gid, blockDim.x);
 }
 
 
@@ -728,19 +727,19 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t
         {
             cudaMemcpy(T_f, dEuler_in, sizeof(REALthree)*dv, cudaMemcpyDeviceToHost);
 
-            fwr << " Density " << t_eq << " ";
+            fwr << "Density " << t_eq << " ";
             for (int k = 1; k<(dv-1); k++) fwr << T_f[k].x << " ";
             fwr << endl;
 
-            fwr << " Velocity " << t_eq << " ";
+            fwr << "Velocity " << t_eq << " ";
             for (int k = 1; k<(dv-1); k++) fwr << T_f[k].y/T_f[k].x << " ";
             fwr << endl;
 
-            fwr << " Energy " << t_eq << " ";
+            fwr << "Energy " << t_eq << " ";
             for (int k = 1; k<(dv-1); k++) fwr << (T_f[k].z/T_f[k].x) << " ";
             fwr << endl;
 
-            fwr << " Pressure " << t_eq << " ";
+            fwr << "Pressure " << t_eq << " ";
             for (int k = 1; k<(dv-1); k++) fwr << pressure(T_f[k]) << " ";
             fwr << endl;
 
@@ -776,7 +775,6 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
     cudaMalloc((void **)&d2_right, sizeof(REALthree)*dv);
 	cudaMalloc((void **)&d2_left, sizeof(REALthree)*dv);
 
-	// Copy the initial conditions to the device array.
 	cudaMemcpy(d_IC,IC,sizeof(REALthree)*dv,cudaMemcpyHostToDevice);
 	// Start the counter and start the clock.
 	const double t_fullstep = 0.25*dt*(double)tpb;
@@ -820,22 +818,11 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
 
         // CPU Part Start -----
 
-        time0 = omp_get_wtime( );
-
-        #pragma omp parallel for num_threads(8)
         for (int k = 0; k<tpb; k++)  readIn(tmpr, h_right, h_left, k, k);
 
         CPU_diamond(tmpr, htcpu);
 
-        #pragma omp parallel for num_threads(8)
-        for (int k = 0; k<tpb; k++)  writeOutRight(tmpr, h_right, h_left, k, k);
-
-
-        time1 = omp_get_wtime( );
-        tf += (time1-time0)*1.0e6; //In us
-        cnt++;
-
-        cout << "CPU time 1: " << tf << " (us)" << endl;
+        for (int k = 0; k<tpb; k++)  writeOutLeft(tmpr, h_right, h_left, k, k, tpb);
 
         cudaMemcpyAsync(d2_right, h_right, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st2);
         cudaMemcpyAsync(d2_left, h_left, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st3);
@@ -874,7 +861,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
             CPU_diamond(tmpr, htcpu);
 
             #pragma omp parallel for num_threads(8)
-            for (int k = 0; k<tpb; k++)  writeOutRight(tmpr, h_right, h_left, k, k);
+            for (int k = 0; k<tpb; k++)  writeOutRight(tmpr, h_right, h_left, k, k, tpb);
 
 
             time1 = omp_get_wtime( );
@@ -898,23 +885,23 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
 
     	    if (t_eq > twrite)
     		{
-    			ddownTriangle <<< bks,tpb,smem >>>(d_IC,d2_right,d2_left);
+    			downTriangle <<< bks,tpb,smem >>>(d_IC,d2_right,d2_left);
 
     			cudaMemcpy(T_f, d_IC, sizeof(REALthree)*dv, cudaMemcpyDeviceToHost);
 
-                fwr << " Density " << t_eq << " ";
+                fwr << "Density " << t_eq << " ";
                 for (int k = 1; k<(dv-1); k++) fwr << T_f[k].x << " ";
                 fwr << endl;
 
-                fwr << " Velocity " << t_eq << " ";
+                fwr << "Velocity " << t_eq << " ";
                 for (int k = 1; k<(dv-1); k++) fwr << (T_f[k].y/T_f[k].x) << " ";
                 fwr << endl;
 
-                fwr << " Energy " << t_eq << " ";
+                fwr << "Energy " << t_eq << " ";
                 for (int k = 1; k<(dv-1); k++) fwr << (T_f[k].z/T_f[k].x) << " ";
                 fwr << endl;
 
-                fwr << " Pressure " << t_eq << " ";
+                fwr << "Pressure " << t_eq << " ";
                 for (int k = 1; k<(dv-1); k++) fwr << pressure(T_f[k]) << " ";
                 fwr << endl;
 
@@ -946,6 +933,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
         cout << "Average CPU time: " << tf/(double)cnt << " (us)" << endl;
 	}
     else
+
     {
         splitDiamond <<< bks,tpb,smem >>>(d0_right,d0_left,d2_right,d2_left);
         t_eq = t_fullstep;
@@ -973,12 +961,23 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
     		{
     			downTriangle <<< bks,tpb,smem >>>(d_IC,d2_right,d2_left);
 
-    			cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
-    			fwr << "Temperature " << t_eq << " ";
+    			cudaMemcpy(T_f, d_IC, sizeof(REALthree)*dv, cudaMemcpyDeviceToHost);
 
-    			for (int k = 0; k<dv; k++)	fwr << T_f[k] << " ";
+                fwr << "Density " << t_eq << " ";
+                for (int k = 1; k<(dv-1); k++) fwr << T_f[k].x << " ";
+                fwr << endl;
 
-    			fwr << endl;
+                fwr << "Velocity " << t_eq << " ";
+                for (int k = 1; k<(dv-1); k++) fwr << (T_f[k].y/T_f[k].x) << " ";
+                fwr << endl;
+
+                fwr << "Energy " << t_eq << " ";
+                for (int k = 1; k<(dv-1); k++) fwr << (T_f[k].z/T_f[k].x) << " ";
+                fwr << endl;
+
+                fwr << "Pressure " << t_eq << " ";
+                for (int k = 1; k<(dv-1); k++) fwr << pressure(T_f[k]) << " ";
+                fwr << endl;
 
     			upTriangle <<< bks,tpb,smem >>>(d_IC,d0_right,d0_left);
 
@@ -999,7 +998,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
 
     downTriangle <<< bks,tpb,smem >>>(d_IC,d2_right,d2_left);
 
-	cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+	cudaMemcpy(T_f, d_IC, sizeof(REALthree)*dv, cudaMemcpyDeviceToHost);
 
 	cudaFree(d_IC);
 	cudaFree(d0_right);
@@ -1090,19 +1089,19 @@ int main( int argc, char *argv[] )
 	// energy(IC[k].w, IC[k].x, IC[k].y/IC[k].x)
 	fwr << lx << " " << (dv-2) << " " << dx << " " << endl;
 
-    fwr << " Density " << 0 << " ";
+    fwr << "Density " << 0 << " ";
     for (int k = 1; k<(dv-1); k++) fwr << IC[k].x << " ";
     fwr << endl;
 
-    fwr << " Velocity " << 0 << " ";
+    fwr << "Velocity " << 0 << " ";
     for (int k = 1; k<(dv-1); k++) fwr << IC[k].y << " ";
     fwr << endl;
 
-    fwr << " Energy " << 0 << " ";
+    fwr << "Energy " << 0 << " ";
     for (int k = 1; k<(dv-1); k++) fwr << IC[k].z/IC[k].x << " ";
     fwr << endl;
 
-    fwr << " Pressure " << 0 << " ";
+    fwr << "Pressure " << 0 << " ";
     for (int k = 1; k<(dv-1); k++) fwr << pressure(IC[k]) << " ";
     fwr << endl;
 
@@ -1163,19 +1162,19 @@ int main( int argc, char *argv[] )
 
     //energy(T_final[k].w, T_final[k].x, T_final[k].y/T_final[k].x)
 
-	fwr << " Density " << tfm << " ";
+	fwr << "Density " << tfm << " ";
 	for (int k = 1; k<(dv-1); k++) fwr << T_final[k].x << " ";
     fwr << endl;
 
-    fwr << " Velocity " << tfm << " ";
+    fwr << "Velocity " << tfm << " ";
 	for (int k = 1; k<(dv-1); k++) fwr << T_final[k].y/T_final[k].x << " ";
     fwr << endl;
 
-    fwr << " Energy " << tfm << " ";
+    fwr << "Energy " << tfm << " ";
     for (int k = 1; k<(dv-1); k++) fwr << T_final[k].z/T_final[k].x << " ";
     fwr << endl;
 
-    fwr << " Pressure " << tfm << " ";
+    fwr << "Pressure " << tfm << " ";
     for (int k = 1; k<(dv-1); k++) fwr << pressure(T_final[k]) << " ";
     fwr << endl;
 

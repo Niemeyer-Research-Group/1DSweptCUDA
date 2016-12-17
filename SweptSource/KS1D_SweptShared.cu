@@ -211,7 +211,6 @@ upTriangle(const REAL *IC, REAL *outRight, REAL *outLeft)
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tididx = threadIdx.x + 2;
-	int gidout = (gid + blockDim.x) & disc.idxend;
 
 	int step2;
 
