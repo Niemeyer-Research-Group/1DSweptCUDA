@@ -495,7 +495,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
 
 	 	if (t_eq > twrite)
 		{
-			downTriangle <<< bks,tpb,smem >>>(d_IC,d2_right,d2_left);
+			downTriangle <<< bks,tpb,smem >>> (d_IC,d2_right,d2_left);
 
 			cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
 
@@ -505,7 +505,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
 
 			fwr << endl;
 
-			upTriangle <<< bks,tpb,smem >>>(d_IC,d0_right,d0_left);
+			upTriangle <<< bks,tpb,smem >>> (d_IC,d0_right,d0_left);
 
 			// swapKernel <<< bks,tpb >>> (d0_right, d_bin, 1);
 			// swapKernel <<< bks,tpb >>> (d_bin, d0_right, 0);
@@ -686,11 +686,9 @@ int main( int argc, char *argv[])
 	cudaEventDestroy( start );
 	cudaEventDestroy( stop );
 	cudaDeviceReset();
-
 	cudaFreeHost(IC);
     cudaFreeHost(T_final);
-	// free(IC);
-	// free(T_final);
+
 
 	return 0;
 
