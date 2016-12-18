@@ -104,40 +104,40 @@ REAL initFun(REAL xnode)
 __device__
 __forceinline__
 void
-readIn(REAL *temp, const REAL *rights, const REAL *lefts, int wd, int gd, int wt)
+readIn(REAL temp[][TWOBASE], const REAL *rights, const REAL *lefts, int wd, int gd, int wtg)
 {
     int leftidx = HEIGHT + (((wd>>2) & 1) * BASE) + (wd & 3) - (4 + ((wd>>2) << 1));
 	int rightidx = HEIGHT + (((wd>>2) & 1) * BASE) + ((wd>>2)<<1) + (wd & 3);
 
-	temper[wt][leftidx] = right[gid];
-	temper[wt][rightidx] = left[gid];
+	temp[wtg][leftidx] = right[gd];
+	temp[wtg][rightidx] = left[gd];
 }
 
 __device__
 __forceinline__
 void
-writeOutRight(REAL *temp, REAL *rights, REAL *lefts, int wd, int gd, int wt)
+writeOutRight(REAL temp[][TWOBASE], REAL *rights, REAL *lefts, int wd, int gd, int wtg)
 {
     int gdskew = (gd + WARPSIZE) & disc.idxend;
 	int leftidx = (((wd>>2) & 1) * BASE) + ((wd>>2)<<1) + (wd & 3) + 2;
 	int rightidx = 30 + (((wd>>2) & 1) * BASE) + (wd & 3) - ((wd>>2)<<1);
 
-	rights[gdskew] = temper[wt][rightidx];
-	lefts[gd] = temper[wt][leftidx];
+	rights[gdskew] = temp[wtg][rightidx];
+	lefts[gd] = temp[wtg][leftidx];
 }
 
 
 __device__
 __forceinline__
 void
-writeOutLeft(REAL *temp, REAL *rights, REAL *lefts, int wd, int gd, int wt)
+writeOutLeft(REAL temp[][TWOBASE], REAL *rights, REAL *lefts, int wd, int gd, int wtg)
 {
 	int gdskew = (gd - WARPSIZE) & disc.idxend;
 	int leftidx = (((wd>>2) & 1) * BASE) + ((wd>>2)<<1) + (wd & 3) + 2;
 	int rightidx = 30 + (((wd>>2) & 1) * BASE) + (wd & 3) - ((wd>>2)<<1);
 
-	rights[gdskew] = temper[wt][rightidx];
-	lefts[gd] = temper[wt][leftidx];
+	rights[gdskew] = temp[wtg][rightidx];
+	lefts[gd] = temp[wtg][leftidx];
 }
 
 __device__
@@ -408,9 +408,6 @@ wholeDiamond(REAL *inRight, REAL *inLeft, REAL *outRight, REAL *outLeft, const b
     vel[0] += finalStep(temper[wtag][widTop-2],temper[wtag][widTop-1],temper[wtag][widTop],
         temper[wtag][widTop+1],temper[wtag][widTop+2]);
 
-    leftidx = (((wid>>2) & 1) * BASE) + ((wid>>2)<<1) + (wid & 3) + 2;
-    rightidx = 30 + (((wid>>2) & 1) * BASE) + (wid & 3) - ((wid>>2)<<1);
-
     __syncthreads();
 
     vel[1] = stutterStep(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
@@ -538,14 +535,14 @@ sweptWrapper(const int bks, const int dv, REAL dt, const REAL t_end,
 
 			upTriangle <<< bks,tpb >>> (d_IC,d0_right,d0_left);
 
-			swapKernel <<< bks,tpbSwap >>> (d_right, d_bin, 1);
-			swapKernel <<< bks,tpbSwap >>> (d_bin, d_right, 0);
+//			swapKernel <<< bks,tpbSwap >>> (d_right, d_bin, 1);
+//			swapKernel <<< bks,tpbSwap >>> (d_bin, d_right, 0);
 
 			//Split
 			wholeDiamond <<< bks,tpb >>> (d0_right,d0_left,d2_right,d2_left,true);
 
-			swapKernel <<< bks,tpbSwap >>> (d_left, d_bin, -1);
-			swapKernel <<< bks,tpbSwap >>> (d_bin, d_left, 0);
+//			swapKernel <<< bks,tpbSwap >>> (d_left, d_bin, -1);
+//			swapKernel <<< bks,tpbSwap >>> (d_bin, d_left, 0);
 
 			t_eq += t_fullstep;
 
