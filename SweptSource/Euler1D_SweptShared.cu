@@ -792,7 +792,6 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
         REALthree *tmpr = (REALthree *) malloc(smem);
         cudaHostAlloc((void **) &h_right, tpb*sizeof(REALthree), cudaHostAllocDefault);
         cudaHostAlloc((void **) &h_left, tpb*sizeof(REALthree), cudaHostAllocDefault);
-        double time0, time1;
         double tf=0.0;
         int cnt=0;
 
@@ -853,8 +852,6 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
 
             // CPU Part Start -----
 
-            time0 = omp_get_wtime( );
-
             #pragma omp parallel for num_threads(8)
             for (int k = 0; k<tpb; k++)  readIn(tmpr, h_right, h_left, k, k);
 
@@ -862,13 +859,6 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
 
             #pragma omp parallel for num_threads(8)
             for (int k = 0; k<tpb; k++)  writeOutRight(tmpr, h_right, h_left, k, k, tpb);
-
-
-            time1 = omp_get_wtime( );
-            tf += (time1-time0)*1.0e6; //In us
-            cnt++;
-
-            cout << "CPU time 1: " << tf << " (us)" << endl;
 
             cudaMemcpyAsync(d2_right, h_right, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st2);
             cudaMemcpyAsync(d2_left, h_left, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st3);

@@ -109,8 +109,8 @@ readIn(REAL temp[][TWOBASE], const REAL *rights, const REAL *lefts, int wd, int 
     int leftidx = HEIGHT + (((wd>>2) & 1) * BASE) + (wd & 3) - (4 + ((wd>>2) << 1));
 	int rightidx = HEIGHT + (((wd>>2) & 1) * BASE) + ((wd>>2)<<1) + (wd & 3);
 
-	temp[wtg][leftidx] = right[gd];
-	temp[wtg][rightidx] = left[gd];
+	temp[wtg][leftidx] = rights[gd];
+	temp[wtg][rightidx] = lefts[gd];
 }
 
 __device__
@@ -482,7 +482,7 @@ sweptWrapper(const int bks, const int dv, REAL dt, const REAL t_end,
     dim3 tpb(WARPSIZE, WPB);
     cout << tpb.x << " " << tpb.y << " " << tpb.z << endl;
 
-    const int tpbSwap = WARPSIZE*WPB;
+    //const int tpbSwap = WARPSIZE*WPB;
 	//Start the counter and start the clock.
 	//
 	//Every other step is a full timestep and each cycle is half tpb steps.
