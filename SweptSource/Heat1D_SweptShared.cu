@@ -148,7 +148,7 @@ upTriangle(const REAL *IC, REAL *outRight, REAL *outLeft)
 		}
 
 		//Make sure the threads are synced
-		__syncthreads();
+		__syncthreads(); 
 
 	}
 
@@ -547,6 +547,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
     const int base = (tpb + 2);
     //const int ht = base/2;
     const size_t smem = (base*2)*sizeof(REAL);
+    const int cpuLoc = dv-tpb;
 
     // int indices[4][tpb];
     // for (int k = 0; k<tpb; k++)
@@ -573,176 +574,113 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
 
 	upTriangle <<< bks,tpb,smem >>>(d_IC,d0_right,d0_left);
 
-    // swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
-    // swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
-
     double t_eq;
     double twrite = freq;
 
 	// Call the kernels until you reach the iteration limit.
 
-    // if (cpu)
-    // {
-    //     REAL *tmpr = (REAL*)malloc(smem2);
-    //     REAL *h_right, *h_left;
-    //     cudaHostAlloc((void **) &h_right, tpb*sizeof(REAL), cudaHostAllocDefault);
-    //     cudaHostAlloc((void **) &h_left, tpb*sizeof(REAL), cudaHostAllocDefault);
-    //     // h_right = (REALfour *) malloc(tpb*sizeof(REALfour));
-    //     // h_left = (REALfour *) malloc(tpb*sizeof(REALfour));
+    if (cpu)
+    {
+        REAL *tmpr = (REAL*)malloc(smem);
+        REAL *h_right, *h_left;
+        cudaHostAlloc((void **) &h_right, tpb*sizeof(REAL), cudaHostAllocDefault);
+        cudaHostAlloc((void **) &h_left, tpb*sizeof(REAL), cudaHostAllocDefault);
 
-    //     t_eq = t_fullstep;
-    //     omp_set_num_threads( 2 );
-
-    //     //Split Diamond Begin------
-
-    //     cudaMemcpy(h_right, d_left, tpb*sizeof(REAL), cudaMemcpyDeviceToHost);
-    //     cudaMemcpy(h_left, d_right, tpb*sizeof(REAL), cudaMemcpyDeviceToHost);
-
-    //     #pragma omp parallel sections
-    //     {
-    //     #pragma omp section
-    //     {
-    //         for (int k = 0; k<tpb; k++)
-    //         {
-    //             tmpr[indices[0][k]] = h_left[k];
-    //             tmpr[indices[1][k]] = h_right[k];
-    //         }
-
-    //         CPU_diamond(tmpr, tpb);
-
-    //         for (int k = 0; k<tpb; k++)
-    //         {
-    //             h_left[k] = tmpr[indices[2][k]];
-    //             h_right[k] = tmpr[indices[3][k]];
-    //         }
-    //     }
-    //     #pragma omp section
-    //     {
-    //         wholeDiamond <<< bks-1,tpb,smem2 >>>(d_right,d_left,false);
-    //     }
-    //     }
-
-    //     cudaMemcpy(d_right, h_right, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
-    //     cudaMemcpy(d_left, h_left, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
-
-    //     swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-    //     swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
-
-    //     //Split Diamond End------
-
-    // 	while(t_eq < t_end)
-    // 	{
-
-    //         wholeDiamond <<< bks,tpb,smem2 >>>(d_right,d_left,true);
-
-    //         swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
-    //         swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
-
-
-    //         //Split Diamond Begin------
-
-    //         cudaMemcpy(h_right,d_left, tpb*sizeof(REAL), cudaMemcpyDeviceToHost);
-    //         cudaMemcpy(h_left, d_right, tpb*sizeof(REAL), cudaMemcpyDeviceToHost);
-    //         #pragma omp parallel sections
-    //         {
-    //         #pragma omp section
-    //         {
-
-
-    //             for (int k = 0; k<tpb; k++)
-    //             {
-    //                 tmpr[indices[0][k]] = h_left[k];
-    //                 tmpr[indices[1][k]] = h_right[k];
-    //             }
-
-    //             CPU_diamond(tmpr, tpb);
-
-    //             for (int k = 0; k<tpb; k++)
-    //             {
-    //                 h_left[k] = tmpr[indices[2][k]];
-    //                 h_right[k] = tmpr[indices[3][k]];
-    //             }
-    //         }
-    //         #pragma omp section
-    //         {
-    //             wholeDiamond <<< bks-1,tpb,smem2 >>>(d_right,d_left,false);
-
-    //         }
-    //         }
-
-    //         cudaMemcpy(d_right, h_right, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
-    //         cudaMemcpy(d_left, h_left, tpb*sizeof(REAL), cudaMemcpyHostToDevice);
-
-    //         swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-    //         swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
-
-    //         //Split Diamond End------
-
-	// 	    //So it always ends on a left pass since the down triangle is a right pass.
-
-	// 	    t_eq += t_fullstep;
-
-    // 		/* Since the procedure does not store the temperature values, the user
-    // 		could input some time interval for which they want the temperature
-    // 		values and this loop could copy the values over from the device and
-    // 		write them out.  This way the user could see the progression of the
-    // 		solution over time, identify an area to be investigated and re-run a
-    // 		shorter version of the simulation starting with those intiial conditions.
-    //         */
-
-    //         if (t_eq > twrite)
-    // 		{
-    // 			downTriangle <<< bks,tpb,smem2 >>>(d_IC,d_right,d_left);
-
-    // 			cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
-
-    // 			fwr << "Temperature " << t_eq << " ";
-
-    // 			for (int k = 0; k<dv; k++)	fwr << T_f[k] << " ";
-
-    // 			fwr << endl;
-
-    //             upTriangle <<< bks,tpb,smem1 >>>(d_IC,d_right,d_left);
-
-    //             swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
-    //             swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
-
-    // 			splitDiamond <<< bks,tpb,smem2 >>>(d_right,d_left);
-
-    //             swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-    //             swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
-
-    //             t_eq += t_fullstep;
-
-    // 			twrite += freq;
-    // 		}
-    //     }
-    //     cudaFreeHost(h_right);
-    //     cudaFreeHost(h_left);
-    //     // free(h_right);
-    //     // free(h_left);
-    //     free(tmpr);
-	// }
-    // else
-    // {
-        splitDiamond <<< bks,tpb,smem >>>(d0_right,d0_left,d2_right,d2_left);
         t_eq = t_fullstep;
 
-        // swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-        // swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
+        cudaStream_t st1, st2, st3;
+        cudaStreamCreate(&st1);
+        cudaStreamCreate(&st2);
+        cudaStreamCreate(&st3);
+
+        //Split Diamond Begin------
+
+        cudaMemcpyAsync(h_right, d0_left, tpb*sizeof(REAL), cudaMemcpyDeviceToHost, st2);
+        cudaMemcpyAsync(h_left, d0_right, tpb*sizeof(REAL), cudaMemcpyDeviceToHost, st3);
+
+        cudaStreamSynchronize(st2);
+        cudaStreamSynchronize(st3);
+
+        wholeDiamond <<< bks-1,tpb,smem >>>(d0_right, d0_left, d2_right, d2_left, false);
+
+        for (int k = 0; k<tpb; k++)  readIn(tmpr, h_right, h_left, k, k);
+
+        CPU_diamond(tmpr, tpb);
+
+        for (int k = 0; k<tpb; k++)  writeOutLeft(tmpr, h_right, h_left, k, k, tpb);
+
+        cudaMemcpyAsync(d2_right, h_right, tpb*sizeof(REAL), cudaMemcpyHostToDevice,st2);
+        cudaMemcpyAsync(d2_left, h_left + cpuLoc, tpb*sizeof(REAL), cudaMemcpyHostToDevice,st3);
+
+        //Split Diamond End------
+
+    	while(t_eq < t_end)
+    	{
+
+           wholeDiamond <<< bks,tpb,smem >>>(d2_right,d2_left,d0_right,d0_left,true);
+
+            //Split Diamond Begin------
+
+            cudaMemcpyAsync(h_right, d0_left, tpb*sizeof(REAL), cudaMemcpyDeviceToHost, st2);
+            cudaMemcpyAsync(h_left, d0_right, tpb*sizeof(REAL), cudaMemcpyDeviceToHost, st3);
+
+            cudaStreamSynchronize(st2);
+            cudaStreamSynchronize(st3);
+
+            wholeDiamond <<< bks-1,tpb,smem >>>(d0_right, d0_left, d2_right, d2_left, false);
+
+            for (int k = 0; k<tpb; k++)  readIn(tmpr, h_right, h_left, k, k);
+
+            CPU_diamond(tmpr, tpb);
+
+            for (int k = 0; k<tpb; k++)  writeOutLeft(tmpr, h_right, h_left, k, k, tpb);
+
+            cudaMemcpyAsync(d2_right, h_right, tpb*sizeof(REAL), cudaMemcpyHostToDevice,st2);
+            cudaMemcpyAsync(d2_left, h_left + cpuLoc, tpb*sizeof(REAL), cudaMemcpyHostToDevice,st3);
+
+
+            //Split Diamond End------
+
+		    //So it always ends on a left pass since the down triangle is a right pass.
+
+		    t_eq += t_fullstep;
+
+            if (t_eq > twrite)
+    		{
+    			downTriangle <<< bks,tpb,smem >>>(d_IC,d2_right,d2_left);
+
+    			cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+
+    			fwr << "Temperature " << t_eq << " ";
+
+    			for (int k = 0; k<dv; k++)	fwr << T_f[k] << " ";
+
+    			fwr << endl;
+
+                upTriangle <<< bks,tpb,smem >>>(d_IC,d0_right,d0_left);
+
+    			splitDiamond <<< bks,tpb,smem >>>(d0_right,d0_left,d2_right,d2_left);
+
+                t_eq += t_fullstep;
+
+    			twrite += freq;
+    		}
+        }
+        cudaFreeHost(h_right);
+        cudaFreeHost(h_left);
+        free(tmpr);
+	}
+    else
+    {
+        splitDiamond <<< bks,tpb,smem >>>(d0_right,d0_left,d2_right,d2_left);
+        t_eq = t_fullstep;
 
         while(t_eq < t_end)
         {
 
             wholeDiamond <<< bks,tpb,smem >>>(d2_right,d2_left,d0_right,d0_left,true);
 
-            // swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
-            // swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
-
             splitDiamond <<< bks,tpb,smem >>>(d0_right,d0_left,d2_right,d2_left);
-
-            // swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-            // swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
 
             //So it always ends on a left pass since the down triangle is a right pass.
             t_eq += t_fullstep;
@@ -760,13 +698,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
 
     			upTriangle <<< bks,tpb,smem >>>(d_IC,d0_right,d0_left);
 
-                // swapKernel <<< bks,tpb >>> (d_right, d_bin, 1);
-                // swapKernel <<< bks,tpb >>> (d_bin, d_right, 0);
-
     			splitDiamond <<< bks,tpb,smem >>>(d0_right,d0_left,d2_right,d2_left);
-
-                // swapKernel <<< bks,tpb >>> (d_left, d_bin, -1);
-                // swapKernel <<< bks,tpb >>> (d_bin, d_left, 0);
 
                 t_eq += t_fullstep;
 

@@ -689,8 +689,6 @@ CPU_diamond(REALthree *temper, int htcpu[5])
         }
     }
 
-    // temper[htcpu[1]] = bd[1]
-    // temper[htcpu[1]] = bd[1]
 
 }
 
@@ -763,6 +761,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
 {
 
     const size_t smem = (2*dimz.base)*sizeof(REALthree);
+    const int cpuLoc = dv-tpb;
 
     int htcpu[5];
     for (int k=0; k<5; k++) htcpu[k] = dimz.hts[k]+2;
@@ -776,6 +775,8 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
 	cudaMalloc((void **)&d2_left, sizeof(REALthree)*dv);
 
 	cudaMemcpy(d_IC,IC,sizeof(REALthree)*dv,cudaMemcpyHostToDevice);
+
+
 	// Start the counter and start the clock.
 	const double t_fullstep = 0.25*dt*(double)tpb;
 
@@ -792,11 +793,6 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
         REALthree *tmpr = (REALthree *) malloc(smem);
         cudaHostAlloc((void **) &h_right, tpb*sizeof(REALthree), cudaHostAllocDefault);
         cudaHostAlloc((void **) &h_left, tpb*sizeof(REALthree), cudaHostAllocDefault);
-        double tf=0.0;
-        int cnt=0;
-
-        // h_right = (REALthree *) malloc(tpb*sizeof(REALthree));
-        // h_left = (REALthree *) malloc(tpb*sizeof(REALthree));
 
         t_eq = t_fullstep;
 
@@ -807,13 +803,13 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
 
         //Split Diamond Begin------
 
-        wholeDiamond <<< bks-1,tpb,smem >>>(d0_right, d0_left, d2_right, d2_left, false);
-
         cudaMemcpyAsync(h_left, d0_left, tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st2);
         cudaMemcpyAsync(h_right, d0_right , tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st3);
 
         cudaStreamSynchronize(st2);
         cudaStreamSynchronize(st3);
+
+        wholeDiamond <<< bks-1,tpb,smem >>>(d0_right, d0_left, d2_right, d2_left, false);
 
         // CPU Part Start -----
 
@@ -824,21 +820,14 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
         for (int k = 0; k<tpb; k++)  writeOutLeft(tmpr, h_right, h_left, k, k, tpb);
 
         cudaMemcpyAsync(d2_right, h_right, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st2);
-        cudaMemcpyAsync(d2_left, h_left, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st3);
+        cudaMemcpyAsync(d2_left, h_left + cpuLoc, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st3);
 
         // CPU Part End -----
-
-        // Automatic synchronization with memcpy in default stream
-        // swapKernel <<< bks,tpb >>> (d_left, d_IC, -1);
-        // swapKernel <<< bks,tpb >>> (d_IC, d_left, 0);
 
         while(t_eq < t_end)
         {
 
             wholeDiamond <<< bks,tpb,smem >>>(d2_right,d2_left,d0_right,d0_left,true);
-
-            // swapKernel <<< bks,tpb >>> (d_right, d_IC, 1);
-            // swapKernel <<< bks,tpb >>> (d_IC, d_right, 0);
 
             //Split Diamond Begin------
 
@@ -852,22 +841,19 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
 
             // CPU Part Start -----
 
-            #pragma omp parallel for num_threads(8)
+
             for (int k = 0; k<tpb; k++)  readIn(tmpr, h_right, h_left, k, k);
 
             CPU_diamond(tmpr, htcpu);
 
-            #pragma omp parallel for num_threads(8)
             for (int k = 0; k<tpb; k++)  writeOutRight(tmpr, h_right, h_left, k, k, tpb);
 
             cudaMemcpyAsync(d2_right, h_right, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st2);
-            cudaMemcpyAsync(d2_left, h_left, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st3);
+            cudaMemcpyAsync(d2_left, h_left + cpuLoc, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st3);
 
             // CPU Part End -----
 
             // Automatic synchronization with memcpy in default stream
-            // swapKernel <<< bks,tpb >>> (d_left, d_IC, -1);
-            // swapKernel <<< bks,tpb >>> (d_IC, d_left, 0);
 
             //Split Diamond End------
 
