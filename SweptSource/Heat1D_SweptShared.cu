@@ -74,17 +74,17 @@ REAL execFuncHost(REAL tLeft, REAL tRight, REAL tCenter)
     return fou*(tLeft+tRight) + (ONE - TWO*fou) * tCenter;
 }
 
-__global__
-void
-swapKernel(const REAL *passing_side, REAL *bin, int direction)
-{
-    int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
-    int lastidx = ((blockDim.x*gridDim.x)-1);
-    int gidout = (gid + direction*blockDim.x) & lastidx;
+// __global__
+// void
+// swapKernel(const REAL *passing_side, REAL *bin, int direction)
+// {
+//     int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
+//     int lastidx = ((blockDim.x*gridDim.x)-1);
+//     int gidout = (gid + direction*blockDim.x) & lastidx;
 
-    bin[gidout] = passing_side[gid];
+//     bin[gidout] = passing_side[gid];
 
-}
+// }
 
 __global__
 void
@@ -255,10 +255,10 @@ wholeDiamond(const REAL *inRight, const REAL *inLeft, REAL *outRight, REAL *outL
     }
     else
     {
+        gidout = gid;
         gid += blockDim.x;
         temper[leftidx] = inRight[gid];
         temper[rightidx] = inLeft[gid];
-        gidout = (gid - blockDim.x) & lastidx;
     }
 
     __syncthreads();
@@ -545,19 +545,19 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
     REAL *IC, REAL *T_f, const float freq, ofstream &fwr)
 {
     const int base = (tpb + 2);
-    //const int ht = base/2;
+    const int ht = base/2;
     const size_t smem = (base*2)*sizeof(REAL);
     const int cpuLoc = dv-tpb;
 
-    // int indices[4][tpb];
-    // for (int k = 0; k<tpb; k++)
-    // {
-    //     indices[0][k] = ht - k/2 + ((k/2 & 1) * base) + (k & 1) - 2; //left
-    //     indices[1][k] = ht + k/2 + ((k/2 & 1) * base) + (k & 1); //right
+    int indices[4][tpb];
+    for (int k = 0; k<tpb; k++)
+    {
+        indices[0][k] = ht - k/2 + ((k/2 & 1) * base) + (k & 1) - 2; //left
+        indices[1][k] = ht + k/2 + ((k/2 & 1) * base) + (k & 1); //right
 
-    //     indices[2][k] = k/2 + ((k/2 & 1) * tpb) + (k & 1); //left
-    //     indices[3][k] = (tpb - 2) + ((k/2 & 1) * tpb) + (k & 1) -  k/2; //right
-    // }
+        indices[2][k] = k/2 + ((k/2 & 1) * tpb) + (k & 1); //left
+        indices[3][k] = (tpb - 2) + ((k/2 & 1) * tpb) + (k & 1) -  k/2; //right
+    }
 
 	REAL *d_IC, *d0_right, *d0_left, *d2_right, *d2_left;
 
@@ -581,8 +581,8 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
 
     if (cpu)
     {
-        REAL *tmpr = (REAL*)malloc(smem);
         REAL *h_right, *h_left;
+        REAL *tmpr = (REAL*)malloc(smem);
         cudaHostAlloc((void **) &h_right, tpb*sizeof(REAL), cudaHostAllocDefault);
         cudaHostAlloc((void **) &h_left, tpb*sizeof(REAL), cudaHostAllocDefault);
 
@@ -595,49 +595,64 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
 
         //Split Diamond Begin------
 
-        cudaMemcpyAsync(h_right, d0_left, tpb*sizeof(REAL), cudaMemcpyDeviceToHost, st2);
-        cudaMemcpyAsync(h_left, d0_right, tpb*sizeof(REAL), cudaMemcpyDeviceToHost, st3);
+        wholeDiamond <<< bks-1, tpb, smem, st1 >>>(d0_right, d0_left, d2_right, d2_left, false);
+
+        cudaMemcpyAsync(h_left, d0_left, tpb*sizeof(REAL), cudaMemcpyDeviceToHost, st2);
+        cudaMemcpyAsync(h_right, d0_right, tpb*sizeof(REAL), cudaMemcpyDeviceToHost, st3);
 
         cudaStreamSynchronize(st2);
         cudaStreamSynchronize(st3);
 
-        wholeDiamond <<< bks-1,tpb,smem >>>(d0_right, d0_left, d2_right, d2_left, false);
-
-        for (int k = 0; k<tpb; k++)  readIn(tmpr, h_right, h_left, k, k);
+        for (int k = 0; k<tpb; k++) 
+        {		
+            tmpr[indices[0][k]] = h_right[k];		
+            tmpr[indices[1][k]] = h_left[k];			
+        }
 
         CPU_diamond(tmpr, tpb);
 
-        for (int k = 0; k<tpb; k++)  writeOutLeft(tmpr, h_right, h_left, k, k, tpb);
-
+        for (int k = 0; k<tpb; k++) 
+        {		
+            h_left[k] = tmpr[indices[2][k]];		
+            h_right[k] = tmpr[indices[3][k]];		
+        }
+        
         cudaMemcpyAsync(d2_right, h_right, tpb*sizeof(REAL), cudaMemcpyHostToDevice,st2);
-        cudaMemcpyAsync(d2_left, h_left + cpuLoc, tpb*sizeof(REAL), cudaMemcpyHostToDevice,st3);
+        cudaMemcpyAsync(d2_left+cpuLoc, h_left, tpb*sizeof(REAL), cudaMemcpyHostToDevice,st3);
 
         //Split Diamond End------
 
     	while(t_eq < t_end)
     	{
 
-           wholeDiamond <<< bks,tpb,smem >>>(d2_right,d2_left,d0_right,d0_left,true);
+            wholeDiamond <<< bks,tpb,smem >>>(d2_right,d2_left,d0_right,d0_left,true);
 
             //Split Diamond Begin------
 
-            cudaMemcpyAsync(h_right, d0_left, tpb*sizeof(REAL), cudaMemcpyDeviceToHost, st2);
-            cudaMemcpyAsync(h_left, d0_right, tpb*sizeof(REAL), cudaMemcpyDeviceToHost, st3);
+            wholeDiamond <<< bks-1, tpb, smem, st1 >>>(d0_right, d0_left, d2_right, d2_left, false);
+
+            cudaMemcpyAsync(h_left, d0_left, tpb*sizeof(REAL), cudaMemcpyDeviceToHost, st2);
+            cudaMemcpyAsync(h_right, d0_right, tpb*sizeof(REAL), cudaMemcpyDeviceToHost, st3);
 
             cudaStreamSynchronize(st2);
             cudaStreamSynchronize(st3);
 
-            wholeDiamond <<< bks-1,tpb,smem >>>(d0_right, d0_left, d2_right, d2_left, false);
-
-            for (int k = 0; k<tpb; k++)  readIn(tmpr, h_right, h_left, k, k);
+            for (int k = 0; k<tpb; k++) 
+            {		
+                tmpr[indices[0][k]] = h_right[k];		
+                tmpr[indices[1][k]] = h_left[k];		
+            }
 
             CPU_diamond(tmpr, tpb);
 
-            for (int k = 0; k<tpb; k++)  writeOutLeft(tmpr, h_right, h_left, k, k, tpb);
+            for (int k = 0; k<tpb; k++) 
+            {		
+                h_left[k] = tmpr[indices[2][k]];		
+                h_right[k] = tmpr[indices[3][k]];		
+            }
 
             cudaMemcpyAsync(d2_right, h_right, tpb*sizeof(REAL), cudaMemcpyHostToDevice,st2);
-            cudaMemcpyAsync(d2_left, h_left + cpuLoc, tpb*sizeof(REAL), cudaMemcpyHostToDevice,st3);
-
+            cudaMemcpyAsync(d2_left+cpuLoc, h_left, tpb*sizeof(REAL), cudaMemcpyHostToDevice,st3);
 
             //Split Diamond End------
 
@@ -705,7 +720,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
     			twrite += freq;
     		}
         }
-    //}
+    }
 
 	downTriangle <<< bks,tpb,smem >>>(d_IC,d2_right,d2_left);
 
@@ -720,7 +735,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
     return t_eq;
 }
 
-int main( int argc, char *argv[] )
+int main(int argc, char *argv[])
 {
     //That is there are less than 8 arguments.
 

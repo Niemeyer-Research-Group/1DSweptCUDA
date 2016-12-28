@@ -58,7 +58,10 @@ def heat_msg(div,dt,bks,tf,fr):
     Fo = alpha*dt/(dx**2)
     stab = Fo<.5
     ot = int(tf/fr)+2
-    return "Fo = {0}   Stability: {1}\nCycles: {2}  #Outputs: {3}".format(Fo, stab, cyc, ot)
+    if stab:
+        return "STABLE \n Fo = {0}  |  nCycles: {1}  |  #Outputs: {2}".format(Fo, cyc, ot)
+    else:
+        return "UNSTABLE UNSTABLE \n Fo: {0} is too low.".format(Fo)
 
 def ks_msg(div,dt,bks,tf,fr):
     dx = 0.5
@@ -68,32 +71,38 @@ def ks_msg(div,dt,bks,tf,fr):
     dtdx = dt/dx
     stab = dtdx<.015
     ot = int(tf/fr)+2
-    return "dt/dx = {0}   Stability: {1}\nCycles: {2}  #Outputs: {3}".format(dtdx, stab, cyc, ot)
+    if stab:
+        return "STABLE \n dt/dx = {0}  |  nCycles: {1}  |  #Outputs: {2}".format(dtdx, cyc, ot)
+    else:
+        return "UNSTABLE UNSTABLE \n dt/dx: {0} is too low.".format(dtdx)
 
 def euler_msg(div,dt,bks,tf,fr):
-    dx = 1.0/(div-1.0)
     div = 2**div
+    dx = 1.0/(float(div-1.0))
     bks = 2**bks
     cyc = int(4*tf/(bks*dt))
     dtdx = dt/dx
     stab = dtdx<.05
     ot = int(tf/fr)+2
-    return "dt/dx = {0}   Stability: {1}\nCycles: {2}  #Outputs: {3}".format(dtdx, stab, cyc, ot)
+    if stab:
+        return "STABLE \n dt/dx = {0}  |  nCycles: {1}  |  #Outputs: {2}".format(dtdx, cyc, ot)
+    else:
+        return "UNSTABLE UNSTABLE \n dt/dx: {0} is too low.".format(dtdx)
 
 funs = [ks_msg, heat_msg, euler_msg]
 
 master = Tk.Tk()
 
-dropframe = Tk.Frame(master, pady = 2)
-entryframe = Tk.Frame(master, pady = 1,padx = 15)
-endframe = Tk.Frame(master, pady = 2,padx = 15)
+dropframe = Tk.Frame(master, pady=2)
+entryframe = Tk.Frame(master, pady=1 ,padx=15)
+endframe = Tk.Frame(master, pady=2, padx=15)
 dropframe.pack()
-endframe.pack(side = 'bottom')
-entryframe.pack(side = 'bottom')
+endframe.pack(side='bottom')
+entryframe.pack(side='bottom')
 master.title("Plot the result of the numerical solution")
 
 problem = Tk.StringVar(master)
-problem.set(OPTIONS[1]) # default value
+problem.set(OPTIONS[2]) # default value
 
 #Number of divisions power of two
 divpow = Tk.IntVar(master)
@@ -137,8 +146,8 @@ def on_closing():
     raise SystemExit
 
 def reset_label(event):
-    res_one.config(text = str(2**divpow.get()))
-    res_two.config(text = str(2**blkpow.get()))
+    res_one.config(text=str(2**divpow.get()))
+    res_two.config(text=str(2**blkpow.get()))
     res_three.config(text=funs[OPTIONS.index(problem.get())](divpow.get(), deltat.get(), blkpow.get(), t_final.get(),fq.get()))
 
 def reset_vals(problem):
@@ -159,9 +168,9 @@ def reset_vals(problem):
 master.protocol("WM_DELETE_WINDOW", on_closing)
 master.bind('<Return>', ret)
 
-check_one = Tk.Checkbutton(entryframe, text = "Swept Scheme ", variable = sw)
-check_two = Tk.Checkbutton(entryframe, text = "CPU/GPU sharing ", variable = proc_share)
-check_three = Tk.Checkbutton(entryframe, text = "Double Precision ", variable = prec)
+check_one = Tk.Checkbutton(entryframe, text="Swept Scheme ", variable=sw)
+check_two = Tk.Checkbutton(entryframe, text="CPU/GPU sharing ", variable=proc_share)
+check_three = Tk.Checkbutton(entryframe, text="Double Precision ", variable=prec)
 
 check_one.grid(row = 9, column = 0)
 check_two.grid(row = 10, column = 0)
@@ -253,10 +262,9 @@ SCHEME = [
 sch = SCHEME[swept+cpu]
 timestr = Fname + " " + sch
 
-print runit.get()
-
 if runit.get():
-    sp.call("make")
+    prk = sp.Popen("make", cwd=sourcepath)
+    sp.Popen.wait(prk)
 
     execut = op.join(binpath, typename + "Out")
 
