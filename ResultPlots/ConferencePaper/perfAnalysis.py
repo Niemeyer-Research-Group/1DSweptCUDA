@@ -11,7 +11,7 @@ from cycler import cycler
 #Flags for type of run.
 readin = False
 savepl = True
-writeout = False
+writeout = True
 
 #Don't want to overwrite with previous version.
 if readin:

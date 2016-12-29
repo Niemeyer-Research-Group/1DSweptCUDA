@@ -19,6 +19,7 @@ mpl.rcParams["grid.alpha"] = 0.5
 mpl.rcParams["axes.grid"] = True
 
 thispath = op.abspath(op.dirname(__file__))
+os.chdir(thispath)
 mpi = np.genfromtxt('MPICompare.txt')
 heat = np.genfromtxt('HeatComplete.txt')
 KSdiv = np.genfromtxt('Divides.txt')
@@ -73,6 +74,7 @@ if True:
     plotfile = op.join(thispath,"divisionPlot.pdf")
     ax2.set_xlim([heat[0,0],heat[-1,0]])
     plt.savefig(plotfile, bbox_inches='tight')
+    plt.close()
 
 #hand, lbl = ax.get_legend_handles_labels()
 #Heat complete
@@ -130,7 +132,6 @@ for i, h in enumerate(ko):
 plt.legend(ko, loc='upper left', fontsize='medium')
 plt.ylabel(ylbl)
 plt.xlabel(xlbl)
-
 plt.xlim([KSall[0,0],KSall[-1,0]])
 
 plt.savefig(plotfile, bbox_inches='tight')

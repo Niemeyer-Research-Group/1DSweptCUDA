@@ -32,6 +32,7 @@ If not, see <https://opensource.org/licenses/MIT>.
 #include <cstdlib>
 #include <cmath>
 #include <fstream>
+#include <omp.h>
 
 #ifndef REAL
     #define REAL        float
@@ -1064,16 +1065,14 @@ int main( int argc, char *argv[] )
 	cudaEventCreate( &stop );
 	cudaEventRecord( start, 0);
 
-    cout << scheme << " ";
+    cout << scheme << " " ;
     double tfm;
     if (scheme)
     {
-        cout << "Swept - " << share << endl;
         tfm = sweptWrapper(bks, tpb, dv, dt, tf, share, IC, T_final, freq, fwr);
     }
     else
     {
-        cout << "Classic" << endl;
         tfm = classicWrapper(bks, tpb, dv, dt, tf, IC, T_final, freq, fwr);
     }
 
