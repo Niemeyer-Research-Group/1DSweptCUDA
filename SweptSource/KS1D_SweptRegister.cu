@@ -136,8 +136,8 @@ writeOutLeft(REAL temp[][TWOBASE], REAL *rights, REAL *lefts, int wd, int gd, in
 	int leftidx = (((wd>>2) & 1) * BASE) + ((wd>>2)<<1) + (wd & 3) + 2;
 	int rightidx = 30 + (((wd>>2) & 1) * BASE) + (wd & 3) - ((wd>>2)<<1);
 
-	rights[gdskew] = temp[wtg][rightidx];
-	lefts[gd] = temp[wtg][leftidx];
+	rights[gd] = temp[wtg][rightidx];
+	lefts[gdskew] = temp[wtg][leftidx];
 }
 
 __device__
@@ -175,18 +175,6 @@ REAL finalStep(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tRight, REAL tfarRi
 {
 	return (-disc.dt * (convect(tLeft, tRight) + secondDer(tLeft, tRight, tCenter) +
 			fourthDer(tfarLeft, tLeft, tCenter, tRight, tfarRight)));
-}
-
-__global__
-void
-swapKernel(const REAL *passing_side, REAL *bin, int direction)
-{
-    int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
-    int lastidx = ((blockDim.x*gridDim.x)-1);
-    int gidout = (gid + direction*blockDim.x) & lastidx;
-
-    bin[gidout] = passing_side[gid];
-
 }
 
 __global__
