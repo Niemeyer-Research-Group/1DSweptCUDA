@@ -16,7 +16,7 @@ Repository for 1D Swept rule written in CUDA.
 Linux Path: /usr/local/cuda/samples/1_Utilities
 Navigate to the folder, run make and run the deviceQuery program.
 
-3. Open the Makefile in the SharedSwept folder and change the compute_ and sm_ numbers in CUDAFLAGS to your compute capability.
+3. Open the Makefile in the SweptSource folder and change the compute_ and sm_ numbers in CUDAFLAGS to your compute capability.
 
 4. Make sure the nvcc compiler is on your shell path.  On Linux it should be in: /usr/local/cuda/bin
 The path settings I use can be found in examplerc.txt.
