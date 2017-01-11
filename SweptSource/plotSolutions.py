@@ -292,9 +292,9 @@ for p in range(1,len(fin)):
     dMain.append([ar[0]] + [float(n) for n in ar[1:]])
 
 mx = max(dMain[0][1:])
-mxx = mx/10.
-if mxx < 5:
-    mxx = 5
+mxx = mx/10.0
+if mxx < 3:
+    mxx = 3
 
 mxxx = mx + mxx
 f.close()
@@ -399,7 +399,7 @@ else:
             ax.set_xlabel("Spatial point")
             ax.grid(alpha=0.5)
             ax.set_ylabel(typ[0])
-            ax.set_ylim([-5,mxxx])
+            ax.set_ylim([-3,mxxx])
             ax.set_xlim([0,ed])
 
             plt.savefig("frame"+str(k))
@@ -446,7 +446,7 @@ else:
     if st in sys.platform:
         try:
             sp.call(['ffmpeg', '-i', 'frame%d.png', '-r', '4', avifile])
-            sp.call(['ffmpeg', '-i', avifile, '-t', '5', giffile])
+            sp.call(['ffmpeg', '-i', avifile, giffile])
         except:
             print '------------------'
             print 'Install ffmpeg with: sudo apt-get install ffmpeg'

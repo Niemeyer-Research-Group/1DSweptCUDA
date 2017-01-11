@@ -46,6 +46,14 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 #define SIX			6.0
 #endif
 
+#ifndef WIDTH
+#define BASE	 	36
+#define BASEHalf	18
+#define WIDTH		32
+#define WIDTHHalf	16
+#endif
+
+
 using namespace std;
 
 const REAL dx = 0.5;
@@ -60,11 +68,7 @@ struct discConstants{
 	REAL dx4;
 	REAL dt;
 	REAL dt_half;
-	int base;
-	int baseHalf;
-    int idxend;
-	int width
-	int widthHalf;
+        int idxend;
 };
 
 __constant__ discConstants disc;
@@ -96,7 +100,7 @@ REAL initFun(REAL xnode)
 // {
 // 	int gdskew = (gd + bd) & disc.idxend;
 //     int leftidx = (((td>>2) & 1)  * disc.base) + ((td>>2)<<1) + (td & 3) + 2;
-//     int rightidx = (disc.base-6) + (((td>>2) & 1)  * disc.base) + (td & 3) - ((td>>2)<<1);
+//     int rightidx = (BASE-6) + (((td>>2) & 1)  * BASE) + (td & 3) - ((td>>2)<<1);
 // 	rights[gdskew] = temp[rightidx];
 // 	lefts[gd] = temp[leftidx];
 // }
@@ -108,8 +112,8 @@ REAL initFun(REAL xnode)
 // writeOutLeft(REAL *temp, REAL *rights, REAL *lefts, int td, int gd, int bd)
 // {
 // 	int gdskew = (gd - bd) & disc.idxend;
-//     int leftidx = (((td>>2) & 1)  * disc.base) + ((td>>2)<<1) + (td & 3) + 2;
-//     int rightidx = (disc.base-6) + (((td>>2) & 1)  * disc.base) + (td & 3) - ((td>>2)<<1);
+//     int leftidx = (((td>>2) & 1)  * BASE) + ((td>>2)<<1) + (td & 3) + 2;
+//     int rightidx = (BASE-6) + (((td>>2) & 1)  * BASE) + (td & 3) - ((td>>2)<<1);
 // 	rights[gd] = temp[rightidx];
 // 	lefts[gdskew] = temp[leftidx];
 // }
@@ -160,19 +164,19 @@ upTriangle(const REAL *IC, REAL *outRight, REAL *outLeft)
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int gidout = (gid+1) & disc.idxend;
 
-	REAL vel[2][disc.base];
+	REAL vel[2][BASE];
 
 	#pragma unroll
-	for (int k=0; k<(disc.width); k++) 	vel[0][k+2] = IC[gid * disc.width + k];
+	for (int k=0; k<(WIDTH); k++) vel[0][k+2] = IC[gid * WIDTH + k];
 
 	#pragma unroll
-	for (int i=4; i<(disc.widthHalf); i+=2)
+	for (int i=4; i<(WIDTHHalf); i+=2)
 	{
 		int read = ((i>>1) & 1);
 		int write = !read;
 
 		#pragma unroll
-		for (int j=i; j<(base.disc-i); j++)
+		for (int j=i; j<(BASE-i); j++)
 		{
 			if (read)
 			{ 
@@ -186,16 +190,16 @@ upTriangle(const REAL *IC, REAL *outRight, REAL *outLeft)
 	}
 
 	#pragma unroll
-	for (int k=0; k<disc.widthHalf; k++) 
+	for (int k=0; k<WIDTHHalf; k++) 
 	{
 		outLeft[k*disc.idxend + gid] = vel[0][k+2];
-		outRight[k*disc.idxend + gidout] = vel[0][disc.baseHalf+k];
+		outRight[k*disc.idxend + gidout] = vel[0][BASEHalf+k];
 	}
 	#pragma unroll
-	for (int k=0; k<disc.widthHalf; k++) 
+	for (int k=0; k<WIDTHHalf; k++) 
 	{
-		outLeft[(k+disc.widthHalf)*disc.idxend + gid] = vel[1][k+4];
-		outRight[(k+disc.widthHalf)*disc.idxend + gidout] = vel[1][disc.baseHalf + (k-2)];
+		outLeft[(k+WIDTHHalf)*disc.idxend + gid] = vel[1][k+4];
+		outRight[(k+WIDTHHalf)*disc.idxend + gidout] = vel[1][WIDTHHalf + k];
 	}
 
 }
@@ -206,26 +210,26 @@ downTriangle(REAL *IC, const REAL *inRight, const REAL *inLeft)
 {
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
 
-	REAL vel[2][disc.base];
+	REAL vel[2][BASE];
 	
 	// We'll see what happens. 
 	#pragma unroll
-	for (int k=0; k<(disc.widthHalf); k++) 	
+	for (int k=0; k<(WIDTHHalf); k++) 	
 	{
-		vel[0][k + disc.baseHalf] = inLeft[k*disc.idxend + gid]; //Goes to Right side
+		vel[0][k + BASEHalf] = inLeft[k*disc.idxend + gid]; //Goes to Right side
 		vel[0][k + 2] = inRight[k*disc.idxend + gid];
-		vel[1][k + disc.baseHalf + 2] = inLeft[(k+disc.widthHalf)*disc.idxend + gid]; //Goes to Right side
-		vel[1][k] = inRight[(k+disc.widthHalf)*disc.idxend + gid];
+		vel[1][k + BASEHalf + 2] = inLeft[(k+WIDTHHalf)*disc.idxend + gid]; //Goes to Right side
+		vel[1][k] = inRight[(k+WIDTHHalf)*disc.idxend + gid];
 	}
 
 	#pragma unroll
-	for (int i=disc.widthHalf; i>0; i-=2)
+	for (int i=WIDTHHalf; i>0; i-=2)
 	{
 		int read = ((i>>1) & 1);
 		int write = !read;
 
 		#pragma unroll
-		for (int j=i; j<(base.disc-i); j++)
+		for (int j=i; j<(BASE-i); j++)
 		{
 			if (read)
 			{ 
@@ -239,7 +243,7 @@ downTriangle(REAL *IC, const REAL *inRight, const REAL *inLeft)
 	}
 
     #pragma unroll
-	for (int k=0; k<(disc.width); k++)  IC[gid * disc.width + k] = vel[0][k+2];
+    for (int k=0; k<(WIDTH); k++)  IC[gid * WIDTH + k] = vel[0][k+2];
 }
 
 
@@ -249,26 +253,26 @@ wholeDiamond(REAL *inRight, REAL *inLeft, REAL *outRight, REAL *outLeft, const b
 {
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
 
-	REAL vel[2][disc.base];
+	REAL vel[2][BASE];
 	
 	// We'll see what happens. 
 	#pragma unroll
-	for (int k=0; k<(disc.widthHalf); k++) 	
+	for (int k=0; k<(WIDTHHalf); k++) 	
 	{
-		vel[0][k + disc.baseHalf] = inLeft[k*disc.idxend + gid]; //Goes to Right side
+		vel[0][k + BASEHalf] = inLeft[k*disc.idxend + gid]; //Goes to Right side
 		vel[0][k + 2] = inRight[k*disc.idxend + gid];
-		vel[1][k + disc.baseHalf + 2] = inLeft[(k+disc.widthHalf)*disc.idxend + gid]; //Goes to Right side
-		vel[1][k] = inRight[(k+disc.widthHalf)*disc.idxend + gid];
+		vel[1][k + BASEHalf + 2] = inLeft[(k+WIDTHHalf)*disc.idxend + gid]; //Goes to Right side
+		vel[1][k] = inRight[(k+WIDTHHalf)*disc.idxend + gid];
 	}
 
 	#pragma unroll
-	for (int i=disc.widthHalf; i>0; i-=2)
+	for (int i=WIDTHHalf; i>0; i-=2)
 	{
 		int read = ((i>>1) & 1);
 		int write = !read;
 
 		#pragma unroll
-		for (int j=i; j<(base.disc-i); j++)
+		for (int j=i; j<(BASE-i); j++)
 		{
 			if (read)
 			{ 
@@ -283,13 +287,13 @@ wholeDiamond(REAL *inRight, REAL *inLeft, REAL *outRight, REAL *outLeft, const b
 
     //-------------------TOP PART------------------------------------------
 	#pragma unroll
-	for (int i=4; i<(disc.baseHalf); i+=2)
+	for (int i=4; i<(BASEHalf); i+=2)
 	{
 		int read = ((i>>1) & 1);
 		int write = !read;
 
 		#pragma unroll
-		for (int j=i; j<(base.disc-i); j++)
+		for (int j=i; j<(BASE-i); j++)
 		{
 			if (read)
 			{ 
@@ -302,35 +306,35 @@ wholeDiamond(REAL *inRight, REAL *inLeft, REAL *outRight, REAL *outLeft, const b
 		}
 	}
 
-	#pragma unroll
 	if (split)
 	{
 		int gidout = (gid-1) & disc.idxend;
-		for (int k=0; k<disc.widthHalf; k++) 
+		#pragma unroll
+		for (int k=0; k<WIDTHHalf; k++) 
 		{
 			outLeft[k*disc.idxend + gidout] = vel[0][k+2];
-			outRight[k*disc.idxend + gid] = vel[0][disc.baseHalf+k];
+			outRight[k*disc.idxend + gid] = vel[0][BASEHalf+k];
 		}
 		#pragma unroll
-		for (int k=0; k<disc.widthHalf; k++) 
+		for (int k=0; k<WIDTHHalf; k++) 
 		{
-			outLeft[(k+disc.widthHalf)*disc.idxend + gidout] = vel[1][k+4];
-			outRight[(k+disc.widthHalf)*disc.idxend + gid] = vel[1][disc.baseHalf + (k-2)];
+			outLeft[(k+WIDTHHalf)*disc.idxend + gidout] = vel[1][k+4];
+			outRight[(k+WIDTHHalf)*disc.idxend + gid] = vel[1][BASEHalf + (k-2)];
 		}
 	}
 	else
 	{
 		int gidout = (gid+1) & disc.idxend;
-		for (int k=0; k<disc.widthHalf; k++) 
+		for (int k=0; k<WIDTHHalf; k++) 
 		{
 			outLeft[k*disc.idxend + gid] = vel[0][k+2];
-			outRight[k*disc.idxend + gidout] = vel[0][disc.baseHalf+k];
+			outRight[k*disc.idxend + gidout] = vel[0][BASEHalf+k];
 		}
 		#pragma unroll
-		for (int k=0; k<disc.widthHalf; k++) 
+		for (int k=0; k<WIDTHHalf; k++) 
 		{
-			outLeft[(k+disc.widthHalf)*disc.idxend + gid] = vel[1][k+4];
-			outRight[(k+disc.widthHalf)*disc.idxend + gidout] = vel[1][disc.baseHalf + (k-2)];
+			outLeft[(k+WIDTHHalf)*disc.idxend + gid] = vel[1][k+4];
+			outRight[(k+WIDTHHalf)*disc.idxend + gidout] = vel[1][BASEHalf + (k-2)];
 		}
 	}
 
@@ -356,15 +360,13 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
 	//Start the counter and start the clock.
 	//
 	//Every other step is a full timestep and each cycle is half tpb steps.
-	const double t_fullstep = 0.25 * dt * (double)tpb;
+	const double t_fullstep = 0.25 * dt * (double)WIDTH;
 	double twrite = freq;
 
-	const size_t smem = (2*tpb+8)*sizeof(REAL);
-
-	upTriangle <<< bks,tpb,smem >>> (d_IC,d0_right,d0_left);
+	upTriangle <<< bks,tpb >>> (d_IC,d0_right,d0_left);
 
 	//Split
-	wholeDiamond <<< bks,tpb,smem >>> (d0_right,d0_left,d2_right,d2_left,true);
+	wholeDiamond <<< bks,tpb >>> (d0_right,d0_left,d2_right,d2_left,true);
 
 	double t_eq = t_fullstep;
 
@@ -372,18 +374,18 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
 	while(t_eq < t_end)
 	{
 
-		wholeDiamond <<< bks,tpb,smem >>> (d2_right,d2_left,d0_right,d0_left,false);
+		wholeDiamond <<< bks,tpb >>> (d2_right,d2_left,d0_right,d0_left,false);
 
 		//So it always ends on a left pass since the down triangle is a right pass.
 
 		//Split
-		wholeDiamond <<< bks,tpb,smem >>> (d0_right,d0_left,d2_right,d2_left,true);
+		wholeDiamond <<< bks,tpb >>> (d0_right,d0_left,d2_right,d2_left,true);
 
 		t_eq += t_fullstep;
 
 	 	if (t_eq > twrite)
 		{
-			downTriangle <<< bks,tpb,smem >>> (d_IC,d2_right,d2_left);
+			downTriangle <<< bks,tpb >>> (d_IC,d2_right,d2_left);
 
 			cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
 
@@ -393,10 +395,10 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
 
 			fwr << endl;
 
-			upTriangle <<< bks,tpb,smem >>> (d_IC,d0_right,d0_left);
+			upTriangle <<< bks,tpb >>> (d_IC,d0_right,d0_left);
 
 			//Split
-			wholeDiamond <<< bks,tpb,smem >>> (d0_right,d0_left,d2_right,d2_left,true);
+			wholeDiamond <<< bks,tpb >>> (d0_right,d0_left,d2_right,d2_left,true);
 
 			t_eq += t_fullstep;
 
@@ -405,7 +407,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
 
 	}
 
-	downTriangle <<< bks,tpb,smem >>>(d_IC,d2_right,d2_left);
+	downTriangle <<< bks,tpb>>> (d_IC,d2_right,d2_left);
 
 	cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
 
@@ -435,12 +437,13 @@ int main( int argc, char *argv[])
 
 	const int dv = atoi(argv[1]); //Number of spatial points
 	const int tpb = atoi(argv[2]); //Threads per Block
-    const REAL dt = atof(argv[3]); //delta T timestep
+    	const REAL dt = atof(argv[3]); //delta T timestep
 	const float tf = atof(argv[4]); //Finish time
-    const float freq = atof(argv[5]); //Output frequency
-    const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
-    const int nodesz = atoi(argv[7]); //size of node
-	const int bks = dv/(nodesz*tpb); //The number of blocks
+    	const float freq = atof(argv[5]); //Output frequency
+    	const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
+    
+	const int bks = dv/(WIDTH*tpb); //The number of blocks
+	cout << tpb << " " << WIDTH << " " << WIDTH*tpb << endl;
 	const float lx = dv*dx;
 	char const *prec;
 	prec = (sizeof(REAL)<6) ? "Single": "Double";
@@ -464,11 +467,7 @@ int main( int argc, char *argv[])
 		ONE/(dx*dx*dx*dx), //dx^4
 		dt, //dt
 		dt*0.5, //dt half
-		nodesz + 4, //length of row of variable array
-		(nodesz+4)/2, //midpoint of shared array row
-		dv/nodesz, //last global thread 
-		nodesz,
-		nodesz/2
+		(dv/WIDTH)-1, //last global thread 
 	};
 
 	// Initialize arrays.
@@ -511,17 +510,11 @@ int main( int argc, char *argv[])
 
 	// Call the kernels until you reach the iteration limit.
 	double tfm;
-	if (scheme)
-    {
-		cout << "Swept" << endl;
-		tfm = sweptWrapper(bks, tpb, dv, dsc.dt, tf, IC, T_final, freq, fwr);
-	}
-	else
-	{
-		cout << "Classic" << endl;
-		tfm = classicWrapper(bks, tpb, dv, dsc.dt, tf, IC, T_final, freq, fwr);
-	}
 
+
+	tfm = sweptWrapper(bks, tpb, dv, dsc.dt, tf, IC, T_final, freq, fwr);
+	
+	
 	// Show the time and write out the final condition.
 	cudaEventRecord(stop, 0);
 	cudaEventSynchronize(stop);
@@ -535,7 +528,8 @@ int main( int argc, char *argv[])
 
     cout << n_timesteps << " timesteps" << endl;
 	cout << "Averaged " << per_ts << " microseconds (us) per timestep" << endl;
-
+	
+    cout << timed << endl;
     if (argc>8)
     {
         ofstream ftime;

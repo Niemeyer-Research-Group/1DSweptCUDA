@@ -3,6 +3,8 @@ import numpy as np
 import subprocess as sp
 import shlex
 import os
+import matplotlib as mpl
+mpl.use("Agg")
 import matplotlib.pyplot as plt
 import sys
 import pandas as pd
@@ -134,7 +136,7 @@ if __name__ == '__main__':
 
             for k in range(len(exMain)):
                 err.append([dMain[k][0], dMain[k][1], float(rmse(exMain[k][2:], dMain[k][2:]))])
-
+	    print err	 
             fig, (ax1, ax2) = plt.subplots(figsize=(14.,8.), ncols = 2)
             ax1.hold(True)
             ax2.hold(True)
@@ -250,9 +252,10 @@ if __name__ == '__main__':
             for k in range(len(exMain)):
                 err.append([dMain[k][1], dMain[k][0], dMain[k][2], float(rmse(exMain[k][3:], dMain[k][3:]))])
 
-
+            	    
             err = pd.DataFrame(err)
             err = err.set_index(0)
+	    print err
             head = ['dt','tf','Error']
             typ = err.index.get_level_values(0).unique()
             by_var = []

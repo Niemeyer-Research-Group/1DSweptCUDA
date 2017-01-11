@@ -733,7 +733,7 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t
             fwr << endl;
 
             fwr << "Energy " << t_eq << " ";
-            for (int k = 1; k<(dv-1); k++) fwr << (T_f[k].z/T_f[k].x) << " ";
+            for (int k = 1; k<(dv-1); k++) fwr << (T_f[k].z/T_f[k].x - T_f[k].y*T_f[k].y/2) << " ";
             fwr << endl;
 
             fwr << "Pressure " << t_eq << " ";
@@ -871,7 +871,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
                 fwr << endl;
 
                 fwr << "Energy " << t_eq << " ";
-                for (int k = 1; k<(dv-1); k++) fwr << (T_f[k].z/T_f[k].x) << " ";
+                for (int k = 1; k<(dv-1); k++) fwr << (T_f[k].z/T_f[k].x - T_f[k].y*T_f[k].y/2) << " ";
                 fwr << endl;
 
                 fwr << "Pressure " << t_eq << " ";
@@ -926,7 +926,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
                 fwr << endl;
 
                 fwr << "Energy " << t_eq << " ";
-                for (int k = 1; k<(dv-1); k++) fwr << (T_f[k].z/T_f[k].x) << " ";
+                for (int k = 1; k<(dv-1); k++) fwr << (T_f[k].z/T_f[k].x - T_f[k].y*T_f[k].y/2) << " ";
                 fwr << endl;
 
                 fwr << "Pressure " << t_eq << " ";
@@ -1117,7 +1117,7 @@ int main( int argc, char *argv[] )
     fwr << endl;
 
     fwr << "Energy " << tfm << " ";
-    for (int k = 1; k<(dv-1); k++) fwr << T_final[k].z/T_final[k].x << " ";
+    for (int k = 1; k<(dv-1); k++) fwr << (T_final[k].z/T_final[k].x -T_final[k].y*T_final[k].y/2) << " ";
     fwr << endl;
 
     fwr << "Pressure " << tfm << " ";
