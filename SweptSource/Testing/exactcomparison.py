@@ -71,7 +71,7 @@ if __name__ == '__main__':
         "SweptCPUshare"
     ]
 
-    pltsave = False
+    pltsave = True
 
     timestr = Fname[w] + " " + SCHEME[sch]
     exactpath = os.path.abspath(os.path.dirname(__file__))
