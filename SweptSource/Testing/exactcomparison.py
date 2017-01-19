@@ -3,6 +3,8 @@ import numpy as np
 import subprocess as sp
 import shlex
 import os
+import matplotlib as mpl
+mpl.use("Agg")
 import matplotlib.pyplot as plt
 import sys
 import pandas as pd
@@ -69,7 +71,7 @@ if __name__ == '__main__':
         "SweptCPUshare"
     ]
 
-    pltsave = False
+    pltsave = True
 
     timestr = Fname[w] + " " + SCHEME[sch]
     exactpath = os.path.abspath(os.path.dirname(__file__))
@@ -134,7 +136,7 @@ if __name__ == '__main__':
 
             for k in range(len(exMain)):
                 err.append([dMain[k][0], dMain[k][1], float(rmse(exMain[k][2:], dMain[k][2:]))])
-
+	    print err	 
             fig, (ax1, ax2) = plt.subplots(figsize=(14.,8.), ncols = 2)
             ax1.hold(True)
             ax2.hold(True)
@@ -164,7 +166,7 @@ if __name__ == '__main__':
             rt = typ[0]
             simF = pd.DataFrame(simF.xs( rt ))
             exF = pd.DataFrame(exF.xs( rt ))
-            simF = simF.set_index(1)p.genfromtxt(Varfile, skip_header=2))
+            simF = simF.set_index(1)
             exF = exF.set_index(1)
             simF.columns = xax
             exF.columns = xax
@@ -200,8 +202,8 @@ if __name__ == '__main__':
 
         L = 1.0
         dx = L/div
-        tf = .4
-        freq = .11
+        tf = .2
+        freq = .06
         dt = [1.0e-7, 1.0e-6, 1.0e-5, 1.0e-4]
         #dt = [.000001*k for k in range(1,5)]
         dt_dx = [k/dx for k in dt]
@@ -250,9 +252,10 @@ if __name__ == '__main__':
             for k in range(len(exMain)):
                 err.append([dMain[k][1], dMain[k][0], dMain[k][2], float(rmse(exMain[k][3:], dMain[k][3:]))])
 
-
+            	    
             err = pd.DataFrame(err)
             err = err.set_index(0)
+	    print err
             head = ['dt','tf','Error']
             typ = err.index.get_level_values(0).unique()
             by_var = []

@@ -10,33 +10,33 @@ from cycler import cycler
 
 #Flags for type of run.
 readin = False
-savepl = False
-writeout = True
+savepl = True
+writeout = False
 
 #Don't want to overwrite with previous version.
 if readin:
-    writeout=False
+    writeout = False
 
 def plotItBar(axi, dat):
 
     rects = axi.patches
-    for r,val in zip(rects,dat):
+    for r, val in zip(rects, dat):
         axi.text(r.get_x() + r.get_width()/2, val+.5, val, ha='center', va='bottom')
 
     return
 
 #Cycle through markers and colors.
 plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors)+
-    cycler('marker',['D','o','h','*','^','x','v','8']))
+    cycler('marker', ['D','o','h','*','^','x','v','8']))
 
 #Set up directory structure.
 thispath = op.abspath(op.dirname(__file__))
 sourcepath = op.dirname(thispath)
 gitpath = op.dirname(sourcepath) #Top level of git repo
-plotpath = op.join(op.join(op.join(gitpath,"ResultPlots"),"performance"),"Summary") #Folder for plots
-tablefile = op.join(plotpath,"SweptTestResults.html")
-storepath=op.join(thispath, "allResults.h5")
-thisday = "Saved"+str(datetime.date(datetime.today())).replace("-","_")
+plotpath = op.join(op.join(op.join(gitpath, "ResultPlots"), "performance"), "Summary") #Plots folder
+tablefile = op.join(plotpath, "SweptTestResults.html")
+storepath = op.join(thispath, "allResults.h5")
+thisday = "Saved" + str(datetime.date(datetime.today())).replace("-", "_")
 storage = pd.HDFStore(storepath)
 
 #Gather files
@@ -44,7 +44,7 @@ if not op.isdir(plotpath):
     os.mkdir(plotpath)
 
 if readin:
-    vers = zip(range(len(storage.keys())),storage.keys())
+    vers = zip(range(len(storage.keys())), storage.keys())
     print vers
     choice = int(raw_input("Choose version by index:"))
     df_result = storage[storage.keys()[choice]]
@@ -58,16 +58,16 @@ else:
             files.append(fl)
 
     files = sorted(files)
-    dd = pd.read_table(files[0],delim_whitespace = True)
+    dd = pd.read_table(files[0], delim_whitespace=True)
     headers = dd.columns.values.tolist()
-    headers = [h.replace("_"," ") for h in headers]
-    midx_name = ["Problem","Precision","Algorithm",headers[0]]
+    headers = [h.replace("_", " ") for h in headers]
+    midx_name = ["Problem", "Precision", "Algorithm", headers[0]]
     dfs_all = []
     #Put all files in dataframes.  Make a multiindex from names first.
     for f in files:
-        dd = pd.read_table(f,delim_whitespace = True)
+        dd = pd.read_table(f, delim_whitespace=True)
         dd.columns = headers
-        ds = dd.pivot(headers[0],headers[1],headers[2])
+        ds = dd.pivot(headers[0], headers[1], headers[2])
         idx1 = ds.index.get_level_values(0)
         outidx = f.split("_")
         midx = []
@@ -75,7 +75,7 @@ else:
             outidx[-1] = i
             midx.append(tuple(outidx))
 
-        idx_real = pd.MultiIndex.from_tuples(midx,names=midx_name)
+        idx_real = pd.MultiIndex.from_tuples(midx, names=midx_name)
         ds.set_index(idx_real, inplace=True)
         dfs_all.append(ds)
 
@@ -138,11 +138,11 @@ cnt = 0
 for prob in probs:
     df_now = df_best.xs(prob, level=midx_name[0])
     df_bdn = dfbound.xs(prob, level=midx_name[0])
-    fig, ax = plt.subplots(1,2, figsize=(14,8))
+    fig, ax = plt.subplots(1, 2, figsize=(14,8))
 
     ax = ax.ravel()
     fig.suptitle(prob+" Best Case", fontsize='large', fontweight="bold")
-    for i,prec in enumerate(precs):
+    for i, prec in enumerate(precs):
         ser = df_now.xs(prec, level=midx_name[1])
         ser = ser.unstack(midx_name[2])
         ser.plot(ax=ax[i], logx=True, logy=True, linewidth=2)
@@ -161,7 +161,7 @@ for prob in probs:
         ax2[cnt].set_ylabel("Frequency")
         ax2[cnt].set_xlabel("")
 
-        if cnt>0:
+        if cnt > 0:
             lgg = ax2[cnt].legend()
             lgg.remove()
 
@@ -172,8 +172,8 @@ for prob in probs:
     lg = ax[0].legend()
     lg.remove()
     fig.subplots_adjust(bottom=0.08, right=0.82, top=0.9)
-    ax[1].legend(bbox_to_anchor=(1.52,1.0), fontsize='medium')
-    plotfile = op.join(plotpath,"Best configuations " + prob + ".pdf")
+    ax[1].legend(bbox_to_anchor=(1.52, 1.0), fontsize='medium')
+    plotfile = op.join(plotpath, "Best configuations " + prob + ".pdf")
 
     if savepl:
         fig.savefig(plotfile, bbox_inches='tight')
@@ -190,8 +190,9 @@ if savepl:
 
 #Now plot speedups, Time of best classic/Time best Swept.
 df_classic = df_best.xs(algs[0], level="Algorithm")
-df_sweptcpu = df_best.xs(algs[1], level="Algorithm")
-df_swept = df_best.xs(algs[2], level="Algorithm")
+df_sweptcpu = df_best.drop([algs[0],algs[-1]], level="Algorithm")
+df_sweptcpu.index = df_sweptcpu.index.droplevel(2)
+df_swept = df_best.xs(algs[-1], level="Algorithm")
 
 df_gpuspeed = pd.DataFrame(df_classic/df_swept)
 df_sharespeed = pd.DataFrame(df_classic/df_sweptcpu)
@@ -203,8 +204,8 @@ df_sharespeed = df_sharespeed.unstack("Problem")
 df_sharespeed.columns = df_sharespeed.columns.droplevel()
 df_sharespeed = df_sharespeed.unstack("Precision")
 
-fig, ax = plt.subplots(1,2, figsize=(14,8))
-plt.suptitle("Swept algorithm speedup for best launch configuration",fontsize='large', fontweight="bold")
+fig, ax = plt.subplots(1, 2, figsize=(14,8))
+plt.suptitle("Swept algorithm speedup for best launch configuration", fontsize='large', fontweight="bold")
 
 df_gpuspeed.plot(ax=ax[0], logx=True, linewidth=2)
 ax[0].set_ylabel("Speedup vs Classic")
@@ -212,9 +213,29 @@ ax[0].grid(alpha=0.5)
 ax[0].set_title("SweptGPU")
 df_sharespeed.plot(ax=ax[1], logx=True, linewidth=2)
 ax[1].grid(alpha=0.5)
-ax[1].set_title("SweptCPUShare")
+ax[1].set_title("Alternative")
 
-plotfile = op.join(plotpath,"Speedups.pdf")
+plotfile = op.join(plotpath, "Speedups.pdf")
+
+if savepl:
+    fig.savefig(plotfile, bbox_inches='tight')
+
+#Plot MPI version results vs CUDA for KS.
+fig, ax = plt.subplots(1,1, figsize=(14,8))
+dfM = pd.read_csv("KS_MPI.csv")
+mpihead = dfM.columns.values.tolist()
+dfM = dfM.set_index(mpihead[0])
+dfK = pd.DataFrame(df_best.xs("KS",level="Problem"))
+dfK = dfK.unstack("Precision")
+dfK = dfK.unstack("Algorithm")
+dfK.columns = dfK.columns.droplevel()
+
+dfKS = dfM.join(dfK)
+dfKS.dropna(inplace=True)
+dfKS.plot(ax=ax, logx=True, logy=True, linewidth=2,figsize=(14,8))
+ax.set_ylabel(headers[2])
+
+ax.set_title("KS MPI vs GPU implementation")
 
 if savepl:
     fig.savefig(plotfile, bbox_inches='tight')
@@ -243,6 +264,10 @@ dfKS.to_html(tblMPI)
 plotfile = op.join(plotpath,"KS_MPI_GPU_Comparison.pdf")
 if savepl:
     fig.savefig(plotfile, bbox_inches='tight')
+ax.grid(alpha=0.5)
+
+tblMPI = op.join(plotpath,"KS_MPI_GPU_Comparison.html")
+dfKS.to_html(tblMPI)
 
 if writeout:
     df_result.to_html(tablefile)
