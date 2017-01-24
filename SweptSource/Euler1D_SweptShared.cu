@@ -1117,7 +1117,7 @@ int main( int argc, char *argv[] )
     fwr << endl;
 
     fwr << "Energy " << tfm << " ";
-    for (int k = 1; k<(dv-1); k++) fwr << (T_final[k].z/T_final[k].x -T_final[k].y*T_final[k].y/2) << " ";
+    for (int k = 1; k<(dv-1); k++) fwr << (T_final[k].z/T_final[k].x - HALF*T_final[k].y*T_final[k].y) << " ";
     fwr << endl;
 
     fwr << "Pressure " << tfm << " ";
