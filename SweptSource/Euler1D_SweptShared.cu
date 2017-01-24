@@ -623,6 +623,15 @@ splitDiamond(REALthree *inRight, REALthree *inLeft, REALthree *outRight, REALthr
 using namespace std;
 
 __host__
+__forceinline__
+REAL
+energy(REALthree subj)
+{
+    REAL u = subj.y/subj.x;
+    return subj.z/subj.x - HALF*u*u;
+}
+
+__host__
 void
 CPU_diamond(REALthree *temper, int htcpu[5])
 {
@@ -691,13 +700,6 @@ CPU_diamond(REALthree *temper, int htcpu[5])
 
 }
 
-REAL
-__host__ __inline__
-energy(REAL p, REAL rho, REAL u)
-{
-    return (p/(dimz.mgam*rho) + HALF*rho*u*u);
-}
-
 //Classic Discretization wrapper.
 double
 classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t_end,
@@ -733,7 +735,7 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t
             fwr << endl;
 
             fwr << "Energy " << t_eq << " ";
-            for (int k = 1; k<(dv-1); k++) fwr << (T_f[k].z/T_f[k].x - T_f[k].y*T_f[k].y/2) << " ";
+            for (int k = 1; k<(dv-1); k++) fwr << energy(T_f[k]) << " ";
             fwr << endl;
 
             fwr << "Pressure " << t_eq << " ";
@@ -871,7 +873,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
                 fwr << endl;
 
                 fwr << "Energy " << t_eq << " ";
-                for (int k = 1; k<(dv-1); k++) fwr << (T_f[k].z/T_f[k].x - T_f[k].y*T_f[k].y/2) << " ";
+                for (int k = 1; k<(dv-1); k++) fwr << energy(T_f[k]) << " ";
                 fwr << endl;
 
                 fwr << "Pressure " << t_eq << " ";
@@ -897,7 +899,6 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
 
 	}
     else
-
     {
         splitDiamond <<< bks,tpb,smem >>>(d0_right,d0_left,d2_right,d2_left);
         t_eq = t_fullstep;
@@ -926,7 +927,7 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, co
                 fwr << endl;
 
                 fwr << "Energy " << t_eq << " ";
-                for (int k = 1; k<(dv-1); k++) fwr << (T_f[k].z/T_f[k].x - T_f[k].y*T_f[k].y/2) << " ";
+                for (int k = 1; k<(dv-1); k++) fwr << energy(T_f[k]) << " ";
                 fwr << endl;
 
                 fwr << "Pressure " << t_eq << " ";
@@ -1117,7 +1118,7 @@ int main( int argc, char *argv[] )
     fwr << endl;
 
     fwr << "Energy " << tfm << " ";
-    for (int k = 1; k<(dv-1); k++) fwr << (T_final[k].z/T_final[k].x - HALF*T_final[k].y*T_final[k].y) << " ";
+    for (int k = 1; k<(dv-1); k++) fwr << energy(T_final[k]) << " ";
     fwr << endl;
 
     fwr << "Pressure " << tfm << " ";
