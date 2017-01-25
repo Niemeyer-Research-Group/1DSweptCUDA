@@ -180,39 +180,46 @@ eulerFlux(REALthree cvLeft, REALthree cvRight)
     #ifndef __CUDA_ARCH__
     using namespace std;
     #endif
-    //For the first calculation rho and p remain the same.
     REAL uLeft = cvLeft.y/cvLeft.x;
     REAL uRight = cvRight.y/cvRight.x;
-    REAL eLeft = cvLeft.z/cvLeft.x;
-    REAL eRight = cvRight.z/cvRight.x;
+
+    REAL pL = pressure(cvLeft);
+    REAL pR = pressure(cvRight);
+
+    REALthree flux;
+    flux.x = (cvLeft.y + cvRight.y);
+    flux.y = (cvLeft.y*uLeft + cvRight.y*uRight + pL + pR);
+    flux.z = (cvLeft.z*uLeft + cvRight.z*uRight + uLeft*pL + uRight*pR);
+
+    return flux;
+}
+
+__device__ __host__
+__forceinline__
+REALthree
+eulerSpectral(REALthree cvLeft, REALthree cvRight)
+{
+    #ifndef __CUDA_ARCH__
+    using namespace std;
+    #endif
 
     REALthree halfState;
     REAL rhoLeftsqrt = sqrt(cvLeft.x);
     REAL rhoRightsqrt = sqrt(cvRight.x);
-    REAL pL = pressure(cvLeft);
-    REAL pR = pressure(cvRight);
 
     halfState.x = rhoLeftsqrt * rhoRightsqrt;
-    REAL halfDenom = (rhoLeftsqrt + rhoRightsqrt);
+    REAL halfDenom = ONE/(halfState.x*(rhoLeftsqrt + rhoRightsqrt));
 
-    REALthree flux;
-    flux.x = (cvLeft.y + cvRight.y);
-
-    halfState.y =  (rhoLeftsqrt*uLeft + rhoRightsqrt*uRight)/halfDenom;
-    halfState.z =  (rhoLeftsqrt*eLeft + rhoRightsqrt*eRight)/halfDenom;
-
-    flux.y = (cvLeft.y*uLeft + cvRight.y*uRight + pL + pR);
-    flux.z = (cvLeft.y*eLeft + cvRight.y*eRight + uLeft*pL + uRight*pR);
+    halfState.y = (rhoLeftsqrt*cvRight.y + rhoRightsqrt*cvLeft.y)*halfDenom;
+    halfState.z = (rhoLeftsqrt*cvRight.z + rhoRightsqrt*cvLeft.z)*halfDenom;
 
     REAL pH = pressureHalf(halfState);
 
     #ifdef __CUDA_ARCH__
-    return (flux + (pH*dimens.gam + fabs(halfState.y)) * (cvLeft - cvRight));
+    return (pH*dimens.gam + fabs(halfState.y)) * (cvLeft - cvRight);
     #else
-    return (flux + (pH*dimz.gam + fabs(halfState.y)) * (cvLeft - cvRight));
+    return (pH*dimz.gam + fabs(halfState.y)) * (cvLeft - cvRight);
     #endif
-
-
 }
 
 //This is the predictor step of the finite volume scheme.
@@ -240,12 +247,14 @@ eulerStutterStep(REALthree *state, int tr, char flagLeft, char flagRight)
 
     //Pressure needs to be recalculated for the new limited state variables.
     REALthree flux = eulerFlux(tempStateLeft,tempStateRight);
+    flux += eulerSpectral(tempStateLeft,tempStateRight);
 
     //Do the same thing with the right side.
     tempStateLeft = (!pL || !pR || (pL < 0 != pR <0)) ? state[tr] : limitor(state[tr], state[tr+1], (state[tr-1].x*pR/(state[tr+1].x*pL)));
     tempStateRight = (!pRR || !pR || (pRR < 0 != pR <0)) ? state[tr+1] : limitor(state[tr+1], state[tr], (state[tr+2].x*pR/(state[tr].x*pRR)));
 
     flux -= eulerFlux(tempStateLeft,tempStateRight);
+    flux -= eulerSpectral(tempStateLeft,tempStateRight);
 
     //Add the change back to the node in question.
     #ifdef __CUDA_ARCH__
@@ -283,12 +292,14 @@ eulerFinalStep(REALthree *state, int tr, char flagLeft, char flagRight)
 
     //Pressure needs to be recalculated for the new limited state variables.
     REALthree flux = eulerFlux(tempStateLeft,tempStateRight);
+    flux += eulerSpectral(tempStateLeft,tempStateRight);
 
     //Do the same thing with the right side.
     tempStateLeft = (!pL || !pR || (pL < 0 != pR <0)) ? state[tr] : limitor(state[tr], state[tr+1], (state[tr-1].x*pR/(state[tr+1].x*pL)));
     tempStateRight = (!pRR || !pR || (pRR < 0 != pR <0))  ? state[tr+1] : limitor(state[tr+1], state[tr], (state[tr+2].x*pR/(state[tr].x*pRR)));
 
     flux -= eulerFlux(tempStateLeft,tempStateRight);
+    flux -= eulerSpectral(tempStateLeft,tempStateRight);
 
     #ifdef __CUDA_ARCH__
     return (HALF * dimens.dt_dx * flux);
@@ -298,16 +309,6 @@ eulerFinalStep(REALthree *state, int tr, char flagLeft, char flagRight)
 
 }
 
-// __global__
-// void
-// swapKernel(const REALthree *passing_side, REALthree *bin, int direction)
-// {
-//     int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
-//     int gidout = (gid + direction*blockDim.x) & dimens.idxend;
-
-//     bin[gidout] = passing_side[gid];
-
-// }
 
 //Simple scheme with dirchlet boundary condition.
 __global__
