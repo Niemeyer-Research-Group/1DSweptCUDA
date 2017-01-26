@@ -25,12 +25,15 @@ def plotItBar(axi, dat):
 
     return
 
+All I need to do is: make new plots, put them in the paper, grab old Euler versions, run performance tests at Double, 
+
 #Cycle through markers and colors.
 plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors)+
-    cycler('marker', ['D','o','h','*','^','x','v','8']))
+    cycler('marker', ['D', 'o', 'h', '*', '^', 'x', 'v', '8']))
 
 #Set up directory structure.
 thispath = op.abspath(op.dirname(__file__))
+os.chdir(thispath)
 sourcepath = op.dirname(thispath)
 gitpath = op.dirname(sourcepath) #Top level of git repo
 plotpath = op.join(op.join(op.join(gitpath, "ResultPlots"), "performance"), "Summary") #Plots folder
@@ -129,7 +132,7 @@ dfbound = dfbound.apply(pd.value_counts)
 dfbound = dfbound.transpose()
 dfbound.dropna(how="all", inplace=True)
 
-fig2, ax2 = plt.subplots(3,2, figsize=(14,8))
+fig2, ax2 = plt.subplots(3, 2, figsize=(14, 8))
 fig2.suptitle("Best threads per block", fontsize='large', fontweight="bold")
 ax2 = ax2.ravel()
 cnt = 0
@@ -138,7 +141,7 @@ cnt = 0
 for prob in probs:
     df_now = df_best.xs(prob, level=midx_name[0])
     df_bdn = dfbound.xs(prob, level=midx_name[0])
-    fig, ax = plt.subplots(1, 2, figsize=(14,8))
+    fig, ax = plt.subplots(1, 2, figsize=(14, 8))
 
     ax = ax.ravel()
     fig.suptitle(prob+" Best Case", fontsize='large', fontweight="bold")
@@ -190,7 +193,7 @@ if savepl:
 
 #Now plot speedups, Time of best classic/Time best Swept.
 df_classic = df_best.xs(algs[0], level="Algorithm")
-df_sweptcpu = df_best.drop([algs[0],algs[-1]], level="Algorithm")
+df_sweptcpu = df_best.drop([algs[0], algs[-1]], level="Algorithm")
 df_sweptcpu.index = df_sweptcpu.index.droplevel(2)
 df_swept = df_best.xs(algs[-1], level="Algorithm")
 
@@ -204,7 +207,7 @@ df_sharespeed = df_sharespeed.unstack("Problem")
 df_sharespeed.columns = df_sharespeed.columns.droplevel()
 df_sharespeed = df_sharespeed.unstack("Precision")
 
-fig, ax = plt.subplots(1, 2, figsize=(14,8))
+fig, ax = plt.subplots(1, 2, figsize=(14, 8))
 plt.suptitle("Swept algorithm speedup for best launch configuration", fontsize='large', fontweight="bold")
 
 df_gpuspeed.plot(ax=ax[0], logx=True, linewidth=2)
@@ -220,53 +223,34 @@ plotfile = op.join(plotpath, "Speedups.pdf")
 if savepl:
     fig.savefig(plotfile, bbox_inches='tight')
 
+
 #Plot MPI version results vs CUDA for KS.
-fig, ax = plt.subplots(1,1, figsize=(14,8))
+fig, ax = plt.subplots(1, 1, figsize=(14, 8))
 dfM = pd.read_csv("KS_MPI.csv")
 mpihead = dfM.columns.values.tolist()
 dfM = dfM.set_index(mpihead[0])
-dfK = pd.DataFrame(df_best.xs("KS",level="Problem"))
+dfK = pd.DataFrame(df_best.xs("KS", level="Problem"))
 dfK = dfK.unstack("Precision")
 dfK = dfK.unstack("Algorithm")
 dfK.columns = dfK.columns.droplevel()
 
 dfKS = dfM.join(dfK)
 dfKS.dropna(inplace=True)
-dfKS.plot(ax=ax, logx=True, logy=True, linewidth=2,figsize=(14,8))
-ax.set_ylabel(headers[2])
-
-ax.set_title("KS MPI vs GPU implementation")
-
-if savepl:
-    fig.savefig(plotfile, bbox_inches='tight')
-
-#Plot MPI version results vs CUDA for KS.
-fig, ax = plt.subplots(1,1, figsize=(14,8))
-dfM = pd.read_csv("KS_MPI.csv")
-mpihead = dfM.columns.values.tolist()
-dfM = dfM.set_index(mpihead[0])
-dfK = pd.DataFrame(df_best.xs("KS",level="Problem"))
-dfK = dfK.unstack("Precision")
-dfK = dfK.unstack("Algorithm")
-dfK.columns = dfK.columns.droplevel()
-
-dfKS = dfM.join(dfK)
-dfKS.dropna(inplace=True)
-dfKS.plot(ax=ax, logx=True, logy=True, linewidth=2,figsize=(14,8))
+dfKS.plot(ax=ax, logx=True, logy=True, linewidth=2, figsize=(14, 8))
 ax.set_ylabel(headers[2])
 
 ax.set_title("KS MPI vs GPU implementation")
 ax.grid(alpha=0.5)
 
-tblMPI = op.join(plotpath,"KS_MPI_GPU_Comparison.html")
+tblMPI = op.join(plotpath, "KS_MPI_GPU_Comparison.html")
 dfKS.to_html(tblMPI)
 
-plotfile = op.join(plotpath,"KS_MPI_GPU_Comparison.pdf")
+plotfile = op.join(plotpath, "KS_MPI_GPU_Comparison.pdf")
 if savepl:
     fig.savefig(plotfile, bbox_inches='tight')
 ax.grid(alpha=0.5)
 
-tblMPI = op.join(plotpath,"KS_MPI_GPU_Comparison.html")
+tblMPI = op.join(plotpath, "KS_MPI_GPU_Comparison.html")
 dfKS.to_html(tblMPI)
 
 if writeout:
@@ -276,6 +260,6 @@ if writeout:
         if "n" in fl:
             sys.exit(1)
 
-    storage.put(thisday,df_result)
+    storage.put(thisday, df_result)
     
     storage.close()

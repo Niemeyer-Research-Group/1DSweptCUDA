@@ -38,20 +38,14 @@ If not, see <https://opensource.org/licenses/MIT>.
     #define REAL        float
     #define REALtwo     float2
     #define REALthree   float3
-    #define REALfour    float4
 
-    #define TWOVEC( ... ) make_float2(__VA_ARGS__)
-    #define THREEVEC( ... ) make_float3(__VA_ARGS__)
-    #define FOURVEC( ... )  make_float4(__VA_ARGS__)
     #define ZERO        0.0f
     #define QUARTER     0.25f
     #define HALF        0.5f
     #define ONE         1.f
     #define TWO         2.f
 #else
-    #define TWOVEC( ... ) make_double2(__VA_ARGS__)
-    #define THREEVEC( ... ) make_double3(__VA_ARGS__)
-    #define FOURVEC( ... )  make_double4(__VA_ARGS__)
+
     #define ZERO        0.0
     #define QUARTER     0.25
     #define HALF        0.5
@@ -239,7 +233,6 @@ eulerStutterStep(REALthree *state, int tr, char flagLeft, char flagRight)
 
     REAL pRR = (flagRight) ? ZERO : (TWO * state[tr+1].x * state[tr+2].x * (state[tr+2].z - state[tr+1].z) +
         (state[tr+1].y * state[tr+1].y * state[tr+2].x - state[tr+2].y * state[tr+2].y * state[tr+1].x));
-
 
     //This is the temporary state bounded by the limitor function.
     REALthree tempStateLeft = (!pLL || !pL || (pLL < 0 != pL <0)) ? state[tr-1] : limitor(state[tr-1], state[tr], (state[tr-2].x*pL/(state[tr].x*pLL)));

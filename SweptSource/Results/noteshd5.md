@@ -4,6 +4,6 @@
 
 10/17 - Threevec same with CUDA8
 
-Next - Threevec with more division avoidance.
+12/29 - Threevec with more division avoidance.
 
-12/29 - 
+01/26 - Threevec split up flux and spectral radius (Registers reduces ~10 in Double)

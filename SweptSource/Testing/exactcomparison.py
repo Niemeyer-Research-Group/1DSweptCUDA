@@ -4,7 +4,6 @@ import subprocess as sp
 import shlex
 import os
 import matplotlib as mpl
-mpl.use("Agg")
 import matplotlib.pyplot as plt
 import sys
 import pandas as pd
@@ -75,6 +74,7 @@ if __name__ == '__main__':
 
     timestr = Fname[w] + " " + SCHEME[sch]
     exactpath = os.path.abspath(os.path.dirname(__file__))
+    os.chdir(exactpath)
     mainpath = os.path.dirname(exactpath)
     gitpath = os.path.dirname(mainpath)
     plotpath = os.path.join(os.path.join(gitpath,'ResultPlots'),'ExactTesting')
@@ -136,7 +136,8 @@ if __name__ == '__main__':
 
             for k in range(len(exMain)):
                 err.append([dMain[k][0], dMain[k][1], float(rmse(exMain[k][2:], dMain[k][2:]))])
-	    print err	 
+
+	        print err	 
             fig, (ax1, ax2) = plt.subplots(figsize=(14.,8.), ncols = 2)
             ax1.hold(True)
             ax2.hold(True)
@@ -202,10 +203,11 @@ if __name__ == '__main__':
 
         L = 1.0
         dx = L/div
-        tf = .2
-        freq = .06
-        dt = [1.0e-7, 1.0e-6, 1.0e-5, 1.0e-4]
+        
+        freq = .06-1e-8
+        dt = [1.0e-7, 5.0e-7, 1.0e-6, 5.0e-6, 1.0e-5, 5.0e-5, 1.0e-4]
         #dt = [.000001*k for k in range(1,5)]
+        tf = .2-1e-8
         dt_dx = [k/dx for k in dt]
         err = np.empty([4,4])
         for pr in prec:
@@ -255,7 +257,7 @@ if __name__ == '__main__':
             	    
             err = pd.DataFrame(err)
             err = err.set_index(0)
-	    print err
+	        # print err
             head = ['dt','tf','Error']
             typ = err.index.get_level_values(0).unique()
             by_var = []
@@ -271,18 +273,21 @@ if __name__ == '__main__':
                 ax[i].hold(True)
                 ax[i].grid(alpha=0.5)
                 df.columns = head
-                df = df.set_index('dt')
+                df = df.set_index('tf')
+                print df
                 dfidx = df.index.get_level_values(0).unique()
+                print dfidx
                 Lin = []
                 ax[i].ticklabel_format(style='sci', axis='y', scilimits=(0,0))
                 for dfi in dfidx:
                     dn = df.xs(dfi)
-                    ax[i].plot(dn['tf'], dn['Error'],'-o', label="{:.2e}       {:.5f}".format(dfi,dfi/dx))
-                    ax[i].set_xlabel('Simulation time (s)')
+                    ax[i].loglog(dn['dt'], dn['Error'],'-o', label="{:.2e}".format(dfi))
+                    ax[i].set_xlabel('Timestep (dt)')
                     ax[i].set_ylabel('RMS Error')
+           
 
             hand, lbl = ax[0].get_legend_handles_labels()
-            fig.legend(hand, lbl, 'upper_right', title="    dt  ---------  dt/dx", fontsize="medium")
+            fig.legend(hand, lbl, 'upper_right', title="t = ", fontsize="medium")
             plt.suptitle(plotstr + ' | {0} spatial points                    {1}'.format(int(div)," "), fontsize="medium")
             plt.tight_layout(pad=0.2, w_pad=0.75, h_pad=1.5)
             plt.subplots_adjust(bottom=0.08, right=0.82, top=0.92)
