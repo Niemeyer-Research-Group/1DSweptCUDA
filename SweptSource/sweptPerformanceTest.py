@@ -23,19 +23,26 @@ If not, see <https://opensource.org/licenses/MIT>.
 # A script to test the performance of the algorithm with various
 # x dimension and block sizes
 
-import matplotlib.pyplot as plt
-from cycler import cycler
-import numpy as np
-import subprocess as sp
-import shlex
+
 import os
 import os.path as op
 import sys
+
+sourcepath = op.abspath(op.dirname(__file__))
+rsltpath = op.join(sourcepath,'Results')
+binpath = op.join(sourcepath,'bin') #Binary directory
+gitpath = op.dirname(sourcepath) #Top level of git repo
+plotpath = op.join(op.join(gitpath,"ResultPlots"),"performance") #Folder for plots
+modpath = op.join(gitpath,"pyAnalysisTools")
+
+sys.path.append(modpath)
+import main_help as mh
+
+import numpy as np
+import subprocess as sp
+import shlex
 import Tkinter as Tk
 import ttk
-import pandas as pd
-import palettable.colorbrewer as pal
-
 
 OPTIONS = [
     "Heat",
@@ -46,7 +53,7 @@ OPTIONS = [
 SCHEME = [
     "Classic",
     "SweptGPU",
-    "SweptCPUshare"
+    "Hybrid"
 ]
 
 PRECISION = [
@@ -222,14 +229,8 @@ vf = fname + precise + rsltout
 timefile = timename + timeout
 plotstr = timename.replace("_"," ")
 
-sourcepath = op.abspath(op.dirname(__file__))
-rsltpath = op.join(sourcepath,'Results')
-binpath = op.join(sourcepath,'bin') #Binary directory
-gitpath = op.dirname(sourcepath) #Top level of git repo
-plotpath = op.join(op.join(gitpath,"ResultPlots"),"performance") #Folder for plots
 timepath = op.join(rsltpath,timefile)
 Varfile = op.join(rsltpath,vf)
-myplot = op.join(plotpath, plotstr + ".pdf")
 
 dts = [.001, float(format(1.0/div[-1],'.0e'))*.1, .005]
 
@@ -287,19 +288,6 @@ if not op.isfile(timepath):
     print "There is no file for the specified procedure: " + timestr
     os.exit(-1)
 
-times = pd.read_table(timepath, delim_whitespace = True)
-headers = times.columns.values.tolist()
-headers = [h.replace("_"," ") for h in headers]
-times.columns = headers
-time_split = times.pivot(headers[0],headers[1],headers[2])
-plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors))
-time_split.plot(logx = True, logy=True, grid=True, linewidth=2)
-plt.ylabel(headers[2])
-plt.title(plotstr + " ")
-plt.savefig(myplot, dpi=1000, bbox_inches="tight")
 
-#if you're doing a one off run show the plot, if you're doing a full performance test, don't
-if len(sys.argv) < 2:
-    plt.show()
-else:
-    pass
+myFrame = mh.Perform(timepath)
+myFrame.plotframe(plotpath)

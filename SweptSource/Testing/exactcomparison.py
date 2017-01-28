@@ -1,26 +1,42 @@
-#This should be stand alone
+'''Docstring'''
+
+import os
+import os.path as op
+import sys
+
+exactpath = os.path.abspath(os.path.dirname(__file__))
+os.chdir(exactpath)
+sourcepath = os.path.dirname(exactpath)
+gitpath = os.path.dirname(sourcepath)
+plotpath = os.path.join(os.path.join(gitpath, 'ResultPlots'), 'ExactTesting')
+rsltpath = os.path.join(sourcepath, 'Results')
+binpath = os.path.join(sourcepath, 'bin')
+modpath = op.join(gitpath, "pyAnalysisTools")
+
+sys.path.append(modpath)
+
+import test_help as th
 import numpy as np
 import subprocess as sp
 import shlex
-import os
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import sys
 import pandas as pd
 import time
+
 from exactpack.solvers.riemann import Sod
 import warnings
 
-def euler_exact(dx,t,dv,thing):
+def euler_exact(dx, t, dv, thing):
     warnings.filterwarnings("ignore")
-    r = np.arange(0.5*dx,1,dx)
+    r = np.arange(0.5*dx, 1, dx)
     if thing == 'velocity':
         thing = "velocity_x"
 
     solver = Sod()
-    soln = solver(r,t)
+    soln = solver(r, t)
 
-    return getattr(soln,thing)
+    return getattr(soln, thing)
 
 def heats(n,L,x,t):
     alpha = 8.418e-5
@@ -53,7 +69,7 @@ def Fo(dx,dt):
 def rmse(exact,sim):
     return np.sqrt(np.mean((np.array(exact)-np.array(sim))**2))
 
-if __name__ == '__main__':
+if __name__ == '__source__':
 
     w = int(sys.argv[1])
     sch = int(sys.argv[2])
@@ -71,19 +87,11 @@ if __name__ == '__main__':
     ]
 
     pltsave = True
-
     timestr = Fname[w] + " " + SCHEME[sch]
-    exactpath = os.path.abspath(os.path.dirname(__file__))
-    os.chdir(exactpath)
-    mainpath = os.path.dirname(exactpath)
-    gitpath = os.path.dirname(mainpath)
-    plotpath = os.path.join(os.path.join(gitpath,'ResultPlots'),'ExactTesting')
 
-    proc = sp.Popen("make", cwd = mainpath)
+    proc = sp.Popen("make", cwd=sourcepath)
     sp.Popen.wait(proc)
 
-    rsltpath = os.path.join(mainpath,'Results')
-    binpath = os.path.join(mainpath,'bin')
     myplotpath = os.path.join(plotpath,Fname[w])
 
     div = float(2**11)
@@ -109,11 +117,11 @@ if __name__ == '__main__':
             myplot = os.path.join(myplotpath, plotstr + ".pdf")
             Varfile = os.path.join(rsltpath, Fname[w] + "_Result.dat")
             execut = os.path.join(binpath, Fname[w] + pr + "Out")
-            dMain = []
+            dsource = []
             err = []
-            exMain = []
+            exsource = []
 
-            #Main loop
+            #source loop
             for i,dts in enumerate(dt):
                 execstr = execut +  ' {0} {1} {2} {3} {4} {5} {6} {7}'.format(div,bks,dts,tf,freq,swept,cpu,Varfile)
                 exeStr = shlex.split(execstr)
@@ -129,13 +137,13 @@ if __name__ == '__main__':
                     ar = fin[p].split()
                     tm = float(ar[1])
                     if tm>0:
-                        dMain.append([dts, tm] + [float(n) for n in ar[2:]])
-                        exMain.append([dts, tm] + list(heat_exact(tm, L, div)))
+                        dsource.append([dts, tm] + [float(n) for n in ar[2:]])
+                        exsource.append([dts, tm] + list(heat_exact(tm, L, div)))
 
                 f.close()
 
-            for k in range(len(exMain)):
-                err.append([dMain[k][0], dMain[k][1], float(rmse(exMain[k][2:], dMain[k][2:]))])
+            for k in range(len(exsource)):
+                err.append([dsource[k][0], dsource[k][1], float(rmse(exsource[k][2:], dsource[k][2:]))])
 
 	        print err	 
             fig, (ax1, ax2) = plt.subplots(figsize=(14.,8.), ncols = 2)
@@ -159,8 +167,8 @@ if __name__ == '__main__':
             ax1.set_title(plotstr + ' | {0} spatial points     '.format(int(div)), fontsize="medium")
             ax1.grid(alpha = 0.5)
 
-            simF = pd.DataFrame(dMain)
-            exF = pd.DataFrame(exMain)
+            simF = pd.DataFrame(dsource)
+            exF = pd.DataFrame(exsource)
             simF = simF.set_index(0)
             exF = exF.set_index(0)
             typ = simF.index.get_level_values(0).unique()
@@ -220,11 +228,11 @@ if __name__ == '__main__':
             Varfile = os.path.join(rsltpath, Fname[w] + pr + "_1D_Result.dat")
             execut = os.path.join(binpath, Fname[w] + pr + "Out")
 
-            dMain = []
+            dsource = []
             err = []
-            exMain = []
+            exsource = []
 
-            #Main loop
+            #source loop
             for i,dts in enumerate(dt):
                 execstr = execut +  ' {0} {1} {2} {3} {4} {5} {6} {7}'.format(div,bks,dts,tf,freq,swept,cpu,Varfile)
                 exeStr = shlex.split(execstr)
@@ -246,13 +254,13 @@ if __name__ == '__main__':
                     tm = float(ar[1])
                     if tm>0:
                         idx = [dts,nameV,tm]
-                        dMain.append( idx + [float(n) for n in ar[2:]])
-                        exMain.append( idx + list(euler_exact(dx, tm, div, nameV)))
+                        dsource.append( idx + [float(n) for n in ar[2:]])
+                        exsource.append( idx + list(euler_exact(dx, tm, div, nameV)))
 
                 f.close()
 
-            for k in range(len(exMain)):
-                err.append([dMain[k][1], dMain[k][0], dMain[k][2], float(rmse(exMain[k][3:], dMain[k][3:]))])
+            for k in range(len(exsource)):
+                err.append([dsource[k][1], dsource[k][0], dsource[k][2], float(rmse(exsource[k][3:], dsource[k][3:]))])
 
             	    
             err = pd.DataFrame(err)
@@ -296,8 +304,8 @@ if __name__ == '__main__':
                 plt.savefig(myplotE, dpi=1000, bbox_inches="tight")
             #plt.show()
 
-            simF = pd.DataFrame(dMain)
-            exF = pd.DataFrame(exMain)
+            simF = pd.DataFrame(dsource)
+            exF = pd.DataFrame(exsource)
             simF = simF.set_index(0)
             exF = exF.set_index(0)
             typ = simF.index.get_level_values(0).unique()
