@@ -25,8 +25,6 @@ def plotItBar(axi, dat):
 
     return
 
-All I need to do is: make new plots, put them in the paper, grab old Euler versions, run performance tests at Double, 
-
 #Cycle through markers and colors.
 plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors)+
     cycler('marker', ['D', 'o', 'h', '*', '^', 'x', 'v', '8']))
@@ -81,7 +79,6 @@ else:
         idx_real = pd.MultiIndex.from_tuples(midx, names=midx_name)
         ds.set_index(idx_real, inplace=True)
         dfs_all.append(ds)
-
 
     df_result = pd.concat(dfs_all)
 

@@ -1,15 +1,25 @@
-import matplotlib.pyplot as plt
-from cycler import cycler
-import subprocess as sp
-import shlex
+
 import os
-import numpy as np
 import os.path as op
 import sys
+import shlex
+import subprocess as sp
+import numpy as np
 import pandas as pd
 
+sourcepath = op.abspath(op.dirname(__file__))
+rsltpath = op.join(sourcepath, 'Results')
+binpath = op.join(sourcepath, 'bin') #Binary directory
+gitpath = op.dirname(sourcepath) #Top level of git repo
+plotpath = op.join(op.join(gitpath, "ResultPlots"), "performance") #Folder for plots
+modpath = op.join(gitpath, "pyAnalysisTools")
+
+sys.path.append(modpath)
+
+import main_help as mh
+
 prec = [
-    ["Single",""],
+    ["Single", ""],
     ["Double", "-DREAL=double "]
 ]
 fname = "KS"
@@ -17,12 +27,7 @@ timeout = '_Timing.txt'
 rsltout = '_Result.dat'
 sch = "Register"
 
-sourcepath = op.abspath(op.dirname(__file__))
 os.chdir(sourcepath)
-rsltpath = op.join(sourcepath,'Results')
-binpath = op.join(sourcepath,'bin') #Binary directory
-gitpath = op.dirname(sourcepath) #Top level of git repo
-plotpath = op.join(op.join(gitpath,"ResultPlots"),"performance") #Folder for plots
 
 div = [2**k for k in range(11, 21)]
 blx = [2**k for k in range(5, 11)]
@@ -67,18 +72,6 @@ for pr in prec:
                     proc = sp.Popen(exeStr)
                     sp.Popen.wait(proc)
 
-    dm.append(np.genfromtxt(Varfile, delimiter=" ", skip_header=1)[:,1:])
-    times = pd.read_table(timepath, delim_whitespace=True)
-    headers = times.columns.values.tolist()
-    headers = [h.replace("_"," ") for h in headers]
-    times.columns = headers
-    time_split = times.pivot(headers[0], headers[1], headers[2])
-    time_split.plot(logx=True, logy=True, grid=True, linewidth=2)
-    plt.ylabel(headers[2])
-    plt.title(plotstr + " ")
-    plt.savefig(myplot, dpi=1000, bbox_inches="tight")
-
-tst = np.abs(dm[0]-dm[1])
-print "Difference between Single and double precision for Register"
-print "Max Difference ", np.max(tst), " Mean Difference ", np.mean(tst)
+myFrame = mh.Perform(timepath)
+myFrame.plotframe(plotpath)
 

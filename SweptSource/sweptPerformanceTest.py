@@ -51,8 +51,8 @@ OPTIONS = [
 ]
 
 SCHEME = [
-    "Classic",
-    "SweptGPU",
+    "ClassicGPU",
+    "SharedGPU",
     "Hybrid"
 ]
 
