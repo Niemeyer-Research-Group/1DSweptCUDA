@@ -417,7 +417,7 @@ else:
         for k,tf in enumerate(tfidx):
             df_simz = df_sim.xs( tf )
             df_simz = df_simz.set_index(0)
-            df_simz.columns = xax
+            df_simz.columns = xax[:]
             df_simz = df_simz.transpose()
 
             cl = df_simz.columns.values.tolist()

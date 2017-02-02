@@ -1,0 +1,14 @@
+Orig - bbac5521a7d46770eb04fe2848387855181a6da2 @OSUmageed OSUmageed committed on Aug 25, 2016
+- Pure thread divergence.  Mixed up four and three vectors.  No pass by reference.
+
+Templating - d7c00198b426a8bc62da483e5f757774bcacd88e @OSUmageed OSUmageed committed on Sep 20, 2016
+- Mixed up four and three vectors.  In Swept: Pass by reference. Boolean Templating.
+
+BigOne (Three_Div_CUDA8) - 5cce0a6678618d2f77db1554ebad25be9542483f @OSUmageed OSUmageed committed on Oct 18, 2016
+-Division avoidance, CUDA 8, and Three vector only
+
+SwapinKernel - 6ee45d50430fc7439ca751e58d657d2f79708505 @OSUmageed OSUmageed committed on Dec 29, 2016
+-No swap kernel all swapping in scheme kernel.
+
+SplitFluxSpectral - 3c458260d32fabd28fee08eaf5665045207971d0 @OSUmageed OSUmageed committed jan 26, 2017
+-Flux and Spectral radius are in different functions.  Even more division avoidance.  I finally begin to understand.  It's my birthday!
