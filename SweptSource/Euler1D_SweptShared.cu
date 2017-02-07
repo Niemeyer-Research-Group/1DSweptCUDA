@@ -38,6 +38,7 @@ If not, see <https://opensource.org/licenses/MIT>.
     #define REAL        float
     #define REALtwo     float2
     #define REALthree   float3
+    #define SQUAREROOT(x) sqrtf(x)
 
     #define ZERO        0.0f
     #define QUARTER     0.25f
@@ -51,6 +52,7 @@ If not, see <https://opensource.org/licenses/MIT>.
     #define HALF        0.5
     #define ONE         1.0
     #define TWO         2.0
+    #define SQUAREROOT(x) sqrt(x)
 
 #endif
 
@@ -198,8 +200,8 @@ eulerSpectral(REALthree cvLeft, REALthree cvRight)
     #endif
 
     REALthree halfState;
-    REAL rhoLeftsqrt = sqrt(cvLeft.x);
-    REAL rhoRightsqrt = sqrt(cvRight.x);
+    REAL rhoLeftsqrt = SQUAREROOT(cvLeft.x);
+    REAL rhoRightsqrt = SQUAREROOT(cvRight.x);
 
     halfState.x = rhoLeftsqrt * rhoRightsqrt;
     REAL halfDenom = ONE/(halfState.x*(rhoLeftsqrt + rhoRightsqrt));

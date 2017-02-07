@@ -10,4 +10,5 @@
 bin/
 cubin/
 /misc/
+.vscode/
 
