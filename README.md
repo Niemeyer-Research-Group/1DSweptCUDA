@@ -1,10 +1,10 @@
-#1DSweptCUDA
+# 1DSweptCUDA
 
 Repository for 1D Swept rule written in CUDA.
 
 *This project was developed on the Ubuntu 16.04 OS.  All programs are designed to be executed via the terminal.  A UNIX OS is strongly recommended*
 
-##CUDA instructions
+## CUDA instructions
 
 1. Install the cuda toolkit v8.0 or 7.5. 
 
@@ -21,7 +21,7 @@ Navigate to the folder, run make and run the deviceQuery program.
 4. Make sure the nvcc compiler is on your shell path.  On Linux it should be in: /usr/local/cuda/bin
 The path settings I use can be found in examplerc.txt.
 
-##Swept program instructions
+## Swept program instructions
 
 It's recommended that the user begin by running the plotSolutions.py python script from the command line in the source code directory.
 This will create the bin subdirectory for the executables, compile all the programs and plot the result of the program.
@@ -44,7 +44,7 @@ All programs can be run from the terminal with the same command:
 | SolutionfilePath | Path should point to .dat folder in Results file. Name should include problem and precision. Format: Line 1 is length of full spatial domain, number of spatial points and grid step, Other rows are results with format: variable, time, value at each spatial point.
 | TimingFilePath (Optional) | Path should point to .txt folder in Results file. Title should include problem, precision and algorithm.  Format is #SpatialPoints, #ThreadsPerBlock, us per timestep.
 
-##Directory Structure
+## Directory Structure
 * SweptSource 
     * Contains the relevant source code for this project.  
         * plotSolutions.py: Plot simulation results.
@@ -57,28 +57,28 @@ All programs can be run from the terminal with the same command:
 * Other top level folders
     * Scratch pad for development of algorithms, unit tests, and intermediate versions to show effect of development process on performance.
 
-##Test Problem Discretizations
+## Test Problem Discretizations
 [This Document](1_D_swept_equations.pdf) explains the numerical methods used in these programs
 
-##Swept Scheme
+## Swept Scheme
 [This Document](Swept_1_D_Scheme_Description.pdf) explains the swept algorithm and it's motivation.
 
-##Dependencies
-###Hardware
+## Dependencies
+### Hardware
 * An nVidia GPU
 
-###Python
+### Python
 * Python version 2.7
 * Anaconda for python 2.7
 * [exactpack](https://github.com/losalamos/ExactPack)
 * [palettable](https://jiffyclub.github.io/palettable/#palette-interface)
 
-###CUDA
+### CUDA
 * Cuda 7.5 or 8.0
 * gcc and g++
 * OpenMP
 
-###Command line
+### Command line
 * ffmpeg (for gif creation, not essential)
 
 ## Additional Notes

@@ -34,6 +34,7 @@ binpath = op.join(sourcepath,'bin') #Binary directory
 gitpath = op.dirname(sourcepath) #Top level of git repo
 plotpath = op.join(op.join(gitpath,"ResultPlots"),"performance") #Folder for plots
 modpath = op.join(gitpath,"pyAnalysisTools")
+os.chdir(sourcepath)
 
 sys.path.append(modpath)
 import main_help as mh

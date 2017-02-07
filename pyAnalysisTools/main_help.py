@@ -27,8 +27,9 @@ class Perform(object):
         plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors))
         self.dataMatrix.plot(logx = True, logy=True, grid=True, linewidth=2)
         plt.ylabel(self.headers[2])
+        plt.xlabel(self.headers[0].replace("_"," "))
         plotstr = self.datafilename.replace("_"," ")
-        plt.title(plotstr + " ")
+        plt.title(plotstr)
         plt.savefig(plotname, dpi=1000, bbox_inches="tight")
         plt.show()
 
