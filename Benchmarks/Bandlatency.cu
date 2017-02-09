@@ -1,11 +1,4 @@
-// This is to test the speed of GPU/CPU data transfers vs size of transfer.
-// I haven't read anything on the topic and I have an idea for how to use the
-// CPU concurrently, but it depends on the communication capabilities.
-//
-// Works pretty well.
-
 #include <cuda.h>
-#include "cuda_runtime_api.h"
 
 #include <iostream>
 #include <cmath>

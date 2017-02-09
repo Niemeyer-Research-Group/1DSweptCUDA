@@ -52,6 +52,23 @@ class Solved(object):
             plt.show()
             plt.savefig(plotname, dpi=1000, bbox_inches="tight")
 
+        else:
+            fig, ax = plt.subplots((2,2), figsize=(8,6))
+            ax = ax.ravel()
+
+            for axi, v in zip(ax, self.plotNames):
+                vn = vals[np.where(self.varNames == v), :]
+                for i, t in enumerate(self.tFinal):
+                
+                    axi.plot(self.xGrid, self.vn[i,:], label="{:.3f} (s)".format(t))
+                    axi.ylabel(self.v)
+                    plotstr = self.datafilename.replace("_", " ")
+                    plt.title(plotstr + " {0} spatial points".format(self.numpts))
+                     
+            plt.legend(loc='upper right', fontsize="medium")
+            plt.show()
+            plt.savefig(plotname, dpi=1000, bbox_inches="tight")
+
     def gifify(self, plotpath):
         plotname = op.join(plotpath, self.datafilename + ".pdf")
         
