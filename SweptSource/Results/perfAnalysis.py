@@ -24,7 +24,6 @@ def plotItBar(axi, dat):
         axi.text(r.get_x() + r.get_width()/2, val+.5, val, ha='center', va='bottom')
 
     return
-
 #Cycle through markers and colors.
 plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors)+
     cycler('marker', ['D', 'o', 'h', '*', '^', 'x', 'v', '8']))

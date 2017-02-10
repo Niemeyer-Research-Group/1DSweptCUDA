@@ -15,10 +15,14 @@ plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors))
 mpl.rcParams['lines.linewidth'] = 3
 mpl.rcParams["grid.alpha"] = 0.5
 mpl.rcParams["axes.grid"] = True
+mpl.rcParams["axes.hold"] = True
 
-#Test program against exact values.
+
+#So you need to make the actual figure in the script and pick apart the axes.          
+
 class Solved(object):
     
+    ext = '.pdf'
     def __init__(self, vFile):
         self.dataTuple = tuple(open(vFile))
         self.datafilename = op.splitext(op.basename(vFile))[0]
@@ -28,47 +32,59 @@ class Solved(object):
         self.vals = np.genfromtxt(self.dataTuple, skip_header=1)[:,2:]
         self.varNames = np.genfromtxt(self.dataTuple, skip_header=1, dtype='string')[:,0]
         self.tFinal = np.genfromtxt(self.dataTuple, skip_header=1)[:,1]
-        self.plotNames = np.unique(self.varNames)
+        self.plotTitles = np.unique(self.varNames)
+        self.plotname = self.datafilename.split("_")[0]
+        self.subpl = "Euler" in self.plotname
 
-    def plotResult(self, plotpath):
-        
+    def plotResult(self, fhandle, axhandle):
+       
         if np.unique(self.tFinal.size)>10:
-            return gifify(self, pFile) 
-
-        plotname = op.join(plotpath, self.datafilename + ".pdf")
-        plt.hold(True)
+            return self.gifify(self, plotpath)         
         
-        if len(self.plotNames) < 2:
-            for i, t in enumerate(self.tFinal):
+        if not self.subpl:
+            for i, t in enumerate(self.tFinal):       
+                axhandle.plot(self.xGrid, self.vals[i,:], label="{:.3f} (s)".format(t))
                 
-                plt.plot(self.xGrid, self.vals[i,:], label="{:.3f} (s)".format(t))
-                plt.ylabel(self.plotNames[0])
-                plt.xlabel('Spatial point')
-                plotstr = self.datafilename.replace("_"," ")
-                plt.title(plotstr+ " {0} spatial points".format(self.numpts))
-                
-            
-            plt.legend(loc='upper right', fontsize="medium")
-            plt.show()
-            plt.savefig(plotname, dpi=1000, bbox_inches="tight")
-
         else:
-            fig, ax = plt.subplots((2,2), figsize=(8,6))
-            ax = ax.ravel()
+                        
+            for axi, nm in zip(axhandle, self.plotTitles):
+                idx = np.where(self.varNames == nm)
+                vn = self.vals[idx, :].T
+                tn = self.tFinal[idx]
+                for i, tL in enumerate(tn):
+                    axi.plot(self.xGrid, vn[:,i], label="{:.3f} (s)".format(tL))
 
-            for axi, v in zip(ax, self.plotNames):
-                vn = vals[np.where(self.varNames == v), :]
-                for i, t in enumerate(self.tFinal):
+
+    def annotatePlot(self, fh, axh):
+
+        if not self.subpl:
+
+            axh.set_ylabel(self.plotTitles[0])
+            axh.set_xlabel('Spatial point')
+            axh.set_title(self.plotname + " {0} spatial points".format(self.numpts))
+            hand, lbl = axh.get_legend_handles_labels()
+            fh.legend(hand, lbl, loc='upper right', fontsize="medium")
+        
+        else:
+            fh.suptitle(self.plotname + 
+                ' | {0} spatial points   '.format(self.numpts), 
+                fontsize="large", fontweight='bold')
+
+            for axi, nm in zip(axh, self.plotTitles):
+                axi.set_title(nm)
                 
-                    axi.plot(self.xGrid, self.vn[i,:], label="{:.3f} (s)".format(t))
-                    axi.ylabel(self.v)
-                    plotstr = self.datafilename.replace("_", " ")
-                    plt.title(plotstr + " {0} spatial points".format(self.numpts))
-                     
-            plt.legend(loc='upper right', fontsize="medium")
-            plt.show()
-            plt.savefig(plotname, dpi=1000, bbox_inches="tight")
+            hand, lbl = axh[0].get_legend_handles_labels()
+            fh.legend(hand, lbl, loc='upper right', fontsize="medium")
+
+            fh.subplots_adjust(bottom=0.08, right=0.85, top=0.9, 
+                                wspace=0.15, hspace=0.25)
+
+    def savePlot(self, fh, plotpath):
+        
+        plotfile = op.join(plotpath, self.plotname + self.ext)
+        fh.savefig(plotfile, dpi=1000, bbox_inches="tight")
 
     def gifify(self, plotpath):
-        plotname = op.join(plotpath, self.datafilename + ".pdf")
+        #plotfile = op.join(plotpath, self.plotname + self.ext)
+        pass
         

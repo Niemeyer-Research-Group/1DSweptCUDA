@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 '''
@@ -246,7 +247,9 @@ if not op.isdir(basepath):
 
 Varfile = op.join(basepath, typename + "_Result.dat")
 gitpath = op.dirname(sourcepath)
-gifpath = op.join(op.join(gitpath,'ResultPlots'),'Gifs')
+respath = op.join(gitpath,'ResultPlots')
+pltpath = op.join(respath,'SimResults')
+gifpath = op.join(respath,'Gifs')
 giffile = op.join(gifpath,typename+".gif")
 temppath = op.join(gifpath,"Temp")
 
@@ -291,7 +294,16 @@ if runit.get():
     sp.Popen.wait(proc)
 
 road = rh.Solved(Varfile)
-road.plotResult(plotpath)
+tst = "Euler" in Varfile
+if tst:
+    fh, a = plt.subplots(2, 2, figsize=(11,7))
+    a = a.ravel()
+else:
+    fh, a = plt.subplots(1, 1, figsize=(11,7))
+
+road.plotResult(fh, a)
+road.annotatePlot(fh,a)
+road.savePlot(fh, pltpath)
 
 
 # f = open(Varfile)
@@ -383,8 +395,8 @@ road.plotResult(plotpath)
 
 #         hand, lbl = ax[0].get_legend_handles_labels()
 #         fig.legend(hand, lbl, 'upper right', fontsize="medium")
-#         plt.tight_layout(pad=0.2, w_pad=0.75, h_pad=1.5)
-#         plt.subplots_adjust(bottom=0.08, right=0.82, top=0.92)
+        # plt.tight_layout(pad=0.2, w_pad=0.75, h_pad=1.5)
+        # plt.subplots_adjust(bottom=0.08, right=0.82, top=0.92)
 #         plt.show()
 
 # else:
