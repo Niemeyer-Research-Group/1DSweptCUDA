@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 from cycler import cycler
 import pandas as pd
 import palettable.colorbrewer as pal
+import shlex
+import subprocess as sp
 
 
 class Perform(object):
@@ -33,3 +35,22 @@ class Perform(object):
         plt.savefig(plotname, dpi=1000, bbox_inches="tight")
         plt.show()
 
+
+#Divisions and threads per block need to be lists (even singletons) at least.
+def runCUDA(Prog, divisions, threadsPerBlock, timeStep, finishTime, decomp, alterate, frequency,
+    varfile='temp.dat', timefile=None):
+
+    for tpb in threadsPerBlock:
+        for i, dvs in enumerate(divisions):
+            print "---------------------"
+            print "Algorithm #divs #tpb dt endTime"
+            print decomp, dvs, tpb, timeStep, finishTime
+
+            execut = Prog +  ' {0} {1} {2} {3} {4} {5} {6} {7} {8}'.format(dvs, tpb, timestep,
+                    finishTime, frequency, decomp, alternate, varfile, timefile)
+
+            exeStr = shlex.split(execut)
+            proc = sp.Popen(exeStr)
+            sp.Popen.wait(proc)
+
+    return None

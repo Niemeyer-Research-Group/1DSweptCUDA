@@ -248,47 +248,20 @@ if not op.isdir(binpath):
 if not op.isdir(rsltpath):
     os.mkdir(rsltpath)
 
-if runb:
+if op.isfile(timepath):
+    os.remove(timepath)
 
-    if op.isfile(timepath):
-        os.remove(timepath)
+t_fn = open(timepath,'a+')
 
-    t_fn = open(timepath,'a+')
+ExecL = op.join(binpath,binf)
 
-    ExecL = op.join(binpath,binf)
+sp.call("make")
 
-    sp.call("make")
+#Parse it out afterward.
+t_fn.write("Num_Spatial_Points\tThreads_per_Block\tTime_per_timestep_(us)\n")
+t_fn.close()
 
-    #Parse it out afterward.
-    t_fn.write("Num_Spatial_Points\tThreads_per_Block\tTime_per_timestep_(us)\n")
-    t_fn.close()
-
-
-    for tpb in blx:
-        for i,dvs in enumerate(div):
-            freq = tf*2.0
-            print "---------------------"
-            print "Algorithm #divs #tpb dt endTime"
-            print sch, dvs, tpb, dt, tf
-            execut = ExecL +  ' {0} {1} {2} {3} {4} {5} {6} {7} {8}'.format(dvs,tpb,dt,tf,freq,swept,cpu,Varfile,timepath)
-            exeStr = shlex.split(execut)
-            proc = sp.Popen(exeStr)
-            sp.Popen.wait(proc)
-
-            if errchk:
-                chk = np.genfromtxt(Varfile, delimiter=" ", skip_header=1)[:,1:]
-                if np.any(np.isnan(chk)):
-                    print "We found a nan so something's failing"
-                    ex = bool(raw_input("Input a 0 to stop, a 1 to continue: "))
-                    if not ex:
-                        raise SystemExit
-
-
-#Timing Show
-if not op.isfile(timepath):
-    print "There is no file for the specified procedure: " + timestr
-    os.exit(-1)
-
+mh.runCUDA(ExecL, div, blx, dt, tf, tf*2.0, Varfile, timepath)
 
 myFrame = mh.Perform(timepath)
 myFrame.plotframe(plotpath)
