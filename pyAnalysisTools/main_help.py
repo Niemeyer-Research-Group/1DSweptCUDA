@@ -35,10 +35,19 @@ class Perform(object):
         plt.savefig(plotname, dpi=1000, bbox_inches="tight")
         plt.show()
 
+def makeList(v):
+    if isinstance(v, list):
+        return v
+    else:
+        return [v]
+
 
 #Divisions and threads per block need to be lists (even singletons) at least.
-def runCUDA(Prog, divisions, threadsPerBlock, timeStep, finishTime, decomp, alterate, frequency,
-    varfile='temp.dat', timefile=None):
+def runCUDA(Prog, divisions, threadsPerBlock, timeStep, finishTime, frequency, 
+    decomp, alternate, varfile='temp.dat', timefile=None):
+
+    threadsPerBlock = makeList(threadsPerBlock)
+    divisions = makeList(divisions)
 
     for tpb in threadsPerBlock:
         for i, dvs in enumerate(divisions):
@@ -46,7 +55,7 @@ def runCUDA(Prog, divisions, threadsPerBlock, timeStep, finishTime, decomp, alte
             print "Algorithm #divs #tpb dt endTime"
             print decomp, dvs, tpb, timeStep, finishTime
 
-            execut = Prog +  ' {0} {1} {2} {3} {4} {5} {6} {7} {8}'.format(dvs, tpb, timestep,
+            execut = Prog +  ' {0} {1} {2} {3} {4} {5} {6} {7} {8}'.format(dvs, tpb, timeStep,
                     finishTime, frequency, decomp, alternate, varfile, timefile)
 
             exeStr = shlex.split(execut)

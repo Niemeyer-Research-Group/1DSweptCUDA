@@ -393,8 +393,8 @@ wholeDiamond(REAL *inRight, REAL *inLeft, REAL *outRight, REAL *outLeft, const b
 }
 
 double
-classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t_end,
-    REAL *IC, REAL *T_f, const REAL freq, ofstream &fwr)
+classicWrapper(const int bks, int tpb, const int dv, const double dt, const double t_end,
+    REAL *IC, REAL *T_f, const double freq, ofstream &fwr)
 {
     REAL *dks_in, *dks_out;
 
@@ -438,8 +438,8 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t
 
 //The host routine.
 double
-sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
-	REAL *IC, REAL *T_f, const REAL freq, ofstream &fwr)
+sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double t_end,
+	REAL *IC, REAL *T_f, const double freq, ofstream &fwr)
 {
 
 	REAL *d_IC, *d0_right, *d0_left, *d2_right, *d2_left;
@@ -460,16 +460,10 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
 
 	const size_t smem = (2*tpb+8)*sizeof(REAL);
 
-	upTriangle <<< bks,tpb,smem >>> (d_IC,d0_right,d0_left);
-
-	// swapKernel <<< bks,tpb >>> (d0_right, d_bin, 1);
-	// swapKernel <<< bks,tpb >>> (d_bin, d0_right, 0);
+	upTriangle <<< bks,tpb,smem >>> (d_IC, d0_right, d0_left);
 
 	//Split
-	wholeDiamond <<< bks,tpb,smem >>> (d0_right,d0_left,d2_right,d2_left,true);
-
-	// swapKernel <<< bks,tpb >>> (d0_left, d_bin, -1);
-	// swapKernel <<< bks,tpb >>> (d_bin, d0_left, 0);
+	wholeDiamond <<< bks,tpb,smem >>> (d0_right, d0_left, d2_right, d2_left, true);
 
 	double t_eq = t_fullstep;
 
@@ -477,21 +471,14 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
 	while(t_eq < t_end)
 	{
 
-		wholeDiamond <<< bks,tpb,smem >>> (d2_right,d2_left,d0_right,d0_left,false);
-
-		// swapKernel <<< bks,tpb >>> (d0_right, d_bin, 1);
-		// swapKernel <<< bks,tpb >>> (d_bin, d0_right, 0);
+		wholeDiamond <<< bks,tpb,smem >>> (d2_right, d2_left, d0_right, d0_left, false);
 
 		//So it always ends on a left pass since the down triangle is a right pass.
 
 		//Split
-		wholeDiamond <<< bks,tpb,smem >>> (d0_right,d0_left,d2_right,d2_left,true);
-
-		// swapKernel <<< bks,tpb >>> (d0_left, d_bin, -1);
-		// swapKernel <<< bks,tpb >>> (d_bin, d0_left, 0);
+		wholeDiamond <<< bks,tpb,smem >>> (d0_right, d0_left, d2_right, d2_left, true);
 
 		t_eq += t_fullstep;
-
 
 	 	if (t_eq > twrite)
 		{
@@ -507,14 +494,8 @@ sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end,
 
 			upTriangle <<< bks,tpb,smem >>> (d_IC,d0_right,d0_left);
 
-			// swapKernel <<< bks,tpb >>> (d0_right, d_bin, 1);
-			// swapKernel <<< bks,tpb >>> (d_bin, d0_right, 0);
-
 			//Split
 			wholeDiamond <<< bks,tpb,smem >>> (d0_right,d0_left,d2_right,d2_left,true);
-
-			// swapKernel <<< bks,tpb >>> (d0_left, d_bin, -1);
-			// swapKernel <<< bks,tpb >>> (d_bin, d0_left, 0);
 
 			t_eq += t_fullstep;
 
@@ -547,19 +528,20 @@ int main( int argc, char *argv[])
 		exit(-1);
 	}
 
+	cout.precision(10);
 	// Choose the GPGPU.  This is device 0 in my machine which has 2 devices.
 	cudaSetDevice(0);
 	if (sizeof(REAL)>6) cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
 
 	const int dv = atoi(argv[1]); //Number of spatial points
 	const int tpb = atoi(argv[2]); //Threads per Block
-    const REAL dt = atof(argv[3]); //delta T timestep
-	const float tf = atof(argv[4]); //Finish time
-    const float freq = atof(argv[5]); //Output frequency
+    const double dt = atof(argv[3]); //delta T timestep
+	const double tf = atof(argv[4]) - 0.5*dt; //Finish time
+    const double freq = atof(argv[5]); //Output frequency
     const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
     // const int tst = atoi(argv[7]); CPU/GPU share
     const int bks = dv/tpb; //The number of blocks
-	const float lx = dv*dx;
+	const double lx = dv*dx;
 	char const *prec;
 	prec = (sizeof(REAL)<6) ? "Single": "Double";
 
@@ -618,6 +600,7 @@ int main( int argc, char *argv[])
 	// Call out the file before the loop and write out the initial condition.
 	ofstream fwr;
 	fwr.open(argv[8],ios::trunc);
+    fwr.precision(10);
 
 	// Write out x length and then delta x and then delta t.
 	// First item of each line is timestamp.

@@ -74,18 +74,6 @@ REAL execFuncHost(REAL tLeft, REAL tRight, REAL tCenter)
     return fou*(tLeft+tRight) + (ONE - TWO*fou) * tCenter;
 }
 
-// __global__
-// void
-// swapKernel(const REAL *passing_side, REAL *bin, int direction)
-// {
-//     int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
-//     int lastidx = ((blockDim.x*gridDim.x)-1);
-//     int gidout = (gid + direction*blockDim.x) & lastidx;
-
-//     bin[gidout] = passing_side[gid];
-
-// }
-
 __global__
 void
 classicHeat(REAL *heat_in, REAL *heat_out)
@@ -243,7 +231,6 @@ wholeDiamond(const REAL *inRight, const REAL *inLeft, REAL *outRight, REAL *outL
 	int rightidx = height + (tid>>1) + (((tid>>1) & 1) * base) + (tid & 1);
     int gidout;
 
-
     //if (blockIdx.x > (gridDim.x-3)) printf("gid: %i, gidin: %i \n",gid,gidin);
 	// Initialize temper.
 
@@ -345,6 +332,7 @@ wholeDiamond(const REAL *inRight, const REAL *inLeft, REAL *outRight, REAL *outL
 
 //Split one is always first.  Passing left like the downTriangle.  downTriangle
 //should be rewritten so it isn't split.  Only write on a non split pass.
+//Needs to be changed to not justify temper between triangles.
 __global__
 void
 splitDiamond(const REAL *inRight, const REAL *inLeft, REAL *outRight, REAL *outLeft)
@@ -382,7 +370,6 @@ splitDiamond(const REAL *inRight, const REAL *inLeft, REAL *outRight, REAL *outL
         shft_wr = base * ((k+1) & 1);
         // Read and write are opposite rows.
         shft_rd = base * (k & 1);
-
 
         if (tid1 < (base-k) && tid1 >= k)
         {
@@ -424,7 +411,6 @@ splitDiamond(const REAL *inRight, const REAL *inLeft, REAL *outRight, REAL *outL
 	outRight[gid] = temper[rightidx];
 	outLeft[gidout] = temper[leftidx];
 }
-
 
 __host__
 void
@@ -497,8 +483,8 @@ CPU_diamond(REAL *temper, int tpb)
 
 //Classic Discretization wrapper.
 double
-classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_end,
-    REAL *IC, REAL *T_f, const float freq, ofstream &fwr)
+classicWrapper(const int bks, int tpb, const int dv, const double dt, const double t_end,
+    REAL *IC, REAL *T_f, const double freq, ofstream &fwr)
 {
     REAL *dheat_in, *dheat_out;
 
@@ -506,16 +492,20 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const float 
     cudaMalloc((void **)&dheat_out, sizeof(REAL)*dv);
 
     // Copy the initial conditions to the device array.
-    cudaMemcpy(dheat_in,IC,sizeof(REAL)*dv,cudaMemcpyHostToDevice);
+    cudaMemcpy(dheat_in,IC, sizeof(REAL)*dv, cudaMemcpyHostToDevice);
 
-    double t_eq = 0.0;
+    const double t_fullstep = dt+dt;
     double twrite = freq;
+    classicHeat <<< bks,tpb >>> (dheat_in, dheat_out);
+    classicHeat <<< bks,tpb >>> (dheat_out, dheat_in);
 
-    while (t_eq <= t_end)
+    double t_eq = t_fullstep;
+
+    while (t_eq < t_end)
     {
         classicHeat <<< bks,tpb >>> (dheat_in, dheat_out);
         classicHeat <<< bks,tpb >>> (dheat_out, dheat_in);
-        t_eq += 2*dt;
+        t_eq += t_fullstep;
 
         if (t_eq > twrite)
         {
@@ -526,9 +516,13 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const float 
 
             fwr << endl;
 
+            t_eq += t_fullstep;
+
             twrite += freq;
         }
     }
+
+    cout << t_eq << " " << t_end << " " << t_fullstep << endl;
 
     cudaMemcpy(T_f, dheat_in, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
 
@@ -541,8 +535,8 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const float 
 
 //The Swept Rule wrapper.
 double
-sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_end, const int cpu,
-    REAL *IC, REAL *T_f, const float freq, ofstream &fwr)
+sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double t_end, const int cpu,
+    REAL *IC, REAL *T_f, const double freq, ofstream &fwr)
 {
     const int base = (tpb + 2);
     const int ht = base/2;
@@ -692,7 +686,6 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
 
         while(t_eq < t_end)
         {
-
             wholeDiamond <<< bks,tpb,smem >>>(d2_right,d2_left,d0_right,d0_left,true);
 
             splitDiamond <<< bks,tpb,smem >>>(d0_right,d0_left,d2_right,d2_left);
@@ -724,6 +717,8 @@ sweptWrapper(const int bks, int tpb, const int dv, const REAL dt, const float t_
 
 	downTriangle <<< bks,tpb,smem >>>(d_IC,d2_right,d2_left);
 
+    cout << t_eq << " " << t_end << " " << t_fullstep << endl;
+
 	cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
 
 	cudaFree(d_IC);
@@ -745,20 +740,20 @@ int main(int argc, char *argv[])
         cout << "Classic/Swept, CPU sharing Y/N, Variable Output File, Timing Output File (optional)" << endl;
     	exit(-1);
     }
-
+    cout.precision(10);
 	// Choose the GPGPU.  This is device 0 in my machine which has 2 devices.
 	cudaSetDevice(0);
     if (sizeof(REAL)>6) cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
 
     int dv = atoi(argv[1]); //Number of spatial points
 	const int tpb = atoi(argv[2]); //Threads per Blocks
-    const float dt =  atof(argv[3]);
-	const float tf = atof(argv[4]); //Finish time
-    const float freq = atof(argv[5]);
+    const double dt =  atof(argv[3]);
+	const double tf = atof(argv[4]) - 0.5*dt; //Finish time
+    const double freq = atof(argv[5]);
     const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
     const int share = atoi(argv[7]);
 	const int bks = dv/tpb; //The number of blocks
-    const REAL lx = ds * ((REAL)dv - 1.f);
+    const double lx = ds * ((double)dv - 1.0);
     fou = th_diff*dt/(ds*ds);  //Fourier number
     char const *prec;
     prec = (sizeof(REAL)<6) ? "Single": "Double";
@@ -787,12 +782,12 @@ int main(int argc, char *argv[])
 	for (int k = 0; k<dv; k++)
 	{
 		IC[k] = initFun(k, ds, lx);
-
 	}
 
 	// Call out the file before the loop and write out the initial condition.
 	ofstream fwr;
-	fwr.open(argv[8],ios::trunc);
+	fwr.open(argv[8], ios::trunc);
+    fwr.precision(10);
 
 	// Write out x length and then delta x and then delta t.
 	// First item of each line is timestamp.

@@ -698,8 +698,8 @@ CPU_diamond(REALthree *temper, int htcpu[5])
 
 //Classic Discretization wrapper.
 double
-classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t_end,
-    REALthree *IC, REALthree *T_f, const float freq, ofstream &fwr)
+classicWrapper(const int bks, int tpb, const int dv, const double dt, const double t_end,
+    REALthree *IC, REALthree *T_f, const double freq, ofstream &fwr)
 {
     REALthree *dEuler_in, *dEuler_out;
 
@@ -753,8 +753,8 @@ classicWrapper(const int bks, int tpb, const int dv, const REAL dt, const REAL t
 
 //The wrapper that calls the routine functions.
 double
-sweptWrapper(const int bks, int tpb, const int dv, REAL dt, const REAL t_end, const int cpu,
-    REALthree *IC, REALthree *T_f, const float freq, ofstream &fwr)
+sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double t_end, const int cpu,
+    REALthree *IC, REALthree *T_f, const double freq, ofstream &fwr)
 {
 
     const size_t smem = (2*dimz.base)*sizeof(REALthree);
@@ -963,7 +963,7 @@ int main( int argc, char *argv[] )
         cout << "Classic/Swept, CPU sharing Y/N, Variable Output File, Timing Output File (optional)" << endl;
 		exit(-1);
 	}
-
+    cout.precision(10);
 	// Choose the GPGPU.  This is device 0 in my machine which has 2 devices.
 	cudaSetDevice(0);
     if (sizeof(REAL)>6) cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
@@ -983,13 +983,13 @@ int main( int argc, char *argv[] )
 
     const int dv = atoi(argv[1]); //Number of spatial points
 	const int tpb = atoi(argv[2]); //Threads per Block
-    const REAL dt = atof(argv[3]);
-	const float tf = atof(argv[4]); //Finish time
-    const float freq = atof(argv[5]);
+    const double dt = atof(argv[3]);
+	const double tf = atof(argv[4]) - HALF*dt; //Finish time
+    const double freq = atof(argv[5]);
     const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
     const int share = atoi(argv[7]);
     const int bks = dv/tpb; //The number of blocks
-    const REAL dx = lx/((REAL)dv-TWO);
+    const double dx = lx/((REAL)dv-TWO);
     char const *prec;
     prec = (sizeof(REAL)<6) ? "Single": "Double";
 
@@ -1029,6 +1029,8 @@ int main( int argc, char *argv[] )
 	// Call out the file before the loop and write out the initial condition.
 	ofstream fwr;
 	fwr.open(argv[8],ios::trunc);
+    fwr.precision(10);
+
 	// Write out x length and then delta x and then delta t.
 	// First item of each line is variable second is timestamp.
 	// energy(IC[k].w, IC[k].x, IC[k].y/IC[k].x)
@@ -1102,8 +1104,6 @@ int main( int argc, char *argv[] )
     	ftime << dv << "\t" << tpb << "\t" << per_ts << endl;
     	ftime.close();
     }
-
-    //energy(T_final[k].w, T_final[k].x, T_final[k].y/T_final[k].x)
 
 	fwr << "Density " << tfm << " ";
 	for (int k = 1; k<(dv-1); k++) fwr << T_final[k].x << " ";

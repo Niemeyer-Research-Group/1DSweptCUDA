@@ -234,9 +234,6 @@ op = os.path
 
 Fname = problem.get()
 typename = Fname + precision[prec.get()]
-sourcepath = op.abspath(op.dirname(__file__))
-basepath = op.join(sourcepath,'Results')
-binpath = op.join(sourcepath,'bin')
 
 #Ensures "make" won't fail if there's no bin directory.
 if not op.isdir(binpath):
@@ -246,7 +243,6 @@ if not op.isdir(basepath):
     os.mkdir(basepath)
 
 Varfile = op.join(basepath, typename + "_Result.dat")
-gitpath = op.dirname(sourcepath)
 respath = op.join(gitpath,'ResultPlots')
 pltpath = op.join(respath,'SimResults')
 gifpath = op.join(respath,'Gifs')
@@ -258,7 +254,7 @@ if not op.isdir(temppath):
 
 avifile = op.join(temppath,typename+".avi")
 
-open(Varfile,"a").close()
+open(Varfile, "a").close()
 
 div = 2**divpow.get()
 bks = 2**blkpow.get()

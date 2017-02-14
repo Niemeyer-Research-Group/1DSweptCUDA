@@ -248,10 +248,7 @@ if not op.isdir(binpath):
 if not op.isdir(rsltpath):
     os.mkdir(rsltpath)
 
-if op.isfile(timepath):
-    os.remove(timepath)
-
-t_fn = open(timepath,'a+')
+t_fn = open(timepath,'w')
 
 ExecL = op.join(binpath,binf)
 

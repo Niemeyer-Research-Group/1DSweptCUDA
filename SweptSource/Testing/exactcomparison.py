@@ -42,7 +42,6 @@ def heats(n,L,x,t):
     alpha = 8.418e-5
     return 1.0/n**2 * np.exp(-alpha*t*(n*np.pi/L)**2) * np.cos(n*x*np.pi/L)
 
-
 def heat_exact(t,L,divs):
 
     xm = np.linspace(0,L,divs)
@@ -83,7 +82,7 @@ if __name__ == '__source__':
     SCHEME = [
         "Classic",
         "SweptGPU",
-        "SweptCPUshare"
+        "Hybrid"
     ]
 
     pltsave = True
