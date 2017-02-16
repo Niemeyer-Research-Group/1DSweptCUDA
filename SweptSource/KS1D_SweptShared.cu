@@ -96,7 +96,6 @@ writeOutRight(REAL *temp, REAL *rights, REAL *lefts, int td, int gd, int bd)
 	lefts[gd] = temp[leftidx];
 }
 
-
 __device__
 __forceinline__
 void
@@ -171,18 +170,6 @@ REAL finalStep(const REAL *u, int loc[5])
 		fourthDer(u[loc[0]], u[loc[1]], u[loc[2]], u[loc[3]], u[loc[4]])));
 }
 
-__global__
-void
-swapKernel(const REAL *passing_side, REAL *bin, int direction)
-{
-    int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
-    int lastidx = ((blockDim.x*gridDim.x)-1);
-    int gidout = (gid + direction*blockDim.x) & lastidx;
-
-    bin[gidout] = passing_side[gid];
-
-}
-
 //Classic
 __global__
 void
@@ -196,10 +183,10 @@ classicKS(const REAL *ks_in, REAL *ks_out, bool finally)
 	for (int k=-2; k<3; k++) gidz[k+2] = (gid+k)&lastidx;
 
 	if (finally) {
-	ks_out[gid] += finalStep(ks_in, gidz);
+		ks_out[gid] += finalStep(ks_in, gidz);
 	}
 	else {
-	ks_out[gid] = stutterStep(ks_in, gidz);
+		ks_out[gid] = stutterStep(ks_in, gidz);
 	}
 }
 
@@ -453,7 +440,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 	// Copy the initial conditions to the device array.
 	cudaMemcpy(d_IC,IC,sizeof(REAL)*dv,cudaMemcpyHostToDevice);
 	//Start the counter and start the clock.
-	//
+
 	//Every other step is a full timestep and each cycle is half tpb steps.
 	const double t_fullstep = 0.25 * dt * (double)tpb;
 	double twrite = freq;

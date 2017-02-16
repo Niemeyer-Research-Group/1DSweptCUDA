@@ -25,6 +25,7 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 #include <cuda_runtime_api.h>
 #include <cuda_runtime.h>
 #include <device_functions.h>
+#include "myVectorTypes.h" //For clamp.
 
 #include <ostream>
 #include <iostream>
@@ -36,18 +37,30 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 
 #ifndef REAL
     #define REAL        float
+    #define HALF        0.5f
     #define ONE         1.f
     #define TWO         2.f
 #else
+    #define HALF        0.5
     #define ONE         1.0
     #define TWO         2.0
 #endif
 
 using namespace std;
 
-__constant__ REAL fo;
+struct heatConstants{
 
-REAL fou;
+    REAL fourier;
+    REAL fourierTwo;
+    int base;
+	int ht;
+    int idxend;
+
+};
+
+heatConstants hostC;
+
+__constant__ heatConstants gpuC;
 
 const REAL th_diff = 8.418e-5;
 
@@ -61,56 +74,80 @@ REAL initFun(int xnode, REAL ds, REAL lx)
     return 100.f*a*(ONE-a/lx);
 }
 
+//Read in the data from the global right/left variables to the shared temper variable.
 __device__
 __forceinline__
-REAL execFunc(REAL tLeft, REAL tRight, REAL tCenter)
+void
+readIn(REAL *temp, const REAL *rights, const REAL *lefts, int td, int gd)
 {
-    return fo*(tLeft+tRight) + (ONE - TWO*fo) * tCenter;
+	int leftidx = gpuC.ht - (tid>>1) + (((tid>>1) & 1) * gpuC.base) + (tid & 1) - 2;
+	int rightidx = gpuC.ht + (tid>>1) + (((tid>>1) & 1) * gpuC.base) + (tid & 1);
+
+	temp[leftidx] = rights[gd];
+	temp[rightidx] = lefts[gd];
 }
 
-__host__
-REAL execFuncHost(REAL tLeft, REAL tRight, REAL tCenter)
+__device__
+__forceinline__
+void
+writeOutRight(REAL *temp, REAL *rights, REAL *lefts, int td, int gd, int bd)
 {
-    return fou*(tLeft+tRight) + (ONE - TWO*fou) * tCenter;
+	int gdskew = (gd + bd) & disc.idxend;
+    int leftidx = (td>>1) + (((tid>>1) & 1) * gpuC.base) + (tid & 1) + 1;
+	int rightidx = (bd - 1) + (((tid>>1) & 1) * gpuC.base) + (tid & 1) -  (tid>>1);
+	rights[gdskew] = temp[rightidx];
+	lefts[gd] = temp[leftidx];
+}
+
+__device__
+__forceinline__
+void
+writeOutLeft(REAL *temp, REAL *rights, REAL *lefts, int td, int gd, int bd)
+{
+	int gdskew = (gd - bd) & disc.idxend;
+    int leftidx = (td>>1) + (((tid>>1) & 1) * gpuC.base) + (tid & 1) + 1;
+	int rightidx = (bd - 1) + (((tid>>1) & 1) * gpuC.base + (tid & 1) -  (tid>>1);
+	rights[gdskew] = temp[rightidx];
+	lefts[gd] = temp[leftidx];
+}
+
+__host__ __device__
+__forceinline__
+REAL execFunc(const REAL *heat, int idx[3])
+{
+    #ifdef __CUDA_ARCH__
+    return gpuC.fourier*(heat[idx[0]] + heat[idx[2]]) + gpuC.fourierTwo * heat[idx[1]];
+    #else 
+    return hostC.fourier*(heat[idx[0]] + heat[idx[2]]) + hostC.fourierTwo * heat[idx[1]];
+    #endif
 }
 
 __global__
 void
-classicHeat(REAL *heat_in, REAL *heat_out)
+classicHeat(const REAL *heat_in, REAL *heat_out)
 {
     int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
-    int lastidx = ((blockDim.x*gridDim.x)-1);
+    int gidz[3];
 
-    if (gid == 0)
-    {
-        heat_out[gid] = execFunc(heat_in[gid+1],heat_in[gid+1],heat_in[gid]);
-    }
-    else if (gid == lastidx)
-    {
-        heat_out[gid] = execFunc(heat_in[gid-1],heat_in[gid-1],heat_in[gid]);
-    }
-    else
-    {
-        heat_out[gid] = execFunc(heat_in[gid-1],heat_in[gid+1],heat_in[gid]);
-    }
+    #pragma unroll
+    for (int k=-1; k<2; k++) gidz[k+1] = clamp(gid+k, 0, gpuC.lastidx);
+
+    heat_out[gid] =  execFunc(heat_in, gidz);
+
 }
 
 __global__
 void
 upTriangle(const REAL *IC, REAL *outRight, REAL *outLeft)
 {
-
 	extern __shared__ REAL temper[];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
-	int tid = threadIdx.x; //Block Thread ID
-    int tidp = tid + 1;
-	int tidm = tid - 1;
+	int tididx = threadIdx.x + 1; //Block Thread ID
 	int shft_wr; //Initialize the shift to the written row of temper.
 	int shft_rd; //Initialize the shift to the read row (opposite of written)
 	int leftidx = (tid>>1) + (((tid>>1) & 1) * blockDim.x) + (tid & 1);
 	int rightidx = (blockDim.x - 2) + (((tid>>1) & 1) * blockDim.x) + (tid & 1) -  (tid>>1);
-    int lastidx = ((blockDim.x*gridDim.x)-1);
     int gidout = (gid + blockDim.x) & lastidx;
 
     //Assign the initial values to the first row in temper, each warp (in this
@@ -143,8 +180,7 @@ upTriangle(const REAL *IC, REAL *outRight, REAL *outLeft)
 	//After the triangle has been computed, the right and left shared arrays are
 	//stored in global memory by the global thread ID since (conveniently),
 	//they're the same size as a warp!
-	outRight[gidout] = temper[rightidx];
-	outLeft[gid] = temper[leftidx];
+	writeOutRight(temper, outRight, outLeft, threadIdx.x, gid, blockDim.x);
 
 }
 
@@ -213,121 +249,85 @@ downTriangle(REAL *IC, const REAL *inRight, const REAL *inLeft)
 //Full refers to whether or not there is a node run on the CPU.
 __global__
 void
-wholeDiamond(const REAL *inRight, const REAL *inLeft, REAL *outRight, REAL *outLeft, bool full)
+wholeDiamond(const REAL *inRight, const REAL *inLeft, REAL *outRight, REAL *outLeft, const bool split)
 {
     extern __shared__ REAL temper[];
 
 	//Same as upTriangle
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
-	int tid = threadIdx.x;
-    int lastidx = ((blockDim.x*gridDim.x)-1);
-	int tid1 = tid + 1;
-	int tid2 = tid + 2;
-	int base = blockDim.x + 2;
-	int height = base>>1;
-	int shft_rd;
-	int shft_wr;
-	int leftidx = height - (tid>>1) + (((tid>>1) & 1) * base) + (tid & 1) - 2;
-	int rightidx = height + (tid>>1) + (((tid>>1) & 1) * base) + (tid & 1);
-    int gidout;
+	int tididx = threadIdx.x + 1;
 
-    //if (blockIdx.x > (gridDim.x-3)) printf("gid: %i, gidin: %i \n",gid,gidin);
+	int tid_top[3], tid_bottom[3];
+
+    int k = gpuC.ht;
+	tid_bottom[1] = tididx;
+    tid_top[1] = tididx + gpuC.base;
+
 	// Initialize temper.
-
-    if (full)
+    if (split)
     {
-        temper[leftidx] = inRight[gid];
-        temper[rightidx] = inLeft[gid];
-        gidout = (gid + blockDim.x) & lastidx;
-    }
-    else
-    {
-        gidout = gid;
         gid += blockDim.x;
-        temper[leftidx] = inRight[gid];
-        temper[rightidx] = inLeft[gid];
-    }
-
-    __syncthreads();
-
-	for (int k = (height-1); k>1; k--)
-	{
-        // This tells you if the current row is the first or second.
-		shft_wr = base * ((k+1) & 1);
-		// Read and write are opposite rows.
-		shft_rd = base * (k & 1);
-
-        if (tid1 < (base-k) && tid1 >= k)
-		{
-			temper[tid1 + shft_wr] = execFunc(temper[tid+shft_rd], temper[tid2+shft_rd], temper[tid1+shft_rd]);
-		}
-        __syncthreads();
-	}
-
-    //Boundary Conditions!
-    if (full)
-    {
-        if (gid == 0)
-        {
-            temper[tid] = execFunc(temper[tid2+base], temper[tid2+base], temper[tid1+base]);
-        }
-        else if (gid == lastidx)
-        {
-            temper[tid] = execFunc(temper[tid+base], temper[tid+base], temper[tid1+base]);
-        }
-        else
-        {
-            temper[tid] = execFunc(temper[tid+base], temper[tid2+base], temper[tid1+base]);
-        }
+        tid_bottom[0] = tididx - 1;
+        tid_bottom[2] = tididx + 1;
     }
     else
     {
-        temper[tid] = execFunc(temper[tid+base], temper[tid2+base], temper[tid1+base]);
+        tid_bottom[0] = (gid == 0) ? (tididx + 1 : tididx - 1);
+        tid_bottom[2] = (gid == gpuC.lastidx) ? (tididx - 1 : tididx + 1);
     }
+
+    readIn(temper, inRight, inLeft, threadIdx.x, gid);
+ 
+    tid_top[0] = tid_bottom[0] + gpuC.base;
+    tid_top[2] = tid_bottom[2] + gpuC.base;
 
     __syncthreads();
 
-    // Then make sure each block of threads are synced.
+	while (k<blockdim.x)
+	{
+        if (tididx > (blockDim.x-k) && tididx <= k)
+        {
+			temper[tid_top[1]] = execFunc(temper, tid_bottom);
+		}
+        k++
+        __syncthreads();
+
+        if (tididx > (blockDim.x-k) && tididx <= k)
+		{
+			temper[tididx] = execFunc(temper, tid_top);
+		}
+        k++
+        __syncthreads();      
+	}
 
     //-------------------TOP PART------------------------------------------
+    k -= 2 
 
-    leftidx = (tid>>1) + (((tid>>1) & 1) * blockDim.x) + (tid & 1);
-    rightidx = (blockDim.x - 2) + (((tid>>1) & 1) * blockDim.x) + (tid & 1) -  (tid>>1);
-
-    int tidm = tid - 1;
-
-    height -= 1;
-	//The initial conditions are timeslice 0 so start k at 1.
-
-    for (int k = 1; k<height; k++)
+	while (k<0)
 	{
-		//Bitwise even odd. On even iterations write to first row.
-		shft_wr = blockDim.x * (k & 1);
-		//On even iterations write to second row (starts at element 32)
-		shft_rd = blockDim.x * ((k + 1) & 1);
-
-		//Each iteration the triangle narrows.  When k = 1, 30 points are
-		//computed, k = 2, 28 points.
-		if (tid < (blockDim.x-k) && tid >= k)
-		{
-			temper[tid + shft_wr] = execFunc(temper[tidm+shft_rd], temper[tid1+shft_rd], temper[tid+shft_rd]);
+        if (tididx > (blockDim.x-k) && tididx <= k)
+        {
+			temper[tid_top[1]] = execFunc(temper, tid_bottom);
 		}
+        k--
+        __syncthreads();
 
-		//Make sure the threads are synced
-		__syncthreads();
-
+        if (tididx > (blockDim.x-k) && tididx <= k)
+		{
+			temper[tididx] = execFunc(temper, tid_top);
+		}
+        k--
+        __syncthreads();      
 	}
 
-    if (full)
-    {
-        outRight[gidout] = temper[rightidx];
-        outLeft[gid] = temper[leftidx];
-    }
-    else
-    {
-        outRight[gid] = temper[rightidx];
-        outLeft[gidout] = temper[leftidx];
-    }
+	if (split)
+	{
+		writeOutLeft(temper, outRight, outLeft, threadIdx.x, gid, blockDim.x);
+	}
+	else
+	{
+		writeOutRight(temper, outRight, outLeft, threadIdx.x, gid, blockDim.x);
+	}
 }
 
 //Split one is always first.  Passing left like the downTriangle.  downTriangle

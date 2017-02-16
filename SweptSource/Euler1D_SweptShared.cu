@@ -97,15 +97,9 @@ __forceinline__
 void
 writeOutRight(REALthree *temp, REALthree *rights, REALthree *lefts, int td, int gd, int bd)
 {
-    // #ifdef __CUDA_ARCH__
     int gdskew = (gd + bd) & dimens.idxend;
     int leftidx = (((td>>2) & 1)  * dimens.base) + ((td>>2)<<1) + (td & 3) + 2; //left get
     int rightidx = (dimens.base-6) + (((td>>2) & 1)  * dimens.base) + (td & 3) - ((td>>2)<<1); //right get
-    // #else
-    // int gdskew = (gd + bd) & dimz.idxend;
-    // int leftidx = (((td>>2) & 1)  * dimz.base) + ((td>>2)<<1) + (td & 3) + 2;
-    // int rightidx = (dimz.base-6) + (((td>>2) & 1)  * dimz.base) + (td & 3) - ((td>>2)<<1);
-    // #endif
 	rights[gdskew] = temp[rightidx];
 	lefts[gd] = temp[leftidx];
 }
@@ -258,7 +252,6 @@ eulerStutterStep(REALthree *state, int tr, char flagLeft, char flagRight)
     return state[tr] + (QUARTER * dimz.dt_dx * flux);
     #endif
 
-
 }
 
 //Same thing as the predictor step, but this final step adds the result to the original state variables to advance to the next timestep.
@@ -304,11 +297,10 @@ eulerFinalStep(REALthree *state, int tr, char flagLeft, char flagRight)
 
 }
 
-
 //Simple scheme with dirchlet boundary condition.
 __global__
 void
-classicEuler(REALthree *euler_in, REALthree *euler_out, const bool finalstep)
+classicEuler(const REALthree *euler_in, REALthree *euler_out, const bool finalstep)
 {
     int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 
@@ -360,12 +352,11 @@ upTriangle(const REALthree *IC, REALthree *outRight, REALthree *outLeft)
 	__syncthreads();
 
 	//The initial conditions are timslice 0 so start k at 1.
-	while (k<(blockDim.x>>1))
+	while (k < (blockDim.x>>1))
 	{
 		if (threadIdx.x < (blockDim.x-k) && threadIdx.x >= k)
 		{
             temper[tididx] += eulerFinalStep(temper, tidxTop, false, false);
-
 		}
 
         k+=2;
