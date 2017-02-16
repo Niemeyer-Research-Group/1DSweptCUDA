@@ -372,12 +372,7 @@ upTriangle(const REALthree *IC, REALthree *outRight, REALthree *outLeft)
 
 	}
 
-	//After the triangle has been computed, the right and left shared arrays are
-	//stored in global memory by the global thread ID since (conveniently),
-	//they're the same size as a warp!
-
     writeOutRight(temper, outRight, outLeft, threadIdx.x, gid, blockDim.x);
-
 }
 
 // Down triangle is only called at the end when data is passed left.  It's never split.
@@ -747,7 +742,6 @@ double
 sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double t_end, const int cpu,
     REALthree *IC, REALthree *T_f, const double freq, ofstream &fwr)
 {
-
     const size_t smem = (2*dimz.base)*sizeof(REALthree);
     const int cpuLoc = dv-tpb;
 

@@ -546,7 +546,7 @@ int main( int argc, char *argv[])
     }
 
 	#ifdef DIVISE
-	discConstants dsc = {
+	discConstants dsc = 
 		(FOUR*dx), //dx
 		(dx*dx), //dx^2
 		(dx*dx*dx*dx), //dx^4
