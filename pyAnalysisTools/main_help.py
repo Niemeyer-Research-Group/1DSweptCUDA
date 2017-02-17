@@ -24,7 +24,7 @@ class Perform(object):
         self.dataMatrix.columns = self.headers
         self.dataMatrix = self.dataMatrix.pivot(self.headers[0],self.headers[1],self.headers[2])
         
-    def plotframe(self,plotpath):
+    def plotframe(self, plotpath, shower):
         plotname = op.join(plotpath, self.datafilename + ".pdf")
         plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors))
         self.dataMatrix.plot(logx = True, logy=True, grid=True, linewidth=2)
@@ -33,7 +33,8 @@ class Perform(object):
         plotstr = self.datafilename.replace("_"," ")
         plt.title(plotstr)
         plt.savefig(plotname, dpi=1000, bbox_inches="tight")
-        plt.show()
+        if shower:
+            plt.show()
 
 def makeList(v):
     if isinstance(v, list):

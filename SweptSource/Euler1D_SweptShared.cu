@@ -118,6 +118,7 @@ writeOutLeft(REALthree *temp, REALthree *rights, REALthree *lefts, int td, int g
     int leftidx = (((td>>2) & 1)  * dimz.base) + ((td>>2)<<1) + (td & 3) + 2;
     int rightidx = (dimz.base-6) + (((td>>2) & 1)  * dimz.base) + (td & 3) - ((td>>2)<<1);
     #endif
+
     rights[gd] = temp[rightidx];
     lefts[gdskew] = temp[leftidx];
 }
@@ -300,10 +301,9 @@ eulerFinalStep(REALthree *state, int tr, char flagLeft, char flagRight)
 //Simple scheme with dirchlet boundary condition.
 __global__
 void
-classicEuler(const REALthree *euler_in, REALthree *euler_out, const bool finalstep)
+classicEuler(REALthree *euler_in, REALthree *euler_out, const bool finalstep)
 {
     int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
-
     const char4 truth = {gid == 0, gid == 1, gid == dimens.idxend_1, gid == dimens.idxend};
 
     if (truth.x)
@@ -420,7 +420,7 @@ downTriangle(REALthree *IC, const REALthree *inRight, const REALthree *inLeft)
 //Full refers to whether or not there is a node run on the CPU.
 __global__
 void
-wholeDiamond(const REALthree *inRight, const REALthree *inLeft, REALthree *outRight, REALthree *outLeft, const bool full)
+wholeDiamond(const REALthree *inRight, const REALthree *inLeft, REALthree *outRight, REALthree *outLeft, const bool split)
 {
 
     extern __shared__ REALthree temper[];
@@ -431,7 +431,7 @@ wholeDiamond(const REALthree *inRight, const REALthree *inLeft, REALthree *outRi
 
     char4 truth = {gid == 0, gid == 1, gid == dimens.idxend_1, gid == dimens.idxend};
 
-    if (!full)
+    if (split)
     {
         gid += blockDim.x;
         truth.x = false, truth.y = false, truth.z = false, truth.w = false;
@@ -505,15 +505,14 @@ wholeDiamond(const REALthree *inRight, const REALthree *inLeft, REALthree *outRi
 		__syncthreads();
 	}
 
-    if (full)
-    {
-        writeOutRight(temper, outRight, outLeft, threadIdx.x, gid, blockDim.x);
-    }
-    else
+    if (split)
     {
         writeOutLeft(temper, outRight, outLeft, threadIdx.x, gid, blockDim.x);
     }
-
+    else
+    {
+        writeOutRight(temper, outRight, outLeft, threadIdx.x, gid, blockDim.x);
+    }
 }
 
 
@@ -678,8 +677,6 @@ CPU_diamond(REALthree *temper, int htcpu[5])
             }
         }
     }
-
-
 }
 
 //Classic Discretization wrapper.
@@ -761,7 +758,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 	// Start the counter and start the clock.
 	const double t_fullstep = 0.25*dt*(double)tpb;
 
-	upTriangle <<< bks,tpb,smem >>>(d_IC,d0_right,d0_left);
+	upTriangle <<<bks, tpb, smem>>> (d_IC, d0_right, d0_left);
 
     double t_eq;
     double twrite = freq;
@@ -784,10 +781,10 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 
         //Split Diamond Begin------
 
-        wholeDiamond <<< bks-1, tpb, smem, st1 >>>(d0_right, d0_left, d2_right, d2_left, false);
+        wholeDiamond <<<bks-1, tpb, smem, st1>>> (d0_right, d0_left, d2_right, d2_left, true);
 
         cudaMemcpyAsync(h_left, d0_left, tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st2);
-        cudaMemcpyAsync(h_right, d0_right , tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st3);
+        cudaMemcpyAsync(h_right, d0_right, tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st3);
 
         cudaStreamSynchronize(st2);
         cudaStreamSynchronize(st3);
@@ -800,22 +797,21 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 
         for (int k=0; k<tpb; k++)  writeOutLeft(tmpr, h_right, h_left, k, k, 0);
 
-        cudaMemcpyAsync(d2_right, h_right, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st2);
-        cudaMemcpyAsync(d2_left + cpuLoc, h_left, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st3);
+        cudaMemcpyAsync(d2_right, h_right, tpb*sizeof(REALthree), cudaMemcpyHostToDevice, st2);
+        cudaMemcpyAsync(d2_left + cpuLoc, h_left, tpb*sizeof(REALthree), cudaMemcpyHostToDevice, st3);
 
         // CPU Part End -----
 
         while(t_eq < t_end)
         {
-
-            wholeDiamond <<< bks, tpb, smem >>>(d2_right, d2_left, d0_right, d0_left,true);
+            wholeDiamond <<<bks, tpb, smem>>> (d2_right, d2_left, d0_right, d0_left, false);
 
             //Split Diamond Begin------
 
-            wholeDiamond <<< bks-1, tpb, smem, st1 >>>(d0_right, d0_left, d2_right, d2_left, false);
+            wholeDiamond <<<bks-1, tpb, smem, st1>>> (d0_right, d0_left, d2_right, d2_left, true);
 
             cudaMemcpyAsync(h_left, d0_left, tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st2);
-            cudaMemcpyAsync(h_right, d0_right , tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st3);
+            cudaMemcpyAsync(h_right, d0_right, tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st3);
 
             cudaStreamSynchronize(st2);
             cudaStreamSynchronize(st3);
@@ -828,8 +824,8 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 
             for (int k=0; k<tpb; k++)  writeOutLeft(tmpr, h_right, h_left, k, k, 0);
 
-            cudaMemcpyAsync(d2_right, h_right, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st2);
-            cudaMemcpyAsync(d2_left + cpuLoc, h_left, tpb*sizeof(REALthree), cudaMemcpyHostToDevice,st3);
+            cudaMemcpyAsync(d2_right, h_right, tpb*sizeof(REALthree), cudaMemcpyHostToDevice, st2);
+            cudaMemcpyAsync(d2_left + cpuLoc, h_left, tpb*sizeof(REALthree), cudaMemcpyHostToDevice, st3);
 
             // CPU Part End -----
 
@@ -841,7 +837,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 
     	    if (t_eq > twrite)
     		{
-    			downTriangle <<< bks,tpb,smem >>>(d_IC,d2_right,d2_left);
+    			downTriangle <<<bks, tpb, smem>>> (d_IC, d2_right, d2_left);
 
     			cudaMemcpy(T_f, d_IC, sizeof(REALthree)*dv, cudaMemcpyDeviceToHost);
 
@@ -861,9 +857,9 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
                 for (int k = 1; k<(dv-1); k++) fwr << pressure(T_f[k]) << " ";
                 fwr << endl;
 
-                upTriangle <<< bks,tpb,smem >>>(d_IC,d0_right,d0_left);
+                upTriangle <<<bks, tpb, smem>>> (d_IC, d0_right, d0_left);
 
-    			splitDiamond <<< bks,tpb,smem >>>(d0_right,d0_left,d2_right,d2_left);
+    			splitDiamond <<<bks, tpb, smem>>> (d0_right, d0_left, d2_right, d2_left);
 
                 t_eq += t_fullstep;
 
@@ -881,21 +877,21 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 	}
     else
     {
-        splitDiamond <<< bks,tpb,smem >>>(d0_right,d0_left,d2_right,d2_left);
+        splitDiamond <<<bks, tpb, smem>>> (d0_right, d0_left, d2_right, d2_left);
         t_eq = t_fullstep;
 
         while(t_eq < t_end)
         {
 
-            wholeDiamond <<< bks,tpb,smem >>>(d2_right,d2_left,d0_right,d0_left,true);
+            wholeDiamond <<<bks, tpb, smem>>> (d2_right, d2_left, d0_right, d0_left, false);
 
-            splitDiamond <<< bks,tpb,smem >>>(d0_right,d0_left,d2_right,d2_left);
+            splitDiamond <<<bks, tpb, smem>>> (d0_right, d0_left, d2_right, d2_left);
             //So it always ends on a left pass since the down triangle is a right pass.
             t_eq += t_fullstep;
 
             if (t_eq > twrite)
     		{
-    			downTriangle <<< bks,tpb,smem >>>(d_IC,d2_right,d2_left);
+    			downTriangle <<<bks, tpb, smem>>> (d_IC, d2_right, d2_left);
 
     			cudaMemcpy(T_f, d_IC, sizeof(REALthree)*dv, cudaMemcpyDeviceToHost);
 
@@ -915,9 +911,9 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
                 for (int k = 1; k<(dv-1); k++) fwr << pressure(T_f[k]) << " ";
                 fwr << endl;
 
-    			upTriangle <<< bks,tpb,smem >>>(d_IC,d0_right,d0_left);
+    			upTriangle <<<bks, tpb, smem>>> (d_IC, d0_right, d0_left);
 
-    			splitDiamond <<< bks,tpb,smem >>>(d0_right,d0_left,d2_right,d2_left);
+    			splitDiamond <<<bks, tpb, smem>>> (d0_right, d0_left, d2_right, d2_left);
 
                 t_eq += t_fullstep;
 
@@ -926,7 +922,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
         }
     }
 
-    downTriangle <<< bks,tpb,smem >>>(d_IC,d2_right,d2_left);
+    downTriangle <<<bks, tpb, smem>>> (d_IC, d2_right, d2_left);
 
 	cudaMemcpy(T_f, d_IC, sizeof(REALthree)*dv, cudaMemcpyDeviceToHost);
 

@@ -23,7 +23,6 @@ If not, see <https://opensource.org/licenses/MIT>.
 # A script to test the performance of the algorithm with various
 # x dimension and block sizes
 
-
 import os
 import os.path as op
 import sys
@@ -258,7 +257,8 @@ sp.call("make")
 t_fn.write("Num_Spatial_Points\tThreads_per_Block\tTime_per_timestep_(us)\n")
 t_fn.close()
 
-mh.runCUDA(ExecL, div, blx, dt, tf, tf*2.0, Varfile, timepath)
+mh.runCUDA(ExecL, div, blx, dt, tf, tf*2.0, swept, cpu, Varfile, timepath)
+print div, blx
 
 myFrame = mh.Perform(timepath)
-myFrame.plotframe(plotpath)
+myFrame.plotframe(plotpath, false)

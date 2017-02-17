@@ -239,10 +239,10 @@ typename = Fname + precision[prec.get()]
 if not op.isdir(binpath):
     os.mkdir(binpath)
 
-if not op.isdir(basepath):
-    os.mkdir(basepath)
+if not op.isdir(rsltpath):
+    os.mkdir(rsltpath)
 
-Varfile = op.join(basepath, typename + "_Result.dat")
+Varfile = op.join(rsltpath, typename + "_Result.dat")
 respath = op.join(gitpath,'ResultPlots')
 pltpath = op.join(respath,'SimResults')
 gifpath = op.join(respath,'Gifs')

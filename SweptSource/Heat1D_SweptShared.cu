@@ -55,7 +55,6 @@ struct heatConstants{
     int base;
 	int ht;
     int idxend;
-
 };
 
 heatConstants hostC;
@@ -75,40 +74,58 @@ REAL initFun(int xnode, REAL ds, REAL lx)
 }
 
 //Read in the data from the global right/left variables to the shared temper variable.
-__device__
+__host__ __device__
 __forceinline__
 void
 readIn(REAL *temp, const REAL *rights, const REAL *lefts, int td, int gd)
 {
-	int leftidx = gpuC.ht - (tid>>1) + (((tid>>1) & 1) * gpuC.base) + (tid & 1) - 2;
-	int rightidx = gpuC.ht + (tid>>1) + (((tid>>1) & 1) * gpuC.base) + (tid & 1);
-
+    #ifdef __CUDA_ARCH__    
+	int leftidx = gpuC.ht - (td>>1) + (((td>>1) & 1) * gpuC.base) + (td & 1) - 2;
+	int rightidx = gpuC.ht + (td>>1) + (((td>>1) & 1) * gpuC.base) + (td & 1);
+    #else
+	int leftidx = hostC.ht - (td>>1) + (((td>>1) & 1) * hostC.base) + (td & 1) - 2;
+	int rightidx = hostC.ht + (td>>1) + (((td>>1) & 1) * hostC.base) + (td & 1);
+    #endif
 	temp[leftidx] = rights[gd];
 	temp[rightidx] = lefts[gd];
 }
 
+__host__
 __device__
 __forceinline__
 void
 writeOutRight(REAL *temp, REAL *rights, REAL *lefts, int td, int gd, int bd)
 {
-	int gdskew = (gd + bd) & disc.idxend;
-    int leftidx = (td>>1) + (((tid>>1) & 1) * gpuC.base) + (tid & 1) + 1;
-	int rightidx = (bd - 1) + (((tid>>1) & 1) * gpuC.base) + (tid & 1) -  (tid>>1);
+    #ifdef __CUDA_ARCH__
+	int gdskew = (gd + bd) & gpuC.idxend;
+    int leftidx = (td>>1) + (((td>>1) & 1) * gpuC.base) + (td & 1) + 1;
+	int rightidx = (gpuC.base - 3) + (((td>>1) & 1) * gpuC.base) + (td & 1) -  (td>>1);
+    #else
+	int gdskew = gd;
+    int leftidx = (td>>1) + (((td>>1) & 1) * hostC.base) + (td & 1) + 1;
+	int rightidx = (hostC.base - 3) + (((td>>1) & 1) * hostC.base) + (td & 1) -  (td>>1);
+    #endif
 	rights[gdskew] = temp[rightidx];
 	lefts[gd] = temp[leftidx];
 }
 
+__host__
 __device__
 __forceinline__
 void
 writeOutLeft(REAL *temp, REAL *rights, REAL *lefts, int td, int gd, int bd)
 {
-	int gdskew = (gd - bd) & disc.idxend;
-    int leftidx = (td>>1) + (((tid>>1) & 1) * gpuC.base) + (tid & 1) + 1;
-	int rightidx = (bd - 1) + (((tid>>1) & 1) * gpuC.base + (tid & 1) -  (tid>>1);
-	rights[gdskew] = temp[rightidx];
-	lefts[gd] = temp[leftidx];
+    #ifdef __CUDA_ARCH__
+	int gdskew = (gd - bd) & gpuC.idxend;
+    int leftidx = (td>>1) + (((td>>1) & 1) * gpuC.base) + (td & 1) + 1;
+	int rightidx = (gpuC.base - 3) + (((td>>1) & 1) * gpuC.base) + (td & 1) -  (td>>1);
+    #else
+	int gdskew = gd;
+    int leftidx = (td>>1) + (((td>>1) & 1) * hostC.base) + (td & 1) + 1;
+	int rightidx = (hostC.base - 3) + (((td>>1) & 1) * hostC.base) + (td & 1) -  (td>>1);
+    #endif
+	rights[gd] = temp[rightidx];
+	lefts[gdskew] = temp[leftidx];
 }
 
 __host__ __device__
@@ -130,9 +147,9 @@ classicHeat(const REAL *heat_in, REAL *heat_out)
     int gidz[3];
 
     //This doesn't work just do it manually
-    gidz[0] = (gid) ? (gid - 1 : gid + 1);
+    gidz[0] = (gid == 0) ? (gid + 1) : (gid - 1);
     gidz[1] = gid;
-    gidz[2] = (gid == gpuC.lastidx) ? (gid - 1 : gid + 1)
+    gidz[2] = (gid == gpuC.idxend) ? (gid - 1) : (gid + 1);
 
     heat_out[gid] =  execFunc(heat_in, gidz);
 
@@ -151,7 +168,7 @@ upTriangle(const REAL *IC, REAL *outRight, REAL *outLeft)
     int k = blockDim.x-1;
 
     #pragma unroll
-    for (int a=-1; k<2; k++)
+    for (int a=-1; a<2; a++)
     {
 	    tid_bottom[a+1] = tididx + a;
         tid_top[a+1] = tididx + a + gpuC.base;
@@ -206,8 +223,8 @@ downTriangle(REAL *IC, const REAL *inRight, const REAL *inLeft)
 	tid_bottom[1] = tididx;
     tid_top[1] = tididx + gpuC.base;
 
-    tid_bottom[0] = (gid) ? (tididx - 1 : tididx + 1);
-    tid_bottom[2] = (gid == gpuC.lastidx) ? (tididx - 1 : tididx + 1);
+    tid_bottom[0] = (gid) ? (tididx - 1) : (tididx + 1);
+    tid_bottom[2] = (gid == gpuC.idxend) ? (tididx - 1) : (tididx + 1);
 
     readIn(temper, inRight, inLeft, threadIdx.x, gid);
  
@@ -261,8 +278,8 @@ wholeDiamond(const REAL *inRight, const REAL *inLeft, REAL *outRight, REAL *outL
     }
     else
     {
-        tid_bottom[0] = (gid) ? (tididx - 1 : tididx + 1);
-        tid_bottom[2] = (gid == gpuC.lastidx) ? (tididx - 1 : tididx + 1);
+        tid_bottom[0] = (gid) ? (tididx - 1) : (tididx + 1);
+        tid_bottom[2] = (gid == gpuC.idxend) ? (tididx - 1) : (tididx + 1);
     }
 
     readIn(temper, inRight, inLeft, threadIdx.x, gid);
@@ -340,11 +357,11 @@ splitDiamond(const REAL *inRight, const REAL *inLeft, REAL *outRight, REAL *outL
 	int tid_top[3], tid_bottom[3];
 
     int k = gpuC.ht;
-	tid_bottom[1] = tididx;
+    tid_bottom[1] = tididx;
     tid_top[1] = tididx + gpuC.base;
 
-    int tid_bottom[2] = (gid == gpuC.ht-1) ? (tididx-1 : tididx+1);
-    int tid_bottom[0] = (gid == gpuC.ht) ? (tididx+1 : tididx-1);
+    tid_bottom[2] = (gid == (gpuC.ht-2)) ? (tididx-1) : (tididx+1);
+    tid_bottom[0] = (gid == (gpuC.ht-1)) ? (tididx+1) : (tididx-1);
 
     readIn(temper, inRight, inLeft, threadIdx.x, gid);
  
@@ -405,31 +422,32 @@ __host__
 void
 CPU_diamond(REAL *temper, const int tpb)
 {
-    int stencil[tpb][3], stencil_top[tpb][3];
+    int stencil[hostC.base][3], stencil_top[hostC.base][3];
     int k = hostC.ht;
     int htL = hostC.ht-1;
+    int tpbo = tpb+1;
 
-    for (int a=0; a<tpb; a++)
+    for (int a=1; a<(tpb+2); a++)
     {
-        stencil[a][0] = (a == hostC.ht) ? (a+1 : a-1);
+        stencil[a][0] = (a == hostC.ht) ? (a+1) : (a-1);
         stencil[a][1] = a;
-        stencil[a][2] = (gid == htL) ? (a-1 : a+1);
+        stencil[a][2] = (a == htL) ? (a-1) : (a+1);
     }
 
-    for (int a=0; a<tpb; a++)
+    for (int a=1; a<(tpb+2); a++)
     {
         for(int b=0; b<3; b++) stencil_top[a][b] = stencil[a][b] + hostC.base;
     }
 
     while (k < tpb)
     {
-        for(int n=(tpb-k)+1; n<=k; n++)
+        for(int n=(tpbo-k); n<=k; n++)
         {
             temper[n + hostC.base] = execFunc(temper, stencil[n]); 
         }
 
         k++;
-        for(int n=(tpb-k)+1; n<=k; n++)
+        for(int n=(tpbo-k); n<=k; n++)
         {
             temper[n] = execFunc(temper, stencil_top[n]);  
         }
@@ -440,24 +458,24 @@ CPU_diamond(REAL *temper, const int tpb)
 
     while (k > hostC.ht)
     {
-        for(int n=(tpb-k)+1; n<=k; n++)
+        for(int n=(tpbo-k); n<=k; n++)
         {
             temper[n + hostC.base] = execFunc(temper, stencil[n]); 
         }
 
         k--;
-        for(int n=(tpb-k)+1; n<=k; n++)
+        for(int n=(tpbo-k); n<=k; n++)
         {
             temper[n] = execFunc(temper, stencil_top[n]);  
         }
         k--;
     }
 
-    for(int n=(tpb-k)+1; n<=k; n++)
+    for(int n=(tpbo-k); n<=k; n++)
     {
         temper[n + hostC.base] = execFunc(temper, stencil[n]); 
     }
-    
+
 }
 
 //Classic Discretization wrapper.
@@ -516,7 +534,7 @@ double
 sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double t_end, const int cpu,
     REAL *IC, REAL *T_f, const double freq, ofstream &fwr)
 {
-    const size_t smem = (2*hostC.base) * sizeof(REALthree);
+    const size_t smem = (2*hostC.base) * sizeof(REAL);
     const int cpuLoc = dv - tpb;
 
 	REAL *d_IC, *d0_right, *d0_left, *d2_right, *d2_left;
@@ -532,7 +550,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 	// Start the counter and start the clock.
 	const double t_fullstep = dt*(double)tpb;
 
-	upTriangle <<< bks, tpb, smem >>>(d_IC, d0_right, d0_left);
+	upTriangle <<<bks, tpb, smem>>> (d_IC, d0_right, d0_left);
 
     double t_eq;
     double twrite = freq;
@@ -555,7 +573,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 
         //Split Diamond Begin------
 
-        wholeDiamond <<< bks-1, tpb, smem, st1 >>>(d0_right, d0_left, d2_right, d2_left, false);
+        wholeDiamond <<<bks-1, tpb, smem, st1>>>(d0_right, d0_left, d2_right, d2_left, true);
 
         cudaMemcpyAsync(h_left, d0_left, tpb*sizeof(REAL), cudaMemcpyDeviceToHost, st2);
         cudaMemcpyAsync(h_right, d0_right, tpb*sizeof(REAL), cudaMemcpyDeviceToHost, st3);
@@ -565,25 +583,24 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 
         // CPU Part Start -----
 
-        for (int k=0; k<tpb; k++)  readIn(tmpr, h_right, h_left, k, k);
+        for (int k=0; k<tpb; k++) readIn(tmpr, h_right, h_left, k, k);
 
         CPU_diamond(tmpr, tpb);
 
-        for (int k=0; k<tpb; k++)  writeOutLeft(tmpr, h_right, h_left, k, k, 0);
-        
-        cudaMemcpyAsync(d2_right, h_right, tpb*sizeof(REAL), cudaMemcpyHostToDevice,st2);
-        cudaMemcpyAsync(d2_left+cpuLoc, h_left, tpb*sizeof(REAL), cudaMemcpyHostToDevice,st3);
+        for (int k=0; k<tpb; k++) writeOutLeft(tmpr, h_right, h_left, k, k, 0);
+       
+        cudaMemcpyAsync(d2_right, h_right, tpb*sizeof(REAL), cudaMemcpyHostToDevice, st2);
+        cudaMemcpyAsync(d2_left+cpuLoc, h_left, tpb*sizeof(REAL), cudaMemcpyHostToDevice, st3);
 
         //Split Diamond End------
 
-    	while(t_eq < t_end)
-    	{
-
-            wholeDiamond <<< bks,tpb,smem >>>(d2_right,d2_left,d0_right,d0_left,true);
+        while(t_eq < t_end)
+        {
+            wholeDiamond <<<bks, tpb, smem>>> (d2_right, d2_left, d0_right, d0_left, false);
 
             //Split Diamond Begin------
 
-            wholeDiamond <<< bks-1, tpb, smem, st1 >>>(d0_right, d0_left, d2_right, d2_left, false);
+            wholeDiamond <<<bks-1, tpb, smem, st1>>> (d0_right, d0_left, d2_right, d2_left, true);
 
             cudaMemcpyAsync(h_left, d0_left, tpb*sizeof(REAL), cudaMemcpyDeviceToHost, st2);
             cudaMemcpyAsync(h_right, d0_right, tpb*sizeof(REAL), cudaMemcpyDeviceToHost, st3);
@@ -610,7 +627,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 
             if (t_eq > twrite)
     		{
-    			downTriangle <<< bks,tpb,smem >>>(d_IC,d2_right,d2_left);
+    			downTriangle <<<bks, tpb, smem>>> (d_IC, d2_right, d2_left);
 
     			cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
 
@@ -635,14 +652,14 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 	}
     else
     {
-        splitDiamond <<< bks,tpb,smem >>>(d0_right,d0_left,d2_right,d2_left);
+        splitDiamond <<< bks, tpb, smem>>> (d0_right, d0_left, d2_right, d2_left);
         t_eq = t_fullstep;
 
         while(t_eq < t_end)
         {
-            wholeDiamond <<< bks,tpb,smem >>>(d2_right,d2_left,d0_right,d0_left,true);
+            wholeDiamond <<<bks, tpb, smem>>> (d2_right, d2_left, d0_right, d0_left, false);
 
-            splitDiamond <<< bks,tpb,smem >>>(d0_right,d0_left,d2_right,d2_left);
+            splitDiamond <<<bks, tpb, smem>>> (d0_right, d0_left, d2_right, d2_left);
 
             //So it always ends on a left pass since the down triangle is a right pass.
             t_eq += t_fullstep;
@@ -669,7 +686,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
         }
     }
 
-	downTriangle <<< bks,tpb,smem >>>(d_IC,d2_right,d2_left);
+	downTriangle <<<bks, tpb, smem>>> (d_IC, d2_right, d2_left);
 
     cout << t_eq << " " << t_end << " " << t_fullstep << endl;
 
@@ -708,17 +725,15 @@ int main(int argc, char *argv[])
     const int share = atoi(argv[7]);
 	const int bks = dv/tpb; //The number of blocks
     const double lx = ds * ((double)dv - 1.0);
-    fou = th_diff*dt/(ds*ds);  //Fourier number
+    double fou = th_diff*dt/(ds*ds);  //Fourier number
     char const *prec;
     prec = (sizeof(REAL)<6) ? "Single": "Double";
 
-    hostC = {
-    fou,
-    ONE - TWO*fou,
-    tpb+2,
-	tpb/2 + 1,
-    dv-1
-    };
+    hostC.fourier = fou;
+    hostC.fourierTwo = ONE - TWO*fou;
+    hostC.base = tpb+2;
+    hostC.ht = tpb/2 + 1;
+    hostC.idxend = dv-1;
 
     cout << "Heat --- #Blocks: " << bks << " | Length: " << lx << " | Precision: " << prec << " | Fo: " << fou << endl;
 

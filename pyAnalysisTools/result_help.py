@@ -24,14 +24,14 @@ class Solved(object):
     
     ext = '.pdf'
     def __init__(self, vFile):
-        self.dataTuple = tuple(open(vFile))
+        dataTuple = tuple(open(vFile))
+        strdimz = dataTuple[0].split()
         self.datafilename = op.splitext(op.basename(vFile))[0]
-        strdimz = self.dataTuple[0].split()
         self.xGrid = np.linspace(0,float(strdimz[0]),int(strdimz[1]))
         self.numpts = int(strdimz[1])
-        self.vals = np.genfromtxt(self.dataTuple, skip_header=1)[:,2:]
-        self.varNames = np.genfromtxt(self.dataTuple, skip_header=1, dtype='string')[:,0]
-        self.tFinal = np.genfromtxt(self.dataTuple, skip_header=1)[:,1]
+        self.vals = np.genfromtxt(dataTuple, skip_header=1)[:,2:]
+        self.varNames = np.genfromtxt(dataTuple, skip_header=1, dtype='string')[:,0]
+        self.tFinal = np.genfromtxt(dataTuple, skip_header=1)[:,1]
         self.plotTitles = np.unique(self.varNames)
         self.plotname = self.datafilename.split("_")[0]
         self.subpl = "Euler" in self.plotname
