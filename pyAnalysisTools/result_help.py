@@ -9,6 +9,7 @@ import matplotlib as mpl
 from cycler import cycler
 import pandas as pd
 import palettable.colorbrewer as pal
+import collections
 
 plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors))
 
@@ -35,6 +36,17 @@ class Solved(object):
         self.plotTitles = np.unique(self.varNames)
         self.plotname = self.datafilename.split("_")[0]
         self.subpl = "Euler" in self.plotname
+
+    def stripInitial(self):
+        stripped = collections.defaultdict(dict)
+        for t, i in enumerate(self.tFinal):
+            if t == 0:
+                continue
+            
+            stripped[self.varNames[i]][t] = self.vals[i,:]
+            
+        return stripped
+        
 
     def plotResult(self, fhandle, axhandle):
        

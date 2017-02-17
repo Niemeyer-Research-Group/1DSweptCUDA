@@ -65,8 +65,8 @@ const REAL th_diff = 8.418e-5;
 
 const REAL ds = 0.001;
 
-__host__
-__device__
+__host__ __device__
+__forceinline__
 REAL initFun(int xnode, REAL ds, REAL lx)
 {
     REAL a = ((REAL)xnode*ds);
@@ -90,8 +90,7 @@ readIn(REAL *temp, const REAL *rights, const REAL *lefts, int td, int gd)
 	temp[rightidx] = lefts[gd];
 }
 
-__host__
-__device__
+__host__ __device__
 __forceinline__
 void
 writeOutRight(REAL *temp, REAL *rights, REAL *lefts, int td, int gd, int bd)
@@ -109,8 +108,7 @@ writeOutRight(REAL *temp, REAL *rights, REAL *lefts, int td, int gd, int bd)
 	lefts[gd] = temp[leftidx];
 }
 
-__host__
-__device__
+__host__ __device__
 __forceinline__
 void
 writeOutLeft(REAL *temp, REAL *rights, REAL *lefts, int td, int gd, int bd)
@@ -152,7 +150,6 @@ classicHeat(const REAL *heat_in, REAL *heat_out)
     gidz[2] = (gid == gpuC.idxend) ? (gid - 1) : (gid + 1);
 
     heat_out[gid] =  execFunc(heat_in, gidz);
-
 }
 
 __global__

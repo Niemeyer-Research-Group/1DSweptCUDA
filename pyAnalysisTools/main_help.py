@@ -9,7 +9,6 @@ import palettable.colorbrewer as pal
 import shlex
 import subprocess as sp
 
-
 class Perform(object):
     
     def __init__(self,dataset):
