@@ -507,7 +507,6 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 
 int main( int argc, char *argv[])
 {
-
 	if (argc < 9)
 	{
 		cout << "The Program takes 9 inputs, #Divisions, #Threads/block, deltat, finish time, output frequency..." << endl;
@@ -523,7 +522,7 @@ int main( int argc, char *argv[])
 	const int dv = atoi(argv[1]); //Number of spatial points
 	const int tpb = atoi(argv[2]); //Threads per Block
     const double dt = atof(argv[3]); //delta T timestep
-	const double tf = atof(argv[4]) - 0.5*dt; //Finish time
+	const double tf = atof(argv[4]) - 0.25*dt; //Finish time
     const double freq = atof(argv[5]); //Output frequency
     const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
     // const int tst = atoi(argv[7]); CPU/GPU share

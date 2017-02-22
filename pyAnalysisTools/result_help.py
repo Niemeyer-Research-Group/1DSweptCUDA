@@ -32,22 +32,21 @@ class Solved(object):
         self.numpts = int(strdimz[1])
         self.vals = np.genfromtxt(dataTuple, skip_header=1)[:,2:]
         self.varNames = np.genfromtxt(dataTuple, skip_header=1, dtype='string')[:,0]
-        self.tFinal = np.genfromtxt(dataTuple, skip_header=1)[:,1]
+        self.tFinal = np.around(np.genfromtxt(dataTuple, skip_header=1)[:,1], decimals=7)
         self.plotTitles = np.unique(self.varNames)
         self.plotname = self.datafilename.split("_")[0]
         self.subpl = "Euler" in self.plotname
 
     def stripInitial(self):
         stripped = collections.defaultdict(dict)
-        for t, i in enumerate(self.tFinal):
+        for i, t in enumerate(self.tFinal):
             if t == 0:
                 continue
             
             stripped[self.varNames[i]][t] = self.vals[i,:]
-            
+
         return stripped
         
-
     def plotResult(self, fhandle, axhandle):
        
         if np.unique(self.tFinal.size)>10:

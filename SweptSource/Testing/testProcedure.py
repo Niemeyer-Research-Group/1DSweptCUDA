@@ -32,7 +32,7 @@ from exactpack.solvers.riemann import Sod
 import warnings
 
 mpl.rcParams['lines.linewidth'] = 3
-mpl.rcParams['lines.markersize'] = 20
+mpl.rcParams['lines.markersize'] = 8
 mpl.rcParams["grid.alpha"] = 0.5
 mpl.rcParams["axes.grid"] = True
 
@@ -43,51 +43,51 @@ precision = "Double"
 binary = precision + "Out"
 alpha = 8.418e-5
 dto = 1e-5
-divs = 4096 
+divs = 1024
 tpbs = 128
 fqCoeff = 2.0
 ksexactpath = op.join(exactpath, "KS" + precision + '_Official.txt')
 
-probs = [["Heat", 100.0],
-        ["KS", 100.0], 
+probs = [["Heat", 10.0],
+        ["KS", 10.0], 
         ["Euler", 0.22]] 
 
 def make_KSExact():
     p = "KS"
     binName = p + binary
     executable = op.join(binpath, binName)
-    dt = 1e-8
-    tf = probs[p]
-    mh.runCUDA(executable, divs, tpbs, dt, tf, tf*fqCoeff, 0, 0, ksexactpath)
+    dt = 1e-7
+    tf = probs[1][1]
+    mh.runCUDA(executable, divs, tpbs, dt, tf, tf*fqCoeff, 1, 0, ksexactpath)
 
 def Fo(dx,dt):
     alpha = 8.418e-5
     return alpha*dt/dx**2
 
-def heat_exact(t, divs, things):
-
-    heats = lambda n, x: 1.0/n**2 * np.exp(-alpha*t*(n*np.pi/L)**2) * np.cos(n*x*np.pi/L)
+def heat_exact(t, divs, thing):
     dx = 0.001
     L = divs*dx
+    heats = lambda n, x: 1.0/n**2 * np.exp(-alpha*t*(n*np.pi/L)**2) * np.cos(n*x*np.pi/L)    
     xm = np.linspace(0, L, divs)
     c0 = 50.0*L/3.0
     cout = 400.0*L/(np.pi**2)
     Tf1 = np.empty(int(divs))
     for i,xr in enumerate(xm):
         c  = 2
-        ser = heats(c,xr)
+        ser = heats(c, xr)
         h = np.copy(ser)
         for k in range(5000):
             c += 2
-            ser = heats(c,L,xr,t)
+            ser = heats(c, xr)
             h += ser
 
         Tf1[i] = (c0 - cout * h)
 
     return Tf1
 
-def euler_exact(t, divs, things):
+def euler_exact(t, divs, thing):
     warnings.filterwarnings("ignore")
+    thing = thing.lower()
     dx = 1.0/float(divs-2)
     d = 0.5*dx
     r = np.arange(d, 1.0-d, dx)
@@ -97,10 +97,10 @@ def euler_exact(t, divs, things):
     solver = Sod()
     soln = solver(r, t)
     
-    return getattr(soln, thing))
+    return getattr(soln, thing)
 
-def ks_exact(t, divs, things):
-    return rh.Solved(ksexactpath).stripped()    
+def ks_exact(t, divs, thing):
+    return rh.Solved(ksexactpath).stripInitial()[thing][t]
 
 def rmse(exact, sim):
     return np.sqrt(np.mean((np.array(exact)-np.array(sim))**2))
@@ -130,14 +130,19 @@ def rmse(exact,sim):
 
 #Swap out the second and last levels
 def switchDict(dct):
-    dSw = collections.defaultdict(dict)
-    dSa = collections.defaultdict(dict)
+
+    dSw = dict()
+    dSa = dict()
     for pkey in dct.keys():
+        dSw[pkey] = dict()  
+        dSa[pkey] = dict()
         for dtkey in dct[pkey].keys():
             for vn in dct[pkey][dtkey].keys():
+                if vn not in dSw[pkey].keys():
+                    dSw[pkey][vn] = collections.defaultdict(dict)
+                    dSa[pkey][vn] = collections.defaultdict(dict)
+
                 for tf in dct[pkey][dtkey][vn].keys():
-                    dSw[pkey][tf] = collections.defaultdict(dict)
-                    dSa[pkey][tf] = collections.defaultdict(dict)
                     dSw[pkey][vn][tf][dtkey] = dct[pkey][dtkey][vn][tf]
                     dSa[pkey][vn][dtkey][tf] = dct[pkey][dtkey][vn][tf]
 
@@ -150,24 +155,29 @@ def plotit(dct, basename, shower):
         probpath = op.join(plotpath, k1)
         pltname = k1 + basename
         pltpath = op.join(probpath, pltname)
+        rw = 1
+        fig.suptitle(k1 + ' | {} spatial pts'.format(divs), fontsize="large", fontweight='bold')
+        
+        if len(dct[k1].keys()) > 2:
+            rw = 2
 
-        for k2 in dct[k1].keys():
-            ax = fig.addsubplot()
+        for i, k2 in enumerate(dct[k1].keys()):
+            ax = fig.add_subplot(rw, rw, i+1)
             ax.set_title(str(k2))
             for k3 in dct[k1][k2].keys():
                 x = []
                 y = []
-                for k4 in dct[k1][k2][k3].keys():
+                for k4 in sorted(dct[k1][k2][k3].keys()):
                     x.append(k4)
                     y.append(dct[k1][k2][k3][k4])
 
                 ax.loglog(x, y, label=str(k3))
 
         hand, lbl = ax.get_legend_handles_labels()
-        fig.legend(hand, lbl, loc='upper right', fontsize="medium"))
+        fig.legend(hand, lbl, loc='upper right', fontsize="large")
         fig.subplots_adjust(bottom=0.08, right=0.85, top=0.9, 
                                 wspace=0.15, hspace=0.25)
-        fig.savefig(plotname, dpi=1000, bbox_inches="tight")
+        fig.savefig(pltpath, dpi=1000, bbox_inches="tight")
 
         if shower:
             plt.show()
@@ -178,6 +188,7 @@ def plotit(dct, basename, shower):
 if __name__ == "__main__":
     
     sp.call("make", cwd=sourcepath)
+    #make_KSExact()
 
     #Problem and finish time.  dt is set by end of swept run.
 
@@ -214,29 +225,32 @@ if __name__ == "__main__":
     of.close()
 
     #Now exact testing
-    deltat = [1.0e-7, 5.0e-7, 1.0e-6, 5.0e-6, 1.0e-5, 5.0e-5, 1.0e-4]
+    deltat = [5.0e-7, 1.0e-6, 5.0e-6, 1.0e-5, 5.0e-5, 1.0e-4]
     exacts = {'Heat': heat_exact, 'KS': ks_exact, 'Euler': euler_exact}
     rlt = collections.defaultdict(dict)
     rltCompare = collections.defaultdict(dict)
-
-    #Still kinda need to strip initial conditions.  Do this in class.
+    fqCoeff = 0.4
 
     for prob in probs:
         binName = prob[0] + binary
         executable = op.join(binpath, binName)
-        vfile = op.join(sourcepath, 'temp.dat')
+        vfile = op.join(exactpath, 'temp.dat')
         for dt in deltat:
             mh.runCUDA(executable, divs, tpbs, dt, prob[1], prob[1]*fqCoeff, 0, 0, vfile)
-            rlt[prob[0]][dt] = rh.Solved(vfile).stripped()
+            rlt[prob[0]][dt] = rh.Solved(vfile).stripInitial()
+            ths = rlt[prob[0]][dt]
+            for tk in ths.keys():
+                for tks in ths[tk].keys():
+                    print tk, tks
         
         #t, dx, divs, varnames (Temperature) Could be arrays?  What do
         rlt[prob[0]]['Exact'] = collections.defaultdict(dict)
         rd = rlt[prob[0]][deltat[-1]]
         for vn in rd.keys():
-            for tf in fd[vn].keys():
+            for tf in rd[vn].keys():
                 rlt[prob[0]]['Exact'][vn][tf] = exacts[prob[0]](tf, divs, vn)
 
-    for pkey in rlt.keys():
+    for pkey in sorted(rlt.keys()):
         tDict = rlt[pkey]
         for dtkey in tDict.keys():
             rltCompare[pkey][dtkey] = collections.defaultdict(dict)
@@ -245,9 +259,12 @@ if __name__ == "__main__":
 
             for vn in tDict[dtkey].keys():
                 for tf in tDict[dtkey][vn].keys():
+                    print pkey, dtkey, vn, tf
                     rltCompare[pkey][dtkey][vn][tf] = rmse(tDict[dtkey][vn][tf], tDict['Exact'][vn][tf])
 
     rsltbydt, rsltbytf = switchDict(rltCompare)
 
     plotit(rsltbydt, "_ByDeltat.pdf", True)
+
     plotit(rsltbytf, "_ByFinalTime.pdf", True)
+

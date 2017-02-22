@@ -41,10 +41,9 @@ def makeList(v):
     else:
         return [v]
 
-
 #Divisions and threads per block need to be lists (even singletons) at least.
 def runCUDA(Prog, divisions, threadsPerBlock, timeStep, finishTime, frequency, 
-    decomp, alternate, varfile='temp.dat', timefile=None):
+    decomp, alternate, varfile='temp.dat', timefile=""):
 
     threadsPerBlock = makeList(threadsPerBlock)
     divisions = makeList(divisions)

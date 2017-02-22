@@ -956,8 +956,6 @@ int main( int argc, char *argv[] )
     bd[1].x = 0.125;
     bd[0].y = ZERO; //Velocity
     bd[1].y = ZERO;
-    //bd[0].w = ONE; //Pressure
-    //bd[1].w = 0.1;
     bd[0].z = ONE/dimz.mgam; //Energy
     bd[1].z = 0.1/dimz.mgam;
 
@@ -965,7 +963,7 @@ int main( int argc, char *argv[] )
     const int dv = atoi(argv[1]); //Number of spatial points
 	const int tpb = atoi(argv[2]); //Threads per Block
     const double dt = atof(argv[3]);
-	const double tf = atof(argv[4]) - HALF*dt; //Finish time
+	const double tf = atof(argv[4]) - QUARTER*dt; //Finish time
     const double freq = atof(argv[5]);
     const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
     const int share = atoi(argv[7]);
@@ -1014,7 +1012,6 @@ int main( int argc, char *argv[] )
 
 	// Write out x length and then delta x and then delta t.
 	// First item of each line is variable second is timestamp.
-	// energy(IC[k].w, IC[k].x, IC[k].y/IC[k].x)
 	fwr << lx << " " << (dv-2) << " " << dx << " " << endl;
 
     fwr << "Density " << 0 << " ";

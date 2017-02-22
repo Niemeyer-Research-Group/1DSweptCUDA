@@ -716,7 +716,7 @@ int main(int argc, char *argv[])
     int dv = atoi(argv[1]); //Number of spatial points
 	const int tpb = atoi(argv[2]); //Threads per Blocks
     const double dt =  atof(argv[3]);
-	const double tf = atof(argv[4]) - 0.5*dt; //Finish time
+	const double tf = atof(argv[4]) - 0.25*dt; //Finish time
     const double freq = atof(argv[5]);
     const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
     const int share = atoi(argv[7]);
