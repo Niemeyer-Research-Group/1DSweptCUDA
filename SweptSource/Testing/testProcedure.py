@@ -1,8 +1,11 @@
+#!/anaconda2/bin/python2
+
 '''Testing script.'''
 
 import os
 import os.path as op
 import sys
+print sys.path
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from cycler import cycler
@@ -45,11 +48,11 @@ alpha = 8.418e-5
 dto = 1e-5
 divs = 1024
 tpbs = 128
-fqCoeff = 2.0
+fqCoeff = 0.3
 ksexactpath = op.join(exactpath, "KS" + precision + '_Official.txt')
 
-probs = [["Heat", 10.0],
-        ["KS", 10.0], 
+probs = [["Heat", 50.0],
+        ["KS", 20.0], 
         ["Euler", 0.22]] 
 
 def make_KSExact():
@@ -116,7 +119,7 @@ def consistency(problem, tf, dt=dto, div=4096, tpb=128):
     collect = []
 
     for s, a in typ:
-        mh.runCUDA(executable, div, tpb, dt, tf, tf*fqCoeff, s, a, vfile)
+        mh.runCUDA(executable, div, tpb, dt, tf, tf*2.0, s, a, vfile)
         antworten = rh.Solved(vfile)
         collect.append((antworten.varNames, antworten.tFinal, antworten.vals))
         print "Last tf = this tf? ", tf == antworten.tFinal[-1]
@@ -148,10 +151,13 @@ def switchDict(dct):
 
     return dSw, dSa
 
-def plotit(dct, basename, shower):
+def plotit(dct, basename, shower, dtbool):
     #Figure, Subplot, Line, Xaxis: Yaxis
+    lbls = ["dt (s)", "tFinal (s)"]
+    axlabel = lbls if dtbool else lbls[::-1]
+    ylbl = "Error"
     for k1 in dct.keys():
-        fig = plt.figure()
+        fig = plt.figure(figsize=(10,8))
         probpath = op.join(plotpath, k1)
         pltname = k1 + basename
         pltpath = op.join(probpath, pltname)
@@ -164,17 +170,22 @@ def plotit(dct, basename, shower):
         for i, k2 in enumerate(dct[k1].keys()):
             ax = fig.add_subplot(rw, rw, i+1)
             ax.set_title(str(k2))
-            for k3 in dct[k1][k2].keys():
+            ax.set_ylabel(ylbl)
+            ax.set_xlabel(axlabel[0])
+            for k3 in sorted(dct[k1][k2].keys()):
                 x = []
                 y = []
                 for k4 in sorted(dct[k1][k2][k3].keys()):
                     x.append(k4)
                     y.append(dct[k1][k2][k3][k4])
-
-                ax.loglog(x, y, label=str(k3))
+                if dtbool:
+                    ax.loglog(x, y, label=str(k3))
+                else:
+                    ax.plot(x, y, label=str(k3))
 
         hand, lbl = ax.get_legend_handles_labels()
-        fig.legend(hand, lbl, loc='upper right', fontsize="large")
+        fig.legend(hand, lbl, loc='upper right', fontsize="large", title=axlabel[1])
+        
         fig.subplots_adjust(bottom=0.08, right=0.85, top=0.9, 
                                 wspace=0.15, hspace=0.25)
         fig.savefig(pltpath, dpi=1000, bbox_inches="tight")
@@ -188,7 +199,7 @@ def plotit(dct, basename, shower):
 if __name__ == "__main__":
     
     sp.call("make", cwd=sourcepath)
-    #make_KSExact()
+    make_KSExact()
 
     #Problem and finish time.  dt is set by end of swept run.
 
@@ -229,7 +240,6 @@ if __name__ == "__main__":
     exacts = {'Heat': heat_exact, 'KS': ks_exact, 'Euler': euler_exact}
     rlt = collections.defaultdict(dict)
     rltCompare = collections.defaultdict(dict)
-    fqCoeff = 0.4
 
     for prob in probs:
         binName = prob[0] + binary
@@ -263,8 +273,9 @@ if __name__ == "__main__":
                     rltCompare[pkey][dtkey][vn][tf] = rmse(tDict[dtkey][vn][tf], tDict['Exact'][vn][tf])
 
     rsltbydt, rsltbytf = switchDict(rltCompare)
+    lbls = ["dt (s)", "tFinal (s)"]
 
-    plotit(rsltbydt, "_ByDeltat.pdf", True)
+    plotit(rsltbydt, "_ByDeltat.pdf", True, True)
 
-    plotit(rsltbytf, "_ByFinalTime.pdf", True)
+    plotit(rsltbytf, "_ByFinalTime.pdf", True, False)
 

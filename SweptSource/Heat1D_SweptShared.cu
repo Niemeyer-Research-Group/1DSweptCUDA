@@ -489,7 +489,7 @@ classicWrapper(const int bks, int tpb, const int dv, const double dt, const doub
     cudaMemcpy(dheat_in,IC, sizeof(REAL)*dv, cudaMemcpyHostToDevice);
 
     const double t_fullstep = dt+dt;
-    double twrite = freq;
+    double twrite = freq - 0.25*dt;
     classicHeat <<< bks,tpb >>> (dheat_in, dheat_out);
     classicHeat <<< bks,tpb >>> (dheat_out, dheat_in);
 
@@ -550,7 +550,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 	upTriangle <<<bks, tpb, smem>>> (d_IC, d0_right, d0_left);
 
     double t_eq;
-    double twrite = freq;
+    double twrite = freq - 0.25*dt;
 
 	// Call the kernels until you reach the iteration limit.
 

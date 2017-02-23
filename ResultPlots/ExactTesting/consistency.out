@@ -1,8 +1,8 @@
-2017-02-21 16:26:56.943517
-['Heat', 10.0] -- Swept -- Temperature: Passed (0.000e+00)
-['Heat', 10.0] -- Alternative -- Temperature: Passed (0.000e+00)
-['KS', 10.0] -- Swept -- Velocity: Passed (0.000e+00)
-['KS', 10.0] -- Alternative -- Velocity: Passed (0.000e+00)
+2017-02-22 15:54:37.110878
+['Heat', 50.0] -- Swept -- Temperature: Passed (0.000e+00)
+['Heat', 50.0] -- Alternative -- Temperature: Passed (0.000e+00)
+['KS', 20.0] -- Swept -- Velocity: Passed (0.000e+00)
+['KS', 20.0] -- Alternative -- Velocity: Passed (0.000e+00)
 ['Euler', 0.22] -- Swept -- Velocity: Passed (0.000e+00)
 ['Euler', 0.22] -- Swept -- Energy: Passed (0.000e+00)
 ['Euler', 0.22] -- Swept -- Pressure: Passed (0.000e+00)

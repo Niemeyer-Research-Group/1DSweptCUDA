@@ -375,8 +375,6 @@ wholeDiamond(REAL *inRight, REAL *inLeft, REAL *outRight, REAL *outLeft, const b
 	{
 		writeOutRight(temper, outRight, outLeft, threadIdx.x, gid, blockDim.x);
 	}
-
-
 }
 
 double
@@ -392,7 +390,7 @@ classicWrapper(const int bks, int tpb, const int dv, const double dt, const doub
     cudaMemcpy(dks_in,IC,sizeof(REAL)*dv,cudaMemcpyHostToDevice);
 
     double t_eq = 0.0;
-    double twrite = freq;
+    double twrite = freq - 0.25*dt;
 
     while (t_eq <= t_end)
     {
@@ -428,7 +426,6 @@ double
 sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double t_end,
 	REAL *IC, REAL *T_f, const double freq, ofstream &fwr)
 {
-
 	REAL *d_IC, *d0_right, *d0_left, *d2_right, *d2_left;
 
 	cudaMalloc((void **)&d_IC, sizeof(REAL)*dv);
@@ -443,7 +440,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 
 	//Every other step is a full timestep and each cycle is half tpb steps.
 	const double t_fullstep = 0.25 * dt * (double)tpb;
-	double twrite = freq;
+	double twrite = freq - 0.25*dt;
 
 	const size_t smem = (2*tpb+8)*sizeof(REAL);
 
@@ -471,6 +468,8 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 		{
 			downTriangle <<< bks,tpb,smem >>> (d_IC,d2_right,d2_left);
 
+			cout << t_eq << endl;
+
 			cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
 
 			fwr << " Velocity " << t_eq << " ";
@@ -488,7 +487,6 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 
 			twrite += freq;
 		}
-
 	}
 
 	downTriangle <<< bks,tpb,smem >>>(d_IC,d2_right,d2_left);

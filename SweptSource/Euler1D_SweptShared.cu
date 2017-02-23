@@ -693,7 +693,7 @@ classicWrapper(const int bks, int tpb, const int dv, const double dt, const doub
     cudaMemcpy(dEuler_in,IC,sizeof(REALthree)*dv,cudaMemcpyHostToDevice);
 
     double t_eq = 0.0;
-    double twrite = freq;
+    double twrite = freq - QUARTER*dt;
 
     while (t_eq < t_end)
     {
@@ -761,7 +761,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 	upTriangle <<<bks, tpb, smem>>> (d_IC, d0_right, d0_left);
 
     double t_eq;
-    double twrite = freq;
+    double twrite = freq - QUARTER*dt;;
 
 	// Call the kernels until you reach the iteration limit.
 
