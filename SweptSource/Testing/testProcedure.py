@@ -5,7 +5,6 @@
 import os
 import os.path as op
 import sys
-print sys.path
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from cycler import cycler
@@ -155,6 +154,7 @@ def plotit(dct, basename, shower, dtbool):
     #Figure, Subplot, Line, Xaxis: Yaxis
     lbls = ["dt (s)", "tFinal (s)"]
     axlabel = lbls if dtbool else lbls[::-1]
+
     ylbl = "Error"
     for k1 in dct.keys():
         fig = plt.figure(figsize=(10,8))
@@ -172,6 +172,7 @@ def plotit(dct, basename, shower, dtbool):
             ax.set_title(str(k2))
             ax.set_ylabel(ylbl)
             ax.set_xlabel(axlabel[0])
+            ax.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
             for k3 in sorted(dct[k1][k2].keys()):
                 x = []
                 y = []
@@ -179,13 +180,14 @@ def plotit(dct, basename, shower, dtbool):
                     x.append(k4)
                     y.append(dct[k1][k2][k3][k4])
                 if dtbool:
-                    ax.loglog(x, y, label=str(k3))
+                    ax.semilogx(x, y, label=str(k3))
                 else:
                     ax.plot(x, y, label=str(k3))
 
         hand, lbl = ax.get_legend_handles_labels()
         fig.legend(hand, lbl, loc='upper right', fontsize="large", title=axlabel[1])
-        
+
+        fig.tight_layout(pad=0.2, w_pad=0.75, h_pad=1.5)
         fig.subplots_adjust(bottom=0.08, right=0.85, top=0.9, 
                                 wspace=0.15, hspace=0.25)
         fig.savefig(pltpath, dpi=1000, bbox_inches="tight")

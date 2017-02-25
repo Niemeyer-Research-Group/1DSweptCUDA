@@ -274,20 +274,21 @@ sch = SCHEME[swept+cpu]
 timestr = Fname + " " + sch
 
 if runit.get():
-    prk = sp.Popen("make", cwd=sourcepath)
-    sp.Popen.wait(prk)
-
-    execut = op.join(binpath, typename + "Out")
-
+    
     print "---------------------"
     print "Algorithm #divs #tpb dt endTime"
     print sch, div, bks, dt, tf
 
-    execstr = execut +  ' {0} {1} {2} {3} {4} {5} {6} {7}'.format(div,bks,dt,tf,freq,swept,cpu,Varfile)
+    ExecL = op.join(binpath, typename + "Out")
 
-    exeStr = shlex.split(execstr)
-    proc = sp.Popen(exeStr)
-    sp.Popen.wait(proc)
+    sp.call("make")
+
+    #Parse it out afterward.
+    t_fn.write("Num_Spatial_Points\tThreads_per_Block\tTime_per_timestep_(us)\n")
+    t_fn.close()
+
+    mh.runCUDA(ExecL, div, blx, dt, tf, tf*2.0, swept, cpu, Varfile)
+    print div, blx
 
 road = rh.Solved(Varfile)
 tst = "Euler" in Varfile
