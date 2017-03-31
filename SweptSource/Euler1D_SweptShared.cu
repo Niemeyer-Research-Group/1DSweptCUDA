@@ -1,24 +1,28 @@
-/* This file is the current iteration of research being done to implement the
-swept rule for Partial differential equations in one dimension.  This research
-is a collaborative effort between teams at MIT, Oregon State University, and
-Purdue University.
+/**
+    NOTE: This file is where the explanatory comments for this package appear. The other source files only have superficial comments.
 
-Copyright (C) 2015 Kyle Niemeyer, niemeyek@oregonstate.edu AND
-Daniel Magee, mageed@oregonstate.edu
+    This file evaluates the Euler equations applied to the 1D Sod Shock Tube problem.  It demonstrates the numerical solution to this problem in parallel using the GPU. The solution procedure uses a second order finite volume scheme with a minmod limiter parameterized by the Pressure ratio at cells on a three point stencil.  The solution also uses a second-order in time (RK2 or midpoint) scheme.
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the MIT license.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-
-You should have received a copy of the MIT license along with this program.
-If not, see <https://opensource.org/licenses/MIT>.
+    The boundary conditions are:
+    Q(t=0,x) = QL if x<L/2 else QR
+    Q(t,x=0,dx) = QL
+    Q(t,x=L,L-dx) = QR
+    Where Q is the vector of dependent variables.
+    
+    The problem may be evaluated in three ways: Classic, SharedGPU, and Hybrid.  Classic simply steps forward in time and calls the kernel once every timestep (predictor step or full step).  SharedGPU uses the GPU for all computation and applies the swept rule.  Hybrid applies the swept rule but computes the node on the boundary with the CPU.  
+*/
+/* 
+    Copyright (C) 2017 Kyle Niemeyer, niemeyek@oregonstate.edu AND
+    Daniel Magee, mageed@oregonstate.edu
+*/
+/*
+    This file is distribued under the MIT License.  See LICENSE at top level of directory or: <https://opensource.org/licenses/MIT>.
 */
 
-//COMPILE LINE:
+// To compile this program alone from the command line:
 // nvcc -o ./bin/EulerOut Euler1D_SweptShared.cu -gencode arch=compute_35,code=sm_35 -lm -restrict -Xcompiler -fopenmp
+// Use whatever compute_xx, sm_xx applies to the GPU you are using.
+// Add -Xptxas=-v to the end of the compile line to inspect register usage.
 
 #include <cuda.h>
 #include <cuda_runtime_api.h>
@@ -34,6 +38,7 @@ If not, see <https://opensource.org/licenses/MIT>.
 #include <fstream>
 #include <omp.h>
 
+// This file uses vector types to hold the dependent variables so fundamental operations on those types are defined as macros to accommodate different data types.  Also, keeping types consistent for common constants (0, 1, 2, etc) used in computation has an appreciable positive effect on performance.
 #ifndef REAL
     #define REAL            float
     #define REALtwo         float2
@@ -53,34 +58,52 @@ If not, see <https://opensource.org/licenses/MIT>.
     #define ONE             1.0
     #define TWO             2.0
     #define SQUAREROOT(x)   sqrt(x)
-
 #endif
 
+// Hardwire in the length of the 
 const REAL lx = 1.0;
+
+// The structure to carry the initial and boundary conditions.
+// 0 is left 1 is right.
 REALthree bd[2];
 
+//dbd is the boundary condition in device constant memory.
+__constant__ REALthree dbd[2]; 
+
+//Protoype for useful information struct.
 struct dimensions {
-    REAL gam;
-    REAL mgam;
-    REAL dt_dx;
-    int base;
-    int idxend;
-    int idxend_1;
-    int hts[5];
+    REAL gam; // Heat capacity ratio
+    REAL mgam; // 1- Heat capacity ratio
+    REAL dt_dx; // deltat/deltax
+    int base; // Length of node + stencils at end (4)
+    int idxend; // Last index (number of spatial points - 1)
+    int idxend_1; // Num spatial points - 2
+    int hts[5]; // The five point stencil around base/2
 };
 
+// structure of dimensions in cpu memory
 dimensions dimz;
-//dbd is the boundary condition in device constant memory.
-__constant__ REALthree dbd[2]; //0 is left 1 is right.
-//dimens dimension struct in global memory.
+
+// Useful and efficient to keep the important constant information in GPU constant memory.
 __constant__ dimensions dimens;
 
+/**
+    Takes the passed the right and left arrays from previous cycle and inserts them into new SHARED memory working array.  
+    
+    Called at start of kernel/ function.  The passed arrays have already been passed readIn only finds the correct index and inserts the values and flips the indices to seed the working array for the cycle.
+    @param rights  The array for the right side of the triangle.
+    @param lefts  The array for the left side.
+    @param td  The thread block array id.
+    @param gd  The thread global array id.
+    @param temp  The working array in shared memory
+*/
 __host__ __device__
 __forceinline__
 void
 readIn(REALthree *temp, const REALthree *rights, const REALthree *lefts, int td, int gd)
 {
-    #ifdef __CUDA_ARCH__
+    // The index in the SHARED memory working array to place the corresponding member of right or left.
+    #ifdef __CUDA_ARCH__  // Accesses the correct structure in constant memory.
 	int leftidx = dimens.hts[4] + (((td>>2) & 1) * dimens.base) + (td & 3) - (4 + ((td>>2)<<1));
 	int rightidx = dimens.hts[4] + (((td>>2) & 1) * dimens.base) + ((td>>2)<<1) + (td & 3);
     #else
@@ -92,27 +115,49 @@ readIn(REALthree *temp, const REALthree *rights, const REALthree *lefts, int td,
 	temp[rightidx] = lefts[gd];
 }
 
+/**
+    Write out the right and left arrays at the end of a kernel when passing right.  
+    
+    Called at end of the kernel/ function.  The values of the working array are collected in the right and left arrays.  As they are collected, the passed edge (right) is inserted at an offset. This function is never called from the host so it doesn't need the preprocessor CUDA flags.'
+    @param temp  The working array in shared memory
+    @param rights  The array for the right side of the triangle.
+    @param lefts  The array for the left side.
+    @param td  The thread block array id.
+    @param gd  The thread global array id.
+    @param bd  The number of threads in a block (spatial points in a node).
+*/
 __device__
 __forceinline__
 void
 writeOutRight(REALthree *temp, REALthree *rights, REALthree *lefts, int td, int gd, int bd)
 {
-    int gdskew = (gd + bd) & dimens.idxend;
-    int leftidx = (((td>>2) & 1)  * dimens.base) + ((td>>2)<<1) + (td & 3) + 2; //left get
-    int rightidx = (dimens.base-6) + (((td>>2) & 1)  * dimens.base) + (td & 3) - ((td>>2)<<1); //right get
+    int gdskew = (gd + bd) & dimens.idxend; //The offset for the right array.
+    int leftidx = (((td>>2) & 1)  * dimens.base) + ((td>>2)<<1) + (td & 3) + 2; 
+    int rightidx = (dimens.base-6) + (((td>>2) & 1)  * dimens.base) + (td & 3) - ((td>>2)<<1); 
 	rights[gdskew] = temp[rightidx];
 	lefts[gd] = temp[leftidx];
 }
 
+/**
+    Write out the right and left arrays at the end of a kernel when passing left.  
+    
+    Called at end of the kernel/ function.  The values of the working array are collected in the right and left arrays.  As they are collected, the passed edge (left) is inserted at an offset. 
+    @param temp  The working array in shared memory
+    @param rights  The array for the right side of the triangle.
+    @param lefts  The array for the left side.
+    @param td  The thread block array id.
+    @param gd  The thread global array id.
+    @param bd  The number of threads in a block (spatial points in a node).
+*/
 __host__ __device__
 __forceinline__
 void
 writeOutLeft(REALthree *temp, REALthree *rights, REALthree *lefts, int td, int gd, int bd)
 {
     #ifdef __CUDA_ARCH__
-    int gdskew = (gd - bd) & dimens.idxend;
-    int leftidx = (((td>>2) & 1)  * dimens.base) + ((td>>2)<<1) + (td & 3) + 2; //left get
-    int rightidx = (dimens.base-6) + (((td>>2) & 1)  * dimens.base) + (td & 3) - ((td>>2)<<1); //right get
+    int gdskew = (gd - bd) & dimens.idxend; //The offset for the right array.
+    int leftidx = (((td>>2) & 1)  * dimens.base) + ((td>>2)<<1) + (td & 3) + 2;
+    int rightidx = (dimens.base-6) + (((td>>2) & 1)  * dimens.base) + (td & 3) - ((td>>2)<<1); 
     #else
     int gdskew = gd;
     int leftidx = (((td>>2) & 1)  * dimz.base) + ((td>>2)<<1) + (td & 3) + 2;
@@ -123,7 +168,13 @@ writeOutLeft(REALthree *temp, REALthree *rights, REALthree *lefts, int td, int g
     lefts[gdskew] = temp[leftidx];
 }
 
-//Calculates the pressure at the current node with the rho, u, e state variables.
+/**
+    Calculates the pressure at the current spatial point with the (x,y,z) rho, u * rho, e *rho state variables.
+    
+    Calculates pressure from working array variables.  Pressure is not stored outside procedure to save memory.
+    @param current  The state variables at current node
+    @return Pressure at subject node
+*/
 __device__ __host__
 __forceinline__
 REAL
@@ -136,22 +187,33 @@ pressure(REALthree current)
     #endif
 }
 
-//Really P/rho.
+/**
+    Calculates the parameter for the first term in the spectral radius formula (P/rho).
+    
+    Since this formula is essentially a lambda for a single calculation, input vector y and z are u_sp and e_sp respectively without multipliation by rho and it returns the pressure over rho to skip the next step.
+    @param current  The Roe averaged state variables at the interface.  Where y and z are u_sp and e_sp respectively without multipliation by rho.
+    @return Roe averaged pressure over rho at the interface 
+*/
 __device__ __host__
 __forceinline__
 REAL
 pressureHalf(REALthree current)
 {
     #ifdef __CUDA_ARCH__
-    return dimens.mgam * (current.z - (HALF * current.y * current.y));
+    return dimens.mgam * (current.z - HALF * current.y * current.y);
     #else
-    return dimz.mgam * (current.z - (HALF * current.y * current.y));
+    return dimz.mgam * (current.z - HALF * current.y * current.y);
     #endif
 }
 
+/**
+    Reconstructs the state variables if the pressure ratio is finite and positive.
 
-//Reconstructs the state variables if the pressure ratio is finite and positive.
-//I think it's that internal boundary condition.
+    @param cvCurrent  The state variables at the point in question.
+    @param cvOther  The neighboring spatial point state variables.
+    @param pRatio  The pressure ratio Pr-Pc/(Pc-Pl).
+    @return The reconstructed value at the current side of the interface.
+*/
 __device__ __host__
 __forceinline__
 REALthree
@@ -160,9 +222,13 @@ limitor(REALthree cvCurrent, REALthree cvOther, REAL pRatio)
     return (cvCurrent + HALF * min(pRatio,ONE) * (cvOther - cvCurrent));
 }
 
+/**
+    Uses the reconstructed interface values as inputs to flux function F(Q)
 
-//Left and Center then Left and right.
-//This is the meat of the flux calculation.  Fields: x is rho, y is u, z is e, w is p.
+    @param cvLeft Reconstructed value at the left side of the interface.
+    @param cvRight  Reconstructed value at the left side of the interface.
+    @return  The combined flux from the function.
+*/
 __device__ __host__
 __forceinline__
 REALthree
@@ -185,6 +251,13 @@ eulerFlux(REALthree cvLeft, REALthree cvRight)
     return flux;
 }
 
+/**
+    Finds the spectral radius and applies it to the interface.
+
+    @param cvLeft Reconstructed value at the left side of the interface.
+    @param cvRight  Reconstructed value at the left side of the interface.
+    @return  The spectral radius multiplied by the difference of the reconstructed values
+*/
 __device__ __host__
 __forceinline__
 REALthree
@@ -207,13 +280,25 @@ eulerSpectral(REALthree cvLeft, REALthree cvRight)
     REAL pH = pressureHalf(halfState);
 
     #ifdef __CUDA_ARCH__
-    return (pH*dimens.gam + fabs(halfState.y)) * (cvLeft - cvRight);
+    return (SQUAREROOT(pH*dimens.gam) + fabs(halfState.y)) * (cvLeft - cvRight);
     #else
-    return (pH*dimz.gam + fabs(halfState.y)) * (cvLeft - cvRight);
+    return (SQUAREROOT(pH*dimz.gam) + fabs(halfState.y)) * (cvLeft - cvRight);
     #endif
 }
 
-//This is the predictor step of the finite volume scheme.
+/**
+    The predictor step of the finite volume scheme.
+
+    First: The pressure ratio calculation is decomposed to avoid division and calling the limitor unnecessarily.  Although 3 pressure ratios would be required, we can see that there are only 4 unique numerators and denominators in that calculation which can be calculated without using division or calling pressure (which uses division).  The edge values aren't guaranteed to have the correct conditions so the flags set the appropriate pressure values to 0 (Pressures are equal) at the edges.
+    Second:  The numerator and denominator are tested to see if the pressure ratio will be Nan or <=0. If they are, the limitor doesn't need to be called.  If they are not, call the limitor and calculate the pressure ratio.
+    Third:  Use the reconstructed values at the interfaces to get the flux at the interfaces using the spectral radius and flux functions and combine the results with the flux variable.
+    Fourth: Repeat for second interface and update current volume. 
+    @param state  Reference to the working array in SHARED memory holding the dependent variables.
+    @param tr  The indices of the stencil points.
+    @param flagLeft  True if the point is the first finite volume in the tube.
+    @param flagRight  True if the point is the last finite volume in the tube.
+    @return  The updated value at the current spatial point.
+*/
 __device__ __host__
 REALthree
 eulerStutterStep(REALthree *state, int tr, char flagLeft, char flagRight)
@@ -255,8 +340,7 @@ eulerStutterStep(REALthree *state, int tr, char flagLeft, char flagRight)
 
 }
 
-//Same thing as the predictor step, but this final step adds the result to the original state variables to advance to the next timestep.
-//But the predictor variables to find the fluxes.
+//Same thing as the predictor step, but this final step adds the result to the original state variables to advance to the next timestep while using the predictor variables to find the flux.
 __device__ __host__
 REALthree
 eulerFinalStep(REALthree *state, int tr, char flagLeft, char flagRight)
@@ -298,7 +382,11 @@ eulerFinalStep(REALthree *state, int tr, char flagLeft, char flagRight)
 
 }
 
-//Simple scheme with dirchlet boundary condition.
+/**
+    Classic kernel for simple decomposition of spatial domain.
+
+
+*/
 __global__
 void
 classicEuler(REALthree *euler_in, REALthree *euler_out, const bool finalstep)

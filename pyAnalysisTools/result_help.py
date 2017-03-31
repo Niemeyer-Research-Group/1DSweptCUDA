@@ -17,7 +17,6 @@ mpl.rcParams['lines.linewidth'] = 3
 mpl.rcParams["grid.alpha"] = 0.5
 mpl.rcParams["axes.grid"] = True
 
-
 #So you need to make the actual figure in the script and pick apart the axes.          
 
 class Solved(object):

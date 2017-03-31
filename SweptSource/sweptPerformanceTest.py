@@ -180,6 +180,7 @@ if len(sys.argv) < 2:
 
     problem_menu = Tk.OptionMenu(dropframe, problem, *OPTIONS, command=reset_vals)
     problem_menu.grid(row=0, column=0)
+
     alg_menu = Tk.OptionMenu(dropframe, alg, *SCHEME, command=reset_vals)
     alg_menu.grid(row=0, column=1)
 

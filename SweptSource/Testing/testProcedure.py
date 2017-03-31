@@ -197,6 +197,13 @@ def plotit(dct, basename, shower, dtbool):
         
     return None
 
+def rmcrud(ext):
+    files = os.listdir(exactpath)
+    for file in files:
+        if file.endswith(ext):
+            os.remove(file)
+
+    return
 
 if __name__ == "__main__":
     
@@ -280,4 +287,6 @@ if __name__ == "__main__":
     plotit(rsltbydt, "_ByDeltat.pdf", True, True)
 
     plotit(rsltbytf, "_ByFinalTime.pdf", True, False)
+
+    rmcrud('.dat')
 

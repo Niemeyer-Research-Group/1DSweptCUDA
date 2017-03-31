@@ -48,6 +48,7 @@ os.chdir(sourcepath)
 
 sys.path.append(modpath)
 import result_help as rh
+import main_help as mh
 
 alpha = 8.418e-5
 dx = 0.001
@@ -254,8 +255,6 @@ if not op.isdir(temppath):
 
 avifile = op.join(temppath,typename+".avi")
 
-open(Varfile, "a").close()
-
 div = 2**divpow.get()
 bks = 2**blkpow.get()
 dt = deltat.get() #timestep in seconds
@@ -283,12 +282,8 @@ if runit.get():
 
     sp.call("make")
 
-    #Parse it out afterward.
-    t_fn.write("Num_Spatial_Points\tThreads_per_Block\tTime_per_timestep_(us)\n")
-    t_fn.close()
-
-    mh.runCUDA(ExecL, div, blx, dt, tf, tf*2.0, swept, cpu, Varfile)
-    print div, blx
+    mh.runCUDA(ExecL, div, bks, dt, tf, freq, swept, cpu, Varfile)
+    print div, bks
 
 road = rh.Solved(Varfile)
 tst = "Euler" in Varfile
@@ -301,6 +296,7 @@ else:
 road.plotResult(fh, a)
 road.annotatePlot(fh,a)
 road.savePlot(fh, pltpath)
+plt.show()
 
 
 # f = open(Varfile)

@@ -25,7 +25,7 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 #include <cuda_runtime_api.h>
 #include <cuda_runtime.h>
 #include <device_functions.h>
-#include "myVectorTypes.h" //For clamp.
+#include "myVectorTypes.h"
 
 #include <ostream>
 #include <iostream>
