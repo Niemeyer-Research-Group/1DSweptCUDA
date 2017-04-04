@@ -60,7 +60,7 @@ def make_KSExact():
     executable = op.join(binpath, binName)
     dt = 1e-7
     tf = probs[1][1]
-    mh.runCUDA(executable, divs, tpbs, dt, tf, tf*fqCoeff, 1, 0, ksexactpath)
+    mh.runCUDA(executable, divs, tpbs, dt, tf, tf*fqCoeff, 0, ksexactpath)
 
 def Fo(dx,dt):
     alpha = 8.418e-5
@@ -114,11 +114,10 @@ def consistency(problem, tf, dt=dto, div=4096, tpb=128):
     binName = problem + binary
     executable = op.join(binpath, binName)
     vfile = op.join(sourcepath, 'temp.dat')
-    typ = zip([1,1,0],[0,1,0])
     collect = []
 
-    for s, a in typ:
-        mh.runCUDA(executable, div, tpb, dt, tf, tf*2.0, s, a, vfile)
+    for s in range(3):
+        mh.runCUDA(executable, div, tpb, dt, tf, tf*2.0, s, vfile)
         antworten = rh.Solved(vfile)
         collect.append((antworten.varNames, antworten.tFinal, antworten.vals))
         print "Last tf = this tf? ", tf == antworten.tFinal[-1]
@@ -255,7 +254,7 @@ if __name__ == "__main__":
         executable = op.join(binpath, binName)
         vfile = op.join(exactpath, 'temp.dat')
         for dt in deltat:
-            mh.runCUDA(executable, divs, tpbs, dt, prob[1], prob[1]*fqCoeff, 0, 0, vfile)
+            mh.runCUDA(executable, divs, tpbs, dt, prob[1], prob[1]*fqCoeff, 0, vfile)
             rlt[prob[0]][dt] = rh.Solved(vfile).stripInitial()
             ths = rlt[prob[0]][dt]
             for tk in ths.keys():

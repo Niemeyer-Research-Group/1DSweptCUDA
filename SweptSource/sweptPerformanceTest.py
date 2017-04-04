@@ -193,7 +193,7 @@ if len(sys.argv) < 2:
     fname = problem.get()
     precise = PRECISION[int(prec.get())]
     sch = alg.get()
-    schsym = SCHEME.index(sch)
+    algs = SCHEME.index(sch)
     dv1 = divpow.get()
     dv2 = divpowend.get()
     bk1 = blkpow.get()
@@ -206,7 +206,7 @@ else:
     fname = sys.argv[1]
     precise = sys.argv[2]
     sch = SCHEME[int(sys.argv[3])]
-    schsym = int(sys.argv[3])
+    algs = int(sys.argv[3])
     dv1 = int(sys.argv[4])
     dv2 = int(sys.argv[5])
     bk1 = int(sys.argv[6])
@@ -217,7 +217,6 @@ else:
 prob_idx = OPTIONS.index(fname)
 
 swept = int(bool(schsym))
-cpu = schsym/2
 
 div = [2**k for k in range(dv1, dv2+1)]
 blx = [2**k for k in range(bk1, bk2+1)]
@@ -233,10 +232,9 @@ plotstr = timename.replace("_"," ")
 timepath = op.join(rsltpath,timefile)
 Varfile = op.join(rsltpath,vf)
 
+#Standard testing runs for these algorithms
 dts = [.001, float(format(1.0/div[-1],'.0e'))*.1, .005]
-
 tfs = [st*m for m in dts]
-
 dt, tf = dts[prob_idx], tfs[prob_idx]
 
 errchk = False
@@ -258,7 +256,7 @@ sp.call("make")
 t_fn.write("Num_Spatial_Points\tThreads_per_Block\tTime_per_timestep_(us)\n")
 t_fn.close()
 
-mh.runCUDA(ExecL, div, blx, dt, tf, tf*2.0, swept, cpu, Varfile, timepath)
+mh.runCUDA(ExecL, div, blx, dt, tf, tf*2.0, algs, Varfile, timepath)
 print div, blx
 
 myFrame = mh.Perform(timepath)

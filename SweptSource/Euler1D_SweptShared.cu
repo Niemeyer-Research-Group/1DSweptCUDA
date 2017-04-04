@@ -303,29 +303,33 @@ __device__ __host__
 REALthree
 eulerStutterStep(REALthree *state, int tr, char flagLeft, char flagRight)
 {
-
+    //P1-P0
     REAL pLL = (flagLeft) ? ZERO : (TWO * state[tr-1].x * state[tr-2].x * (state[tr-1].z - state[tr-2].z) +
         (state[tr-2].y * state[tr-2].y*  state[tr-1].x - state[tr-1].y * state[tr-1].y * state[tr-2].x)) ;
-
+    //P2-P1
     REAL pL = (TWO * state[tr].x  *state[tr-1].x * (state[tr].z - state[tr-1].z) +
         (state[tr-1].y * state[tr-1].y * state[tr].x - state[tr].y * state[tr].y * state[tr-1].x));
-
+    //P3-P2
     REAL pR = (TWO * state[tr].x * state[tr+1].x * (state[tr+1].z - state[tr].z) +
         (state[tr].y * state[tr].y * state[tr+1].x - state[tr+1].y * state[tr+1].y * state[tr].x));
-
+    //P4-P3
     REAL pRR = (flagRight) ? ZERO : (TWO * state[tr+1].x * state[tr+2].x * (state[tr+2].z - state[tr+1].z) +
         (state[tr+1].y * state[tr+1].y * state[tr+2].x - state[tr+2].y * state[tr+2].y * state[tr+1].x));
 
     //This is the temporary state bounded by the limitor function.
+    //Pr0 = PL/PLL*rho0/rho2  Pr0 is not -, 0, or nan.
     REALthree tempStateLeft = (!pLL || !pL || (pLL < 0 != pL <0)) ? state[tr-1] : limitor(state[tr-1], state[tr], (state[tr-2].x*pL/(state[tr].x*pLL)));
-    REALthree tempStateRight = (!pL || !pR || (pL < 0 != pR <0)) ? state[tr] : limitor(state[tr], state[tr-1], (state[tr+1].x*pL/(state[tr-1].x*pR)));
+    //Pr1 = PR/PL*rho1/rho3  Pr1 is not - or nan, pass Pr1^-1.
+    REALthree tRmpStateRight = (!pL || !pR || (pL < 0 != pR <0)) ? state[tr] : limitor(state[tr], state[tr-1], (state[tr+1].x*pL/(state[tr-1].x*pR)));
 
     //Pressure needs to be recalculated for the new limited state variables.
     REALthree flux = eulerFlux(tempStateLeft,tempStateRight);
     flux += eulerSpectral(tempStateLeft,tempStateRight);
 
     //Do the same thing with the right side.
+    //Pr1 = PR/PL*rho1/rho3  Pr1 is not - or nan.
     tempStateLeft = (!pL || !pR || (pL < 0 != pR <0)) ? state[tr] : limitor(state[tr], state[tr+1], (state[tr-1].x*pR/(state[tr+1].x*pL)));
+    //Pr2 = PRR/PR*rho2/rho4  Pr2 is not - or nan, pass Pr2^-1.
     tempStateRight = (!pRR || !pR || (pRR < 0 != pR <0)) ? state[tr+1] : limitor(state[tr+1], state[tr], (state[tr+2].x*pR/(state[tr].x*pRR)));
 
     flux -= eulerFlux(tempStateLeft,tempStateRight);
@@ -358,22 +362,19 @@ eulerFinalStep(REALthree *state, int tr, char flagLeft, char flagRight)
     REAL pRR = (flagRight) ?  ZERO : (TWO * state[tr+1].x * state[tr+2].x * (state[tr+2].z - state[tr+1].z) +
         (state[tr+1].y * state[tr+1].y * state[tr+2].x - state[tr+2].y * state[tr+2].y * state[tr+1].x));
 
-
-    //This is the temporary state bounded by the limitor function.
     REALthree tempStateLeft = (!pLL || !pL || (pLL < 0 != pL <0)) ? state[tr-1] : limitor(state[tr-1], state[tr], (state[tr-2].x*pL/(state[tr].x*pLL)));
     REALthree tempStateRight = (!pL || !pR || (pL < 0 != pR <0)) ? state[tr] : limitor(state[tr], state[tr-1], (state[tr+1].x*pL/(state[tr-1].x*pR)));
 
-    //Pressure needs to be recalculated for the new limited state variables.
     REALthree flux = eulerFlux(tempStateLeft,tempStateRight);
     flux += eulerSpectral(tempStateLeft,tempStateRight);
 
-    //Do the same thing with the right side.
     tempStateLeft = (!pL || !pR || (pL < 0 != pR <0)) ? state[tr] : limitor(state[tr], state[tr+1], (state[tr-1].x*pR/(state[tr+1].x*pL)));
     tempStateRight = (!pRR || !pR || (pRR < 0 != pR <0))  ? state[tr+1] : limitor(state[tr+1], state[tr], (state[tr+2].x*pR/(state[tr].x*pRR)));
 
     flux -= eulerFlux(tempStateLeft,tempStateRight);
     flux -= eulerSpectral(tempStateLeft,tempStateRight);
 
+    // Return only the RHS of the discretization.
     #ifdef __CUDA_ARCH__
     return (HALF * dimens.dt_dx * flux);
     #else
@@ -385,7 +386,11 @@ eulerFinalStep(REALthree *state, int tr, char flagLeft, char flagRight)
 /**
     Classic kernel for simple decomposition of spatial domain.
 
+    Uses dependent variable values in euler_in to calculate euler out.  If it's the predictor step, finalstep is false.  If it is the final step the result is added to the previous euler_out value because this is RK2.
 
+    @param euler_in The working array result of the kernel call before last (or initial condition) used to calculate the RHS of the discretization.
+    @param euler_out The working array from the kernel call before last which either stores the predictor values or the full step values after the RHS is added into the solution.
+    @param finalstep Flag for whether this is the final (True) or predictor (False) step
 */
 __global__
 void
@@ -415,6 +420,15 @@ classicEuler(REALthree *euler_in, REALthree *euler_out, const bool finalstep)
     }
 }
 
+/**
+    Builds a right-side-up triangle using the swept rule.
+
+    Right-side-up triangle using the swept rule.  This function is called first using the initial conditions or after results are read out using downTriange.  In the latter case, it takes the result of down triangle as IC.
+
+    @param IC Array of initial condition values in order of spatial point.
+    @param outRight Array to store the right sides of the triangles to be passed.
+    @param outLeft Array to store the left sides of the triangles to be passed.
+*/
 __global__
 void
 upTriangle(const REALthree *IC, REALthree *outRight, REALthree *outLeft)
@@ -423,7 +437,7 @@ upTriangle(const REALthree *IC, REALthree *outRight, REALthree *outLeft)
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
 	int tididx = threadIdx.x + 2; //Block Thread ID
-    int tidxTop = tididx + dimens.base;
+    int tidxTop = tididx + dimens.base; //
     int k=4;
 
     //Assign the initial values to the first row in temper, each block
@@ -780,6 +794,8 @@ classicWrapper(const int bks, int tpb, const int dv, const double dt, const doub
     // Copy the initial conditions to the device array.
     cudaMemcpy(dEuler_in,IC,sizeof(REALthree)*dv,cudaMemcpyHostToDevice);
 
+    cout << "Classic scheme" << endl;
+
     double t_eq = 0.0;
     double twrite = freq - QUARTER*dt;
 
@@ -849,12 +865,14 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 	upTriangle <<<bks, tpb, smem>>> (d_IC, d0_right, d0_left);
 
     double t_eq;
-    double twrite = freq - QUARTER*dt;;
+    double twrite = freq - QUARTER*dt;
 
-	// Call the kernels until you reach the iteration limit.
+	// Call the kernels until you reach the final time
 
     if (cpu)
     {
+        cout << "Hybrid Swept scheme" << endl;
+
         REALthree *h_right, *h_left;
         REALthree *tmpr = (REALthree *) malloc(smem);
         cudaHostAlloc((void **) &h_right, tpb*sizeof(REALthree), cudaHostAllocDefault);
@@ -965,6 +983,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 	}
     else
     {
+        cout << "GPU only Swept scheme" << endl;
         splitDiamond <<<bks, tpb, smem>>> (d0_right, d0_left, d2_right, d2_left);
         t_eq = t_fullstep;
 
@@ -1026,13 +1045,14 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 int main( int argc, char *argv[] )
 {
     //That is, there are less than 8 arguments.
-    if (argc < 9)
+    if (argc < 8)
 	{
-		cout << "The Program takes 9 inputs, #Divisions, #Threads/block, deltat, finish time, output frequency..." << endl;
-        cout << "Classic/Swept, CPU sharing Y/N, Variable Output File, Timing Output File (optional)" << endl;
+		cout << "The Program takes 8 inputs, #Divisions, #Threads/block, deltat, finish time, output frequency..." << endl;
+        cout << "Algorithm type, Variable Output File, Timing Output File (optional)" << endl;
 		exit(-1);
 	}
     cout.precision(10);
+
 	// Choose the GPGPU.  This is device 0 in my machine which has 2 devices.
 	cudaSetDevice(0);
     if (sizeof(REAL)>6) cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
@@ -1053,8 +1073,7 @@ int main( int argc, char *argv[] )
     const double dt = atof(argv[3]);
 	const double tf = atof(argv[4]) - QUARTER*dt; //Finish time
     const double freq = atof(argv[5]);
-    const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
-    const int share = atoi(argv[7]);
+    const int scheme = atoi(argv[6]); //2 for Alternate, 1 for GPUShared, 0 for Classic
     const int bks = dv/tpb; //The number of blocks
     const double dx = lx/((REAL)dv-TWO);
     char const *prec;
@@ -1095,7 +1114,7 @@ int main( int argc, char *argv[] )
 
 	// Call out the file before the loop and write out the initial condition.
 	ofstream fwr;
-	fwr.open(argv[8],ios::trunc);
+	fwr.open(argv[7],ios::trunc);
     fwr.precision(10);
 
 	// Write out x length and then delta x and then delta t.
@@ -1130,11 +1149,12 @@ int main( int argc, char *argv[] )
 	cudaEventCreate( &stop );
 	cudaEventRecord( start, 0);
 
+    // Call the correct function with the correct algorithm.
     cout << scheme << " " ;
     double tfm;
     if (scheme)
     {
-        tfm = sweptWrapper(bks, tpb, dv, dt, tf, share, IC, T_final, freq, fwr);
+        tfm = sweptWrapper(bks, tpb, dv, dt, tf, scheme-1, IC, T_final, freq, fwr);
     }
     else
     {
@@ -1163,10 +1183,10 @@ int main( int argc, char *argv[] )
     cout << n_timesteps << " timesteps" << endl;
 	cout << "Averaged " << per_ts << " microseconds (us) per timestep" << endl;
 
-    if (argc>8)
+    if (argc>7)
     {
         ofstream ftime;
-        ftime.open(argv[9],ios::app);
+        ftime.open(argv[8],ios::app);
     	ftime << dv << "\t" << tpb << "\t" << per_ts << endl;
     	ftime.close();
     }

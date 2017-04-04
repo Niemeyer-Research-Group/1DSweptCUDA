@@ -43,7 +43,7 @@ def makeList(v):
 
 #Divisions and threads per block need to be lists (even singletons) at least.
 def runCUDA(Prog, divisions, threadsPerBlock, timeStep, finishTime, frequency, 
-    decomp, alternate, varfile='temp.dat', timefile=""):
+    decomp, varfile='temp.dat', timefile=""):
 
     threadsPerBlock = makeList(threadsPerBlock)
     divisions = makeList(divisions)
@@ -54,8 +54,8 @@ def runCUDA(Prog, divisions, threadsPerBlock, timeStep, finishTime, frequency,
             print "Algorithm #divs #tpb dt endTime"
             print decomp, dvs, tpb, timeStep, finishTime
 
-            execut = Prog +  ' {0} {1} {2} {3} {4} {5} {6} {7} {8}'.format(dvs, tpb, timeStep,
-                    finishTime, frequency, decomp, alternate, varfile, timefile)
+            execut = Prog +  ' {0} {1} {2} {3} {4} {5} {6} {7}'.format(dvs, tpb, timeStep,
+                    finishTime, frequency, decomp, varfile, timefile)
 
             exeStr = shlex.split(execut)
             proc = sp.Popen(exeStr)

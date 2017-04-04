@@ -494,6 +494,7 @@ classicWrapper(const int bks, int tpb, const int dv, const double dt, const doub
     classicHeat <<< bks,tpb >>> (dheat_out, dheat_in);
 
     double t_eq = t_fullstep;
+    cout << "Classic scheme" << endl;
 
     while (t_eq < t_end)
     {
@@ -552,10 +553,11 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
     double t_eq;
     double twrite = freq - 0.25*dt;
 
-	// Call the kernels until you reach the iteration limit.
+	// Call the kernels until you reach the final time.
 
     if (cpu)
     {
+        cout << "Hybrid Swept scheme" << endl;
         REAL *h_right, *h_left;
         REAL *tmpr = (REAL*)malloc(smem);
         cudaHostAlloc((void **) &h_right, tpb*sizeof(REAL), cudaHostAllocDefault);
@@ -649,6 +651,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 	}
     else
     {
+        cout << "GPU only Swept scheme" << endl;
         splitDiamond <<< bks, tpb, smem>>> (d0_right, d0_left, d2_right, d2_left);
         t_eq = t_fullstep;
 
@@ -701,10 +704,10 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 int main(int argc, char *argv[])
 {
     //That is: there are less than 8 arguments.
-    if (argc < 9)
+    if (argc < 8)
     {
     	cout << "The Program takes 9 inputs, #Divisions, #Threads/block, deltat, finish time, output frequency..." << endl;
-        cout << "Classic/Swept, CPU sharing Y/N, Variable Output File, Timing Output File (optional)" << endl;
+        cout << "Algorithm type, Variable Output File, Timing Output File (optional)" << endl;
     	exit(-1);
     }
 
@@ -718,8 +721,7 @@ int main(int argc, char *argv[])
     const double dt =  atof(argv[3]);
 	const double tf = atof(argv[4]) - 0.25*dt; //Finish time
     const double freq = atof(argv[5]);
-    const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
-    const int share = atoi(argv[7]);
+    const int scheme = atoi(argv[6]); //2 for Alternate, 1 for GPUShared, 0 for Classic
 	const int bks = dv/tpb; //The number of blocks
     const double lx = ds * ((double)dv - 1.0);
     double fou = th_diff*dt/(ds*ds);  //Fourier number
@@ -760,7 +762,7 @@ int main(int argc, char *argv[])
 
 	// Call out the file before the loop and write out the initial condition.
 	ofstream fwr;
-	fwr.open(argv[8], ios::trunc);
+	fwr.open(argv[7], ios::trunc);
     fwr.precision(10);
 
 	// Write out x length and then delta x and then delta t.
@@ -786,12 +788,10 @@ int main(int argc, char *argv[])
 	double tfm;
     if (scheme)
     {
-        cout << "Swept" << endl;
-        tfm = sweptWrapper(bks, tpb, dv, dt, tf, share, IC, T_final, freq, fwr);
+        tfm = sweptWrapper(bks, tpb, dv, dt, tf, scheme-1, IC, T_final, freq, fwr);
     }
     else
     {
-        cout << "Classic" << endl;
         tfm = classicWrapper(bks, tpb, dv, dt, tf, IC, T_final, freq, fwr);
     }
 
@@ -809,10 +809,10 @@ int main(int argc, char *argv[])
     cout << n_timesteps << " timesteps" << endl;
 	cout << "Averaged " << per_ts << " microseconds (us) per timestep" << endl;
 
-    if (argc>8)
+    if (argc>7)
     {
         ofstream ftime;
-        ftime.open(argv[9],ios::app);
+        ftime.open(argv[8],ios::app);
     	ftime << dv << "\t" << tpb << "\t" << per_ts << endl;
     	ftime.close();
     }

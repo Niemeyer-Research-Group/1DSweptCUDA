@@ -260,8 +260,7 @@ bks = 2**blkpow.get()
 dt = deltat.get() #timestep in seconds
 tf = t_final.get() #timestep in seconds
 freq = fq.get()
-swept = int(sw.get())
-cpu = int(proc_share.get())
+alg = int(sw.get()) + int(proc_share.get())
 
 SCHEME = [
     "Classic",
@@ -282,7 +281,7 @@ if runit.get():
 
     sp.call("make")
 
-    mh.runCUDA(ExecL, div, bks, dt, tf, freq, swept, cpu, Varfile)
+    mh.runCUDA(ExecL, div, bks, dt, tf, freq, alg Varfile)
     print div, bks
 
 road = rh.Solved(Varfile)
