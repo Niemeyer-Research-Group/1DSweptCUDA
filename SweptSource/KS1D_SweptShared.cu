@@ -27,6 +27,8 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 
 #include <iostream>
 #include <ostream>
+#include <algorithm>
+#include <iterator>
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
@@ -34,16 +36,16 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 
 
 #ifndef REAL
-#define REAL        float
-#define ONE         1.f
-#define TWO         2.f
-#define FOUR        4.f
-#define SIX			6.f
+	#define REAL        float
+	#define ONE         1.f
+	#define TWO         2.f
+	#define FOUR        4.f
+	#define SIX			6.f
 #else
-#define ONE         1.0
-#define TWO         2.0
-#define FOUR        4.0
-#define SIX			6.0
+	#define ONE         1.0
+	#define TWO         2.0
+	#define FOUR        4.0
+	#define SIX			6.0
 #endif
 
 using namespace std;
@@ -63,6 +65,12 @@ struct discConstants{
 };
 
 __constant__ discConstants disc;
+
+// Constants for register version.  Ends with R to distinguish.
+#define BASER            36
+#define HEIGHTR          18
+#define WARPSIZER        32
+#define TWOBASER         72
 
 //Initial condition.
 __host__
@@ -91,7 +99,7 @@ writeOutRight(REAL *temp, REAL *rights, REAL *lefts, int td, int gd, int bd)
 {
 	int gdskew = (gd + bd) & disc.idxend;
     int leftidx = (((td>>2) & 1)  * disc.base) + ((td>>2)<<1) + (td & 3) + 2;
-    int rightidx = (disc.base-6) + (((td>>2) & 1)  * disc.base) + (td & 3) - ((td>>2)<<1);
+    int rightidx = (disc.base - 6) + (((td>>2) & 1)  * disc.base) + (td & 3) - ((td>>2)<<1);
 	rights[gdskew] = temp[rightidx];
 	lefts[gd] = temp[leftidx];
 }
@@ -168,6 +176,22 @@ REAL finalStep(const REAL *u, int loc[5])
 {
 	return (-disc.dt * (convect(u[loc[1]], u[loc[3]]) + secondDer(u[loc[1]], u[loc[3]], u[loc[2]]) +
 		fourthDer(u[loc[0]], u[loc[1]], u[loc[2]], u[loc[3]], u[loc[4]])));
+}
+
+__device__
+__forceinline__
+REAL stutterStepRegister(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tRight, REAL tfarRight)
+{
+	return tCenter - disc.dt_half * (convect(tLeft, tRight) + secondDer(tLeft, tRight, tCenter) +
+		fourthDer(tfarLeft, tLeft, tCenter, tRight, tfarRight));
+}
+
+__device__
+__forceinline__
+REAL finalStepRegister(REAL tfarLeft, REAL tLeft, REAL tCenter, REAL tRight, REAL tfarRight)
+{
+	return (-disc.dt * (convect(tLeft, tRight) + secondDer(tLeft, tRight, tCenter) +
+			fourthDer(tfarLeft, tLeft, tCenter, tRight, tfarRight)));
 }
 
 //Classic
@@ -377,6 +401,205 @@ wholeDiamond(REAL *inRight, REAL *inLeft, REAL *outRight, REAL *outLeft, const b
 	}
 }
 
+__global__
+void
+upTriangleR(const REAL *IC, REAL *outRight, REAL *outLeft)
+{
+	extern __shared__ REAL temper[];
+
+	int gid = blockDim.x*blockIdx.x*blockDim.y + 
+		threadIdx.y*blockDim.x + threadIdx.x; //Global Thread ID
+
+	int wid = threadIdx.x; //Thread id in warp.
+    int wtag = threadIdx.y; //Warp id in block.
+	int wpos = wtag*TWOBASER; //Position for warp in shared array.
+    int widx = wpos + wid + 2; //Place to insert on bottom
+    int widTop = widx + BASER; //Place to insert on top.
+
+    REAL vel[2];
+    //Assign the initial values to the first row in temper, each block
+    //has it's own version of temper shared among its threads.
+	vel[0] = IC[gid];
+
+    vel[1] = stutterStepRegister(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
+        __shfl_down(vel[0],1),__shfl_down(vel[0],2));
+
+    temper[widx] = vel[0];
+    temper[widTop] = vel[1];
+
+	#pragma unroll
+	for(int k=4; k<(HEIGHTR-2); k+=4)
+	{
+		vel[0] += finalStepRegister(__shfl_up(vel[1],2), __shfl_up(vel[1],1), vel[1],
+        __shfl_down(vel[1],1), __shfl_down(vel[1],2));
+
+    	if (wid < (WARPSIZER - k) && wid >= k) temper[widx] = vel[0];
+
+		vel[1] = stutterStepRegister(__shfl_up(vel[0],2), __shfl_up(vel[0],1), vel[0],
+			__shfl_down(vel[0],1), __shfl_down(vel[0],2));
+
+		if (wid < (WARPSIZER - (k+2)) && wid >= (k+2)) temper[widTop] = vel[1];
+	}
+	__syncthreads();
+
+	writeOutRight(&temper[wpos], outRight, outLeft, wid, gid, WARPSIZER);
+}
+
+__global__
+void
+downTriangleR(REAL *IC, const REAL *inRight, const REAL *inLeft)
+{
+	extern __shared__ REAL temper[];
+
+	int gid = blockDim.x*blockIdx.x*blockDim.y + 
+		threadIdx.y*blockDim.x + threadIdx.x;
+
+	int wid = threadIdx.x;
+    int wtag = threadIdx.y; 
+	int wpos = wtag*TWOBASER;
+    int widx = wpos + wid + 2; 
+    int widTop = widx + BASER; 
+
+    REAL vel[2];
+
+    readIn(&temper[wpos], inRight, inLeft, wid, gid);  
+
+    //You can't template this the same way because all threads are required for the shuffling.
+    vel[0] = temper[widx];
+
+    __syncthreads();
+
+	#pragma unroll
+	for(int k=HEIGHTR; k>8; k-=4)
+	{
+		vel[1] = stutterStepRegister(__shfl_up(vel[0],2), __shfl_up(vel[0],1), vel[0],
+        	__shfl_down(vel[0],1), __shfl_down(vel[0],2));
+
+		if (wid < (k-4) || wid >= (BASER-k)) vel[1] = temper[widTop];
+
+		__syncthreads();
+
+		vel[0] += finalStepRegister(__shfl_up(vel[1],2), __shfl_up(vel[1],1), vel[1],
+        	__shfl_down(vel[1],1), __shfl_down(vel[1], 2));
+
+		if (wid < (k-6) || wid >= (BASER-(k-2))) vel[0] = temper[widx];
+
+		__syncthreads();
+	}
+
+	// 4 to 27
+	vel[1] = stutterStepRegister(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
+		__shfl_down(vel[0],1),__shfl_down(vel[0],2));
+
+	__syncthreads();
+
+	if (wid > 1 && wid < 30) temper[widTop] = vel[1];
+
+    __syncthreads();
+
+	vel[0] += finalStepRegister(temper[widTop-2],temper[widTop-1],temper[widTop],
+        temper[widTop+1],temper[widTop+2]);
+
+	__syncthreads();
+
+    IC[gid] = vel[0];
+}
+
+__global__
+void
+wholeDiamondR(REAL *inRight, REAL *inLeft, REAL *outRight, REAL *outLeft, const bool split)
+{
+	extern __shared__ REAL temper[];
+
+	int gid = blockDim.x*blockIdx.x*blockDim.y + 
+	threadIdx.y*blockDim.x + threadIdx.x;
+
+	int wid = threadIdx.x;
+    int wtag = threadIdx.y; 
+	int wpos = wtag*TWOBASER;
+    int widx = wpos + wid + 2; 
+    int widTop = widx + BASER; 
+
+    REAL vel[2];
+
+    readIn(&temper[wpos], inRight, inLeft, wid, gid);
+
+    //You can't template this the same way because all threads are required for the shuffling.
+    vel[0] = temper[widx];
+
+    __syncthreads();
+
+	#pragma unroll
+	for(int k=HEIGHTR; k>8; k-=4)
+	{
+		vel[1] = stutterStepRegister(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
+        	__shfl_down(vel[0],1),__shfl_down(vel[0],2));
+
+		if (wid < (k-4) || wid >= (BASER-k)) vel[1] = temper[widTop];
+
+		__syncthreads();
+
+		vel[0] += finalStepRegister(__shfl_up(vel[1],2),__shfl_up(vel[1],1),vel[1],
+        	__shfl_down(vel[1],1),__shfl_down(vel[1],2));
+
+		if (wid < (k-6) || wid >= (BASER-(k-2))) vel[0] = temper[widx];
+
+		__syncthreads();
+	}
+
+	// 4 to 27
+	vel[1] = stutterStepRegister(__shfl_up(vel[0],2), __shfl_up(vel[0],1), vel[0],
+		__shfl_down(vel[0],1), __shfl_down(vel[0],2));
+
+	__syncthreads();
+
+	if (wid > 1 && wid < 30) temper[widTop] = vel[1];
+
+    __syncthreads();
+
+	vel[0] += finalStepRegister(temper[widTop-2],temper[widTop-1],temper[widTop],
+        temper[widTop+1],temper[widTop+2]);
+
+    __syncthreads();
+
+    vel[1] = stutterStepRegister(__shfl_up(vel[0],2),__shfl_up(vel[0],1),vel[0],
+        __shfl_down(vel[0],1),__shfl_down(vel[0],2));
+
+	__syncthreads();
+
+    temper[widx] = vel[0];
+    temper[widTop] = vel[1];
+
+	__syncthreads();
+
+	#pragma unroll
+	for(int k=4; k<(HEIGHTR-2); k+=4)
+	{
+		vel[0] += finalStepRegister(__shfl_up(vel[1],2), __shfl_up(vel[1],1), vel[1],
+        __shfl_down(vel[1],1), __shfl_down(vel[1],2));
+
+    	if (wid < (WARPSIZER - k) && wid >= k) temper[widx] = vel[0];
+
+		vel[1] = stutterStepRegister(__shfl_up(vel[0],2), __shfl_up(vel[0],1), vel[0],
+			__shfl_down(vel[0],1), __shfl_down(vel[0],2));
+
+		if (wid < (WARPSIZER - (k+2)) && wid >= (k+2)) temper[widTop] = vel[1];
+	}
+
+	__syncthreads();
+
+    if (split)
+	{
+		writeOutLeft(&temper[wpos], outRight, outLeft, wid, gid, WARPSIZER);
+	}
+	else
+	{
+		writeOutRight(&temper[wpos], outRight, outLeft, wid, gid, WARPSIZER);
+	}
+
+}
+
+
 double
 classicWrapper(const int bks, int tpb, const int dv, const double dt, const double t_end,
     REAL *IC, REAL *T_f, const double freq, ofstream &fwr)
@@ -423,9 +646,26 @@ classicWrapper(const int bks, int tpb, const int dv, const double dt, const doub
     return t_eq;
 }
 
+void tests(REAL *d1, REAL *d2, int dv, REAL tl)
+{ 
+	int t = 0;
+
+	for(int k=0; k<dv; k++) t += (abs(d1[k] - d2[k]) > tl);
+
+	if (!t)
+	{
+		cout << "EQUAL!" << endl;
+	}
+	else
+	{
+		cout << "NOT EQUAL!" << endl;
+		cout << t << " out of " << dv << endl;
+	}
+}
+
 //The host routine.
 double
-sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double t_end, const int alt,
+sweptWrapper(int bks, int tpb, const int dv, const double dt, const double t_end, const int alt,
 	REAL *IC, REAL *T_f, const double freq, ofstream &fwr)
 {
 	REAL *d_IC, *d0_right, *d0_left, *d2_right, *d2_left;
@@ -441,59 +681,190 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 	//Start the counter and start the clock.
 
 	//Every other step is a full timestep and each cycle is half tpb steps.
-	const double t_fullstep = 0.25 * dt * (double)tpb;
+	double t_fullstep = 0.25 * dt * (double)tpb;
 	double twrite = freq - 0.25*dt;
 
-	const size_t smem = (2*tpb+8)*sizeof(REAL);
+	double t_eq;
 
-	upTriangle <<< bks,tpb,smem >>> (d_IC, d0_right, d0_left);
-
-	//Split
-	wholeDiamond <<< bks,tpb,smem >>> (d0_right, d0_left, d2_right, d2_left, true);
-
-	double t_eq = t_fullstep;
-	cout << "GPU only Swept scheme" << endl;
-
-	// Call the kernels until you reach the iteration limit.
-	while(t_eq < t_end)
+	//THIS IS A TEST!
+	if (alt>1)
 	{
+		REAL *d3_right, *d3_left, *d4_right, *d4_left;
+		cout << endl << "--- TEST IT ----" << endl << endl << endl;
+		cudaMalloc((void **)&d3_right, sizeof(REAL)*dv);
+		cudaMalloc((void **)&d3_left, sizeof(REAL)*dv);
+		cudaMalloc((void **)&d4_right, sizeof(REAL)*dv);
+		cudaMalloc((void **)&d4_left, sizeof(REAL)*dv);
+		tpb = 32;
+		bks = dv/tpb;
+		t_fullstep = 0.25 * dt * 32.0;
+		t_eq = t_fullstep;
+		const int wpb = tpb/WARPSIZER;
+		const size_t smem = (2*tpb + 8*wpb) * sizeof(REAL);
+		dim3 tpbm(WARPSIZER, wpb);
 
-		wholeDiamond <<< bks,tpb,smem >>> (d2_right, d2_left, d0_right, d0_left, false);
+// UP TEST
 
-		//So it always ends on a left pass since the down triangle is a right pass.
+		upTriangleR <<< bks, tpbm, smem >>> (d_IC, d0_right, d0_left);
+		upTriangle <<< bks, tpb, smem >>> (d_IC, d2_right, d2_left);
+		
+		cudaMemcpy(T_f, d0_right, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+		cudaMemcpy(IC, d2_right, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+		cudaDeviceSynchronize();
+
+		REAL tol = dt*dt*dt; 
+		cout << "Tolerance: " << tol << endl;
+		cout << "---- TEST RIGHT UP --------" << endl;
+		tests(T_f, IC, dv, tol);
+
+		cudaMemcpy(T_f, d0_left, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+		cudaMemcpy(IC, d2_left, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+		cudaDeviceSynchronize();
+
+		cout << "---- TEST LEFT UP --------" << endl;
+		tests(T_f, IC, dv, tol);
+
+// WHOLE TEST
+
+		wholeDiamondR <<< bks, tpbm, smem >>> (d0_right, d0_left, d3_right, d3_left, true);
+		wholeDiamond <<< bks, tpb, smem >>> (d2_right, d2_left, d4_right, d4_left, true);
+		
+		cudaMemcpy(T_f, d3_right, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+		cudaMemcpy(IC, d4_right, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+		cudaDeviceSynchronize();
+
+		cout << "---- TEST RIGHT WHOLE --------" << endl;
+		tests(T_f, IC, dv, tol);
+
+		cudaMemcpy(T_f, d3_left, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+		cudaMemcpy(IC, d4_left, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+		cudaDeviceSynchronize();
+
+		cout << "---- TEST LEFT WHOLE --------" << endl;
+		tests(T_f, IC, dv, tol);
+
+// DOWN TEST
+		downTriangleR <<< bks, tpbm, smem >>> (d0_left, d3_right, d3_left);
+		downTriangle <<< bks, tpb, smem >>> (d0_right, d3_right, d3_left);
+
+		cudaMemcpy(T_f, d0_left, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+		cudaMemcpy(IC, d0_right, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+		cudaDeviceSynchronize();
+
+		cout << "---- TEST DOWN --------" << endl;
+		tests(T_f, IC, dv, tol);
+
+		exit(-1);
+
+	}
+
+	if (alt)
+	{
+		t_fullstep = 0.25 * dt * 32.0;
+		t_eq = t_fullstep;
+		const int wpb = tpb/WARPSIZER;
+		const size_t smem = (2*tpb + 8*wpb) * sizeof(REAL);
+		dim3 tpb(WARPSIZER, wpb);
+
+		upTriangleR <<< bks, tpb, smem >>> (d_IC, d0_right, d0_left);
+
+		//Split
+		wholeDiamondR <<< bks, tpb, smem >>> (d0_right, d0_left, d2_right, d2_left, true);
+		cout << "GPU Register scheme" << endl;
+
+
+		// Call the kernels until you reach the iteration limit.
+		while(t_eq < t_end)
+		{;
+			wholeDiamondR <<< bks, tpb, smem >>> (d2_right, d2_left, d0_right, d0_left, false);
+
+			//So it always ends on a left pass since the down triangle is a right pass.
+
+			//Split
+			wholeDiamondR <<< bks, tpb, smem >>> (d0_right, d0_left, d2_right, d2_left, true);
+
+			t_eq += t_fullstep;
+
+			if (t_eq > twrite)
+			{
+				downTriangleR <<< bks, tpb, smem >>> (d_IC,d2_right,d2_left);
+
+				cout << t_eq << endl;
+
+				cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+
+				fwr << " Velocity " << t_eq << " ";
+
+				for (int k = 0; k<dv; k++)	fwr << T_f[k] << " ";
+
+				fwr << endl;
+
+				upTriangleR <<< bks, tpb, smem >>> (d_IC,d0_right,d0_left);
+
+				//Split
+				wholeDiamondR <<< bks, tpb, smem >>> (d0_right,d0_left,d2_right,d2_left,true);
+
+				t_eq += t_fullstep;
+
+				twrite += freq;
+			}
+		}
+
+		downTriangleR <<< bks, tpb, smem >>>(d_IC,d2_right,d2_left);
+	}
+	else
+	{
+		t_eq = t_fullstep;
+		const size_t smem = (2*tpb+8)*sizeof(REAL);
+
+		upTriangle <<< bks,tpb,smem >>> (d_IC, d0_right, d0_left);
 
 		//Split
 		wholeDiamond <<< bks,tpb,smem >>> (d0_right, d0_left, d2_right, d2_left, true);
 
-		t_eq += t_fullstep;
+		cout << "GPU only Swept scheme" << endl;
 
-	 	if (t_eq > twrite)
+		// Call the kernels until you reach the iteration limit.
+		while(t_eq < t_end)
 		{
-			downTriangle <<< bks,tpb,smem >>> (d_IC,d2_right,d2_left);
 
-			cout << t_eq << endl;
+			wholeDiamond <<< bks,tpb,smem >>> (d2_right, d2_left, d0_right, d0_left, false);
 
-			cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
-
-			fwr << " Velocity " << t_eq << " ";
-
-			for (int k = 0; k<dv; k++)	fwr << T_f[k] << " ";
-
-			fwr << endl;
-
-			upTriangle <<< bks,tpb,smem >>> (d_IC,d0_right,d0_left);
+			//So it always ends on a left pass since the down triangle is a right pass.
 
 			//Split
-			wholeDiamond <<< bks,tpb,smem >>> (d0_right,d0_left,d2_right,d2_left,true);
+			wholeDiamond <<< bks,tpb,smem >>> (d0_right, d0_left, d2_right, d2_left, true);
 
 			t_eq += t_fullstep;
 
-			twrite += freq;
+			if (t_eq > twrite)
+			{
+				downTriangle <<< bks,tpb,smem >>> (d_IC,d2_right,d2_left);
+
+				cout << t_eq << endl;
+
+				cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
+
+				fwr << " Velocity " << t_eq << " ";
+
+				for (int k = 0; k<dv; k++)	fwr << T_f[k] << " ";
+
+				fwr << endl;
+
+				upTriangle <<< bks,tpb,smem >>> (d_IC,d0_right,d0_left);
+
+				//Split
+				wholeDiamond <<< bks,tpb,smem >>> (d0_right,d0_left,d2_right,d2_left,true);
+
+				t_eq += t_fullstep;
+
+				twrite += freq;
+			}
 		}
+
+		downTriangle <<< bks,tpb,smem >>>(d_IC,d2_right,d2_left);
+
 	}
-
-	downTriangle <<< bks,tpb,smem >>>(d_IC,d2_right,d2_left);
-
 	cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
 
 	cudaFree(d_IC);
@@ -525,7 +896,7 @@ int main( int argc, char *argv[])
     const double dt = atof(argv[3]); //delta T timestep
 	const double tf = atof(argv[4]) - 0.25*dt; //Finish time
     const double freq = atof(argv[5]); //Output frequency
-    const int scheme = atoi(argv[6]); //1 for Swept 0 for classic
+    const int scheme = atoi(argv[6]); //2 for Alternative 1 for Swept 0 for classic
     const int bks = dv/tpb; //The number of blocks
 	const double lx = dv*dx;
 	char const *prec;
@@ -568,6 +939,13 @@ int main( int argc, char *argv[])
 		dv-1 //last global thread id
 	};
 	#endif
+
+	if (scheme > 1) 
+	{
+		dsc.base= BASER;
+		dsc.ht = HEIGHTR;
+	}
+
 	// Initialize arrays.
     REAL *IC, *T_final;
 
@@ -578,10 +956,7 @@ int main( int argc, char *argv[])
     // T_final = (REAL *) malloc(dv*sizeof(REAL));
 
 	// Inital condition
-	for (int k = 0; k<dv; k++)
-	{
-		IC[k] = initFun((REAL)k*(REAL)dx);
-	}
+	for (int k = 0; k<dv; k++) IC[k] = initFun((REAL)k*(REAL)dx);
 
 	// Call out the file before the loop and write out the initial condition.
 	ofstream fwr;
@@ -623,11 +998,19 @@ int main( int argc, char *argv[])
 	cudaEventSynchronize(stop);
 	cudaEventElapsedTime( &timed, start, stop);
 
+    cudaError_t error = cudaGetLastError();
+    if(error != cudaSuccess)
+    {
+        // print the CUDA error message and exit
+        printf("CUDA error: %s\n", cudaGetErrorString(error));
+        exit(-1);
+    }
+
 	timed *= 1.e3;
 
-	double n_timesteps = tfm/dt;
+	int n_timesteps = tfm/dt;
 
-    double per_ts = timed/n_timesteps;
+    double per_ts = timed/(double)n_timesteps;
 
     cout << n_timesteps << " timesteps" << endl;
 	cout << "Averaged " << per_ts << " microseconds (us) per timestep" << endl;

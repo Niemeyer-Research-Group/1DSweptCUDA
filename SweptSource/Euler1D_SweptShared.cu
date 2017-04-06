@@ -320,7 +320,7 @@ eulerStutterStep(REALthree *state, int tr, char flagLeft, char flagRight)
     //Pr0 = PL/PLL*rho0/rho2  Pr0 is not -, 0, or nan.
     REALthree tempStateLeft = (!pLL || !pL || (pLL < 0 != pL <0)) ? state[tr-1] : limitor(state[tr-1], state[tr], (state[tr-2].x*pL/(state[tr].x*pLL)));
     //Pr1 = PR/PL*rho1/rho3  Pr1 is not - or nan, pass Pr1^-1.
-    REALthree tRmpStateRight = (!pL || !pR || (pL < 0 != pR <0)) ? state[tr] : limitor(state[tr], state[tr-1], (state[tr+1].x*pL/(state[tr-1].x*pR)));
+    REALthree tempStateRight = (!pL || !pR || (pL < 0 != pR <0)) ? state[tr] : limitor(state[tr], state[tr-1], (state[tr+1].x*pL/(state[tr-1].x*pR)));
 
     //Pressure needs to be recalculated for the new limited state variables.
     REALthree flux = eulerFlux(tempStateLeft,tempStateRight);

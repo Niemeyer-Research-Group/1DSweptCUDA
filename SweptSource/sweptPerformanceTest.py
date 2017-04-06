@@ -74,9 +74,6 @@ if len(sys.argv) < 2:
     dropframe.pack()
     endframe.pack(side='bottom')
     entryframe.pack(side='bottom')
-    errframe.pack(side='top')
-    errlbl = ttk.Label(errframe, text="There is no CPU share scheme for the KS equation")
-    errlbl.pack()
     master.title("Swept Rule 1-D GPU performance test")
 
     problem = Tk.StringVar(master)
@@ -121,16 +118,6 @@ if len(sys.argv) < 2:
     def on_closing():
         raise SystemExit
 
-    def reset_vals(p):
-        if OPTIONS.index(problem.get()) == 2 and SCHEME.index(alg.get()) == 2:
-            errframe.pack(side='top')
-        else:
-            try:
-                errframe.pack_forget()
-            except:
-                pass
-
-
     def reset_label(event):
         res_one.config(text=str(2**divpow.get()))
         res_three.config(text=str(2**divpowend.get()))
@@ -146,15 +133,15 @@ if len(sys.argv) < 2:
     div_one = Tk.Entry(entryframe, textvariable=divpow)
     div_one.grid(row = 1, column = 1)
 
-    Tk.Label(entryframe, text= "Threads per block: 2^").grid(row=3, column = 0)
+    Tk.Label(entryframe, text="Threads per block: 2^").grid(row=3, column = 0)
     blk_one = Tk.Entry(entryframe, textvariable=blkpow)
     blk_one.grid(row = 3, column = 1)
 
-    Tk.Label(entryframe, text= " to: 2^").grid(row=1, column = 2)
+    Tk.Label(entryframe, text=" to: 2^").grid(row=1, column = 2)
     div_two = Tk.Entry(entryframe, textvariable=divpowend)
     div_two.grid(row = 1, column = 3)
 
-    Tk.Label(entryframe, text= " to: 2^").grid(row=3, column = 2)
+    Tk.Label(entryframe, text=" to: 2^").grid(row=3, column = 2)
     blk_two = Tk.Entry(entryframe, textvariable=blkpowend)
     blk_two.grid(row = 3, column = 3)
 
@@ -171,17 +158,17 @@ if len(sys.argv) < 2:
     res_four = Tk.Label(entryframe, text = str(2**blkpowend.get()))
     res_four.grid(row = 4, column = 3)
 
-    master.bind_class("Entry","<FocusOut>", reset_label)
+    master.bind_class("Entry", "<FocusOut>", reset_label)
 
     button_send = Tk.Button(endframe, text="OK", command=ok)
     button_send.grid(row = 0, column = 0)
     button_sk = Tk.Button(endframe, text="REPLOT W/O RUNNING", command=replot)
     button_sk.grid(row = 0, column = 1)
 
-    problem_menu = Tk.OptionMenu(dropframe, problem, *OPTIONS, command=reset_vals)
+    problem_menu = Tk.OptionMenu(dropframe, problem, *OPTIONS)
     problem_menu.grid(row=0, column=0)
 
-    alg_menu = Tk.OptionMenu(dropframe, alg, *SCHEME, command=reset_vals)
+    alg_menu = Tk.OptionMenu(dropframe, alg, *SCHEME)
     alg_menu.grid(row=0, column=1)
 
     reset_vals(alg.get())
@@ -216,7 +203,8 @@ else:
 
 prob_idx = OPTIONS.index(fname)
 
-swept = int(bool(schsym))
+if sch == "Hybrid" and fname == "KS":
+    sch = "Register"
 
 div = [2**k for k in range(dv1, dv2+1)]
 blx = [2**k for k in range(bk1, bk2+1)]
@@ -260,4 +248,4 @@ mh.runCUDA(ExecL, div, blx, dt, tf, tf*2.0, algs, Varfile, timepath)
 print div, blx
 
 myFrame = mh.Perform(timepath)
-myFrame.plotframe(plotpath, false)
+myFrame.plotframe(plotpath, False)

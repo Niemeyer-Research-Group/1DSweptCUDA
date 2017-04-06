@@ -15,8 +15,6 @@ tt = time.time()
 for opt in OPTIONS:
     for pr in PRECISION:
         for sch in range(3):
-                if opt == OPTIONS[-1] and sch == 2:
-                    break
                 execstr = execut + '{0} {1} {2} {3} {4} {5} {6} {7}'.format(opt, pr, sch, bnd[0], bnd[1], bnd[2], bnd[3], st)
                 exeStr = shlex.split(execstr)
                 proc = sp.Popen(exeStr)

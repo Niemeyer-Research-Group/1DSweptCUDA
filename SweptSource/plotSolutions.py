@@ -183,7 +183,7 @@ master.protocol("WM_DELETE_WINDOW", on_closing)
 master.bind('<Return>', ret)
 
 check_one = Tk.Checkbutton(entryframe, text="Swept Scheme ", variable=sw)
-check_two = Tk.Checkbutton(entryframe, text="CPU/GPU sharing ", variable=proc_share)
+check_two = Tk.Checkbutton(entryframe, text="Alternative Swept ", variable=proc_share)
 check_three = Tk.Checkbutton(entryframe, text="Double Precision ", variable=prec)
 
 check_one.grid(row = 9, column = 0)
@@ -247,7 +247,7 @@ Varfile = op.join(rsltpath, typename + "_Result.dat")
 respath = op.join(gitpath,'ResultPlots')
 pltpath = op.join(respath,'SimResults')
 gifpath = op.join(respath,'Gifs')
-giffile = op.join(gifpath,typename+".gif")
+giffile = op.join(gifpath, typename + ".gif")
 temppath = op.join(gifpath,"Temp")
 
 if not op.isdir(temppath):
@@ -264,11 +264,11 @@ alg = int(sw.get()) + int(proc_share.get())
 
 SCHEME = [
     "Classic",
-    "SweptGPU",
-    "SweptCPUshare"
+    "GPUShared",
+    "Alternative"
 ]
 
-sch = SCHEME[swept+cpu]
+sch = SCHEME[alg]
 timestr = Fname + " " + sch
 
 if runit.get():
@@ -281,7 +281,7 @@ if runit.get():
 
     sp.call("make")
 
-    mh.runCUDA(ExecL, div, bks, dt, tf, freq, alg Varfile)
+    mh.runCUDA(ExecL, div, bks, dt, tf, freq, alg, Varfile)
     print div, bks
 
 road = rh.Solved(Varfile)
@@ -294,8 +294,9 @@ else:
 
 road.plotResult(fh, a)
 road.annotatePlot(fh,a)
-road.savePlot(fh, pltpath)
 plt.show()
+road.savePlot(fh, pltpath)
+
 
 
 # f = open(Varfile)
