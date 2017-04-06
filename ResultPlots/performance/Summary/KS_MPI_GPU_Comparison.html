@@ -2,15 +2,19 @@
   <thead>
     <tr style="text-align: right;">
       <th></th>
-      <th>MPIClassic</th>
-      <th>MPISwept</th>
-      <th>(Double, Classic)</th>
-      <th>(Double, SweptGPU)</th>
-      <th>(Single, Classic)</th>
-      <th>(Single, SweptGPU)</th>
+      <th>ClassicMPI</th>
+      <th>SweptMPI</th>
+      <th>(Double, ClassicGPU)</th>
+      <th>(Double, Register)</th>
+      <th>(Double, SharedGPU)</th>
+      <th>(Single, ClassicGPU)</th>
+      <th>(Single, Register)</th>
+      <th>(Single, SharedGPU)</th>
     </tr>
     <tr>
       <th>Num Spatial Points</th>
+      <th></th>
+      <th></th>
       <th></th>
       <th></th>
       <th></th>
@@ -24,91 +28,111 @@
       <th>2048</th>
       <td>47.6821</td>
       <td>14.0166</td>
-      <td>9.87357</td>
-      <td>1.52681</td>
-      <td>9.70871</td>
-      <td>1.40482</td>
+      <td>9.88064</td>
+      <td>2.25905</td>
+      <td>1.53485</td>
+      <td>9.74634</td>
+      <td>1.97317</td>
+      <td>1.41140</td>
     </tr>
     <tr>
       <th>4096</th>
       <td>94.6542</td>
       <td>40.8924</td>
-      <td>10.07960</td>
-      <td>1.62004</td>
-      <td>9.82299</td>
-      <td>1.51022</td>
+      <td>10.10710</td>
+      <td>2.47858</td>
+      <td>1.62762</td>
+      <td>9.85218</td>
+      <td>2.04718</td>
+      <td>1.51676</td>
     </tr>
     <tr>
       <th>8192</th>
       <td>173.1690</td>
       <td>82.1522</td>
-      <td>10.42570</td>
-      <td>1.99456</td>
-      <td>10.07430</td>
-      <td>1.77463</td>
+      <td>10.42680</td>
+      <td>3.06023</td>
+      <td>2.00128</td>
+      <td>10.09010</td>
+      <td>2.28601</td>
+      <td>1.78547</td>
     </tr>
     <tr>
       <th>16384</th>
       <td>339.9170</td>
       <td>110.1630</td>
-      <td>11.23600</td>
-      <td>2.55028</td>
-      <td>10.64890</td>
-      <td>2.27627</td>
+      <td>11.22740</td>
+      <td>4.28064</td>
+      <td>2.56316</td>
+      <td>10.68960</td>
+      <td>3.02778</td>
+      <td>2.28506</td>
     </tr>
     <tr>
       <th>32768</th>
       <td>760.3690</td>
       <td>350.2000</td>
-      <td>13.54640</td>
-      <td>4.37315</td>
-      <td>12.88820</td>
-      <td>3.78365</td>
+      <td>13.53870</td>
+      <td>6.76837</td>
+      <td>4.38936</td>
+      <td>12.91820</td>
+      <td>4.36866</td>
+      <td>3.79700</td>
     </tr>
     <tr>
       <th>65536</th>
       <td>1355.6400</td>
       <td>751.1170</td>
-      <td>17.69970</td>
-      <td>7.52921</td>
-      <td>16.20990</td>
-      <td>6.36549</td>
+      <td>17.69760</td>
+      <td>11.79590</td>
+      <td>7.55321</td>
+      <td>16.20670</td>
+      <td>6.98866</td>
+      <td>6.37750</td>
     </tr>
     <tr>
       <th>131072</th>
       <td>2701.8700</td>
       <td>969.3350</td>
-      <td>36.90270</td>
-      <td>13.91960</td>
-      <td>23.36470</td>
-      <td>11.62670</td>
+      <td>36.89160</td>
+      <td>21.67910</td>
+      <td>13.96410</td>
+      <td>23.33810</td>
+      <td>12.50230</td>
+      <td>11.64490</td>
     </tr>
     <tr>
       <th>262144</th>
       <td>5449.2400</td>
       <td>7885.2100</td>
-      <td>63.96140</td>
-      <td>26.49280</td>
-      <td>43.61870</td>
-      <td>22.07790</td>
+      <td>63.95170</td>
+      <td>41.06540</td>
+      <td>26.54950</td>
+      <td>43.62220</td>
+      <td>23.06610</td>
+      <td>22.10780</td>
     </tr>
     <tr>
       <th>524288</th>
       <td>11042.7000</td>
       <td>15386.6000</td>
-      <td>118.75000</td>
-      <td>51.69480</td>
-      <td>76.94900</td>
-      <td>43.00670</td>
+      <td>118.76300</td>
+      <td>79.93260</td>
+      <td>51.73060</td>
+      <td>76.92530</td>
+      <td>43.98680</td>
+      <td>43.04020</td>
     </tr>
     <tr>
       <th>1048576</th>
       <td>21891.5000</td>
       <td>27992.2000</td>
-      <td>227.77400</td>
-      <td>102.04400</td>
-      <td>142.58000</td>
-      <td>84.82640</td>
+      <td>227.78700</td>
+      <td>157.43400</td>
+      <td>102.09200</td>
+      <td>142.56800</td>
+      <td>85.92690</td>
+      <td>84.88830</td>
     </tr>
   </tbody>
 </table>

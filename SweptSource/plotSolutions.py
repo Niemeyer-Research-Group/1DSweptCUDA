@@ -247,7 +247,6 @@ Varfile = op.join(rsltpath, typename + "_Result.dat")
 respath = op.join(gitpath,'ResultPlots')
 pltpath = op.join(respath,'SimResults')
 gifpath = op.join(respath,'Gifs')
-giffile = op.join(gifpath, typename + ".gif")
 temppath = op.join(gifpath,"Temp")
 
 if not op.isdir(temppath):
@@ -286,195 +285,17 @@ if runit.get():
 
 road = rh.Solved(Varfile)
 tst = "Euler" in Varfile
+
 if tst:
     fh, a = plt.subplots(2, 2, figsize=(11,7))
     a = a.ravel()
 else:
     fh, a = plt.subplots(1, 1, figsize=(11,7))
 
-road.plotResult(fh, a)
-road.annotatePlot(fh,a)
-plt.show()
-road.savePlot(fh, pltpath)
-
-
-
-# f = open(Varfile)
-# fin = tuple(f)
-# ar = [float(n) for n in fin[0].split()]
-# xax = np.linspace(0,ar[0],ar[1])
-# ed = ar[0]
-
-# dMain = []
-
-# for p in range(1,len(fin)):
-#     ar = fin[p].split()
-#     dMain.append([ar[0]] + [float(n) for n in ar[1:]])
-
-# mx = max(dMain[0][1:])
-# mxx = mx/10.0
-# if mxx < 3:
-#     mxx = 3
-
-# mxxx = mx + mxx
-# f.close()
-
-
-# simF = pd.DataFrame(dMain)
-# simF = simF.set_index(0)
-# typ = simF.index.get_level_values(0).unique()
-# cross = simF.xs( typ[0] )
-
-# cnt = len(cross.index)
-
-# if "city" in typ[0]:
-#     lw = 2
-# else:
-#     lw = 4
-
-# plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors))
-
-# if cnt < 6:
-
-#     #If it's not euler
-
-#     if len(typ) < 2:
-
-#         fig, ax = plt.subplots(figsize=(8.,6.))
-
-#         df_sim = cross.set_index(1)
-#         df_sim.columns = xax
-#         df_sim = df_sim.transpose()
-#         cl = df_sim.columns.values.tolist()
-#         df_sim.reset_index(inplace=True)
-
-#         ax.set_title(typename + ' | {0} spatial points     '.format(int(div)), fontsize="medium")
-#         ax.hold(True)
-#         ax.grid(alpha=0.5)
-#         ax.set_xlabel("Spatial point")
-#         ax.set_ylabel(typ[0])
-#         ax.set_ylim([-5,mxxx])
-#         ax.set_xlim([0,ed])
-
-#         for tfs in cl:
-#             ax.plot(df_sim['index'], df_sim[tfs], label="{:.3f} (s)".format(tfs), linewidth=lw)
-
-#         plt.tight_layout()
-#         ax.legend()
-#         plt.show()
-
-#     else:
-
-#         fig, ax = plt.subplots(2, 2 ,figsize=(14.,8.))
-#         ax = ax.ravel()
-#         plt.suptitle(typename + ' | {0} spatial points   '.format(int(div)), fontsize="medium")
-
-#         for i, ty in enumerate(typ):
-#             df_sim = simF.xs(ty)
-#             df_sim = df_sim.set_index(1)
-#             df_sim.columns = xax
-#             df_sim = df_sim.transpose()
-#             cl = df_sim.columns.values.tolist()
-#             df_sim.reset_index(inplace=True)
-
-#             ax[i].hold(True)
-#             ax[i].set_title(ty, fontsize="medium")
-#             ax[i].grid(alpha=0.5)
-#             ax[i].set_xlabel("Spatial point")
-#             ax[i].set_title(ty)
-
-#             for tfs in cl:
-#                 ax[i].plot(df_sim['index'], df_sim[tfs], label="{:.3f} (s)".format(tfs), linewidth=2)
-
-#         hand, lbl = ax[0].get_legend_handles_labels()
-#         fig.legend(hand, lbl, 'upper right', fontsize="medium")
-        # plt.tight_layout(pad=0.2, w_pad=0.75, h_pad=1.5)
-        # plt.subplots_adjust(bottom=0.08, right=0.82, top=0.92)
-#         plt.show()
-
-# else:
-#     print "Making GIF"
-#     os.chdir(temppath)
-#     #If it's not euler
-#     if len(typ) == 1:
-
-#         df_sim = cross.set_index(1)
-#         df_sim.columns = xax
-#         df_sim = df_sim.transpose()
-#         cl = df_sim.columns.values.tolist()
-#         df_sim.reset_index(inplace=True)
-
-
-#         fig, ax = plt.subplots(figsize=(8.,6.))
-#         plt.hold(False)
-#         fig.suptitle(typename + ' | {0} spatial points   '.format(int(div)), fontweight='bold')
-
-#         fig.subplots_adjust(top=0.85)
-
-#         for k,tfs in enumerate(cl):
-
-#             ax.plot(df_sim['index'], df_sim[tfs], linewidth=lw)
-
-#             ax.set_title("{:.2f} (s)".format(tfs))
-#             ax.set_xlabel("Spatial point")
-#             ax.grid(alpha=0.5)
-#             ax.set_ylabel(typ[0])
-#             ax.set_ylim([-3,mxxx])
-#             ax.set_xlim([0,ed])
-
-#             plt.savefig("frame"+str(k))
-
-#     else:
-
-#         simF.reset_index(inplace=True)
-#         tfidx = simF[1].unique()
-#         df_sim = simF.set_index(1)
-
-#         fig, ax = plt.subplots(2, 2 ,figsize=(14.,8.))
-#         ax = ax.ravel()
-#         fig.suptitle(typename + ' | {0} spatial points   '.format(int(div)), fontweight='bold')
-
-#         for k,tf in enumerate(tfidx):
-#             df_simz = df_sim.xs( tf )
-#             df_simz = df_simz.set_index(0)
-#             df_simz.columns = xax[:]
-#             df_simz = df_simz.transpose()
-
-#             cl = df_simz.columns.values.tolist()
-#             df_simz.reset_index(inplace=True)
-
-#             txt = fig.text(.85, .85, "{:.2e} s ".format(tf), bbox={'facecolor':'white'})
-
-#             for i, state in enumerate(cl):
-#                 ax[i].plot(df_simz['index'], df_simz[state], linewidth=2)
-#                 ax[i].hold(False)
-#                 ax[i].grid(alpha=0.5)
-#                 ax[i].set_xlabel("Spatial point")
-#                 ax[i].set_title(state)
-#                 if 'ergy' in state:
-#                     ax[i].set_ylim([1.5,3.5])
-#                 else:
-#                     ax[i].set_ylim([0.0,1.1])
-
-#                 plt.tight_layout(pad=0.2, w_pad=0.75, h_pad=1.5)
-#                 plt.subplots_adjust(bottom=0.08, right=0.82, top=0.92)
-
-#             plt.savefig("frame"+str(k))
-#             txt.remove()
-
-#     st = 'linux'
-#     if st in sys.platform:
-#         try:
-#             sp.call(['ffmpeg', '-i', 'frame%d.png', '-r', '4', avifile])
-#             sp.call(['ffmpeg', '-i', avifile, giffile])
-#         except:
-#             print '------------------'
-#             print 'Install ffmpeg with: sudo apt-get install ffmpeg'
-#             raise SystemExit
-
-#         f = os.listdir(".")
-#         for fm in f:
-#             os.remove(fm)
-#     else:
-#         print '------------------'
-#         print 'This script only makes gifs on linux with ffmpeg.  The images are still in the folder under ResultPlots/Gifs/Temp.'
+if road.tFinal.size > 10:
+    road.plotResult(fh, a)
+    road.annotatePlot(fh,a)
+    plt.show()
+    road.savePlot(fh, pltpath)
+else:
+    road.gifify(gifpath, fh, a)

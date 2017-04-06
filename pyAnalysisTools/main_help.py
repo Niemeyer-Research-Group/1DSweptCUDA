@@ -1,4 +1,7 @@
-'''Docstring'''
+'''
+    Python Classes and functions for running the cuda programs and 
+    parsing/plotting the performance data. 
+'''
 
 import os
 import os.path as op

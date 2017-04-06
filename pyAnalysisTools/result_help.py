@@ -1,5 +1,7 @@
+'''
+    Classes and functions for plotting the actual results of the simulations.
 
-'''Docstring'''
+'''
 
 import numpy as np
 import os
@@ -17,12 +19,12 @@ mpl.rcParams['lines.linewidth'] = 3
 mpl.rcParams["grid.alpha"] = 0.5
 mpl.rcParams["axes.grid"] = True
 
-#So you need to make the actual figure in the script and pick apart the axes.          
+          
 
 class Solved(object):
-    
-    ext = '.pdf'
+   
     def __init__(self, vFile):
+        self.ext = '.pdf'
         dataTuple = tuple(open(vFile))
         strdimz = dataTuple[0].split()
         self.datafilename = op.splitext(op.basename(vFile))[0]
@@ -31,6 +33,7 @@ class Solved(object):
         self.vals = np.genfromtxt(dataTuple, skip_header=1)[:,2:]
         self.varNames = np.genfromtxt(dataTuple, skip_header=1, dtype='string')[:,0]
         self.tFinal = np.around(np.genfromtxt(dataTuple, skip_header=1)[:,1], decimals=7)
+        self.utFinal = np.unique(self.tFinal)
         self.plotTitles = np.unique(self.varNames)
         self.plotname = self.datafilename.split("_")[0]
         self.subpl = "Euler" in self.plotname
@@ -45,18 +48,14 @@ class Solved(object):
 
         return stripped
         
-    def plotResult(self, fhandle, axhandle):
-       
-        if np.unique(self.tFinal.size)>10:
-            return self.gifify(self, plotpath)         
+    def plotResult(self, fh, ax):      
         
         if not self.subpl:
             for i, t in enumerate(self.tFinal):       
-                axhandle.plot(self.xGrid, self.vals[i,:], label="{:.3f} (s)".format(t))
+                ax.plot(self.xGrid, self.vals[i,:], label="{:.3f} (s)".format(t))
                 
-        else:
-                        
-            for axi, nm in zip(axhandle, self.plotTitles):
+        else:          
+            for axi, nm in zip(ax, self.plotTitles):
                 idx = np.where(self.varNames == nm)
                 vn = self.vals[idx, :].T
                 tn = self.tFinal[idx]
@@ -64,14 +63,14 @@ class Solved(object):
                     axi.plot(self.xGrid, vn[:,i], label="{:.3f} (s)".format(tL))
 
 
-    def annotatePlot(self, fh, axh):
+    def annotatePlot(self, fh, ax):
 
         if not self.subpl:
 
-            axh.set_ylabel(self.plotTitles[0])
-            axh.set_xlabel('Spatial point')
-            axh.set_title(self.plotname + " {0} spatial points".format(self.numpts))
-            hand, lbl = axh.get_legend_handles_labels()
+            ax.set_ylabel(self.plotTitles[0])
+            ax.set_xlabel('Spatial point')
+            ax.set_title(self.plotname + " {0} spatial points".format(self.numpts))
+            hand, lbl = ax.get_legend_handles_labels()
             fh.legend(hand, lbl, loc='upper right', fontsize="medium")
         
         else:
@@ -79,10 +78,10 @@ class Solved(object):
                 ' | {0} spatial points   '.format(self.numpts), 
                 fontsize="large", fontweight='bold')
 
-            for axi, nm in zip(axh, self.plotTitles):
+            for axi, nm in zip(ax, self.plotTitles):
                 axi.set_title(nm)
                 
-            hand, lbl = axh[0].get_legend_handles_labels()
+            hand, lbl = ax[0].get_legend_handles_labels()
             fh.legend(hand, lbl, loc='upper right', fontsize="medium")
 
             fh.subplots_adjust(bottom=0.08, right=0.85, top=0.9, 
@@ -93,7 +92,68 @@ class Solved(object):
         plotfile = op.join(plotpath, self.plotname + self.ext)
         fh.savefig(plotfile, dpi=1000, bbox_inches="tight")
 
-    def gifify(self, plotpath):
-        #plotfile = op.join(plotpath, self.plotname + self.ext)
-        pass
+    def gifify(self, plotpath, fh, ax):
+
+        self.ext = '.png'
+        ppath = op.join(plotpath, 'temp')
+        os.chdir(temppath)
+        giffile = op.join(plotpath, self.plotname + '.gif')
+        pfn = "V_"
+
+        if not self.subpl:
+            for i, t in enumerate(self.tFinal):       
+                ax.plot(self.xGrid, self.vals[i,:])
+                self.plotname = pfn + str(i)
+                ax.set_ylabel(self.plotTitles[0])
+                ax.set_xlabel('Spatial point')
+                ax.set_title(self.plotname + " {0} spatial points : t = {1}".format(self.numpts, t))
+                self.savePlot(fh, ppath)
+                ax.clear()
+                
+        else:
+            for i, t in enumerate(self.utFinal):
+                idx = np.where(self.tFinal == t)
+                v = self.vals[idx, :]
+                nom = self.varNames[idx]       
+                for axi, nm in zip(ax, self.plotTitles):
+                    idx = np.where(nom == nm)
+                    vn = v[idx, :].T
+                    
+                    axi.plot(self.xGrid, vn)
+
+                self.plotname = pfn + str(i)
+                ax.set_ylabel(self.plotTitles[0])
+                ax.set_xlabel('Spatial point')
+                ax.set_title(self.plotname + " {0} spatial points : t = {1}".format(self.numpts, t))
+                self.savePlot(fh, ppath)
+
+                for a in ax:
+                    a.clear()
+
+            st = 'linux'
+            if st in sys.platform:
+                try:
+                    sp.call(['ffmpeg', '-i', '%d.png', '-r', '4', avifile])
+                    sp.call(['ffmpeg', '-i', avifile, giffile])
+                except:
+                    print '------------------'
+                    print 'Install ffmpeg with: sudo apt-get install ffmpeg'
+                    f = os.listdir(".")
+                    for fm in f:
+                        os.remove(fm)
+                        
+                    raise SystemExit
+
+                f = os.listdir(".")
+                for fm in f:
+                    os.remove(fm)
+            else:
+                print '------------------'
+                print 'This script only makes gifs on linux with ffmpeg.  The images are still in the folder under ResultPlots/Gifs/Temp.'
+        
+
+        
+
+
+        
         

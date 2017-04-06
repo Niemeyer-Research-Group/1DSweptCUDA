@@ -45,8 +45,8 @@ if not op.isdir(plotpath):
 
 if readin:
     vers = zip(range(len(storage.keys())), storage.keys())
-    print vers
-    choice = int(raw_input("Choose version by index:"))
+    print(vers)
+    choice = int(input("Choose version by index:"))
     df_result = storage[storage.keys()[choice]]
     midx_name = df_result.index.names
     headers = df_result.columns.values.tolist()
@@ -54,7 +54,7 @@ if readin:
 else:
     files = []
     for fl in os.listdir(thispath):
-        if fl.endswith(".txt"):
+        if fl.count("_") == 3:
             files.append(fl)
 
     files = sorted(files)
@@ -166,8 +166,6 @@ for prob in probs:
 
         cnt += 1
 
-
-
     lg = ax[0].legend()
     lg.remove()
     fig.subplots_adjust(bottom=0.08, right=0.82, top=0.9)
@@ -219,7 +217,6 @@ plotfile = op.join(plotpath, "Speedups.pdf")
 if savepl:
     fig.savefig(plotfile, bbox_inches='tight')
 
-
 #Plot MPI version results vs CUDA for KS.
 fig, ax = plt.subplots(1, 1, figsize=(14, 8))
 dfM = pd.read_csv("KS_MPI.csv")
@@ -244,15 +241,11 @@ dfKS.to_html(tblMPI)
 plotfile = op.join(plotpath, "KS_MPI_GPU_Comparison.pdf")
 if savepl:
     fig.savefig(plotfile, bbox_inches='tight')
-ax.grid(alpha=0.5)
-
-tblMPI = op.join(plotpath, "KS_MPI_GPU_Comparison.html")
-dfKS.to_html(tblMPI)
 
 if writeout:
     df_result.to_html(tablefile)
     if thisday in storage.keys():
-        fl = raw_input("You've already written to the hd5 today.  Overwrite? [y/n]")
+        fl = input("You've already written to the hd5 today.  Overwrite? [y/n]")
         if "n" in fl:
             sys.exit(1)
 
