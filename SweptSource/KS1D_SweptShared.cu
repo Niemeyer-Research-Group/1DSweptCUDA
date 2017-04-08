@@ -1,20 +1,9 @@
-/* This file is the current iteration of research being done to implement the
-swept rule for Partial differential equations in one discion.  This research
-is a collaborative effort between teams at MIT, Oregon State University, and
-Purdue University.
-
-Copyright (C) 2015 Kyle Niemeyer, niemeyek@oregonstate.edu AND
-Daniel Magee, mageed@oregonstate.edu
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the MIT license.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-
-You should have received a copy of the MIT license
-along with this program.  If not, see <https://opensource.org/licenses/MIT>.
+/* 
+    Copyright (C) 2017 Kyle Niemeyer, niemeyek@oregonstate.edu AND
+    Daniel Magee, mageed@oregonstate.edu
+*/
+/*
+    This file is distribued under the MIT License.  See LICENSE at top level of directory or: <https://opensource.org/licenses/MIT>.
 */
 
 //COMPILE LINE!
@@ -33,7 +22,6 @@ along with this program.  If not, see <https://opensource.org/licenses/MIT>.
 #include <cstdlib>
 #include <cmath>
 #include <fstream>
-
 
 #ifndef REAL
 	#define REAL        float
@@ -665,8 +653,8 @@ void tests(REAL *d1, REAL *d2, int dv, REAL tl)
 
 //The host routine.
 double
-sweptWrapper(int bks, int tpb, const int dv, const double dt, const double t_end, const int alt,
-	REAL *IC, REAL *T_f, const double freq, ofstream &fwr)
+sweptWrapper(int bks, int tpb, const int dv, const double dt, const double t_end, const int alt, 
+REAL *IC, REAL *T_f, const double freq, ofstream &fwr)
 {
 	REAL *d_IC, *d0_right, *d0_left, *d2_right, *d2_left;
 
@@ -772,10 +760,9 @@ sweptWrapper(int bks, int tpb, const int dv, const double dt, const double t_end
 		wholeDiamondR <<< bks, tpb, smem >>> (d0_right, d0_left, d2_right, d2_left, true);
 		cout << "GPU Register scheme" << endl;
 
-
 		// Call the kernels until you reach the iteration limit.
 		while(t_eq < t_end)
-		{;
+		{
 			wholeDiamondR <<< bks, tpb, smem >>> (d2_right, d2_left, d0_right, d0_left, false);
 
 			//So it always ends on a left pass since the down triangle is a right pass.
@@ -788,8 +775,6 @@ sweptWrapper(int bks, int tpb, const int dv, const double dt, const double t_end
 			if (t_eq > twrite)
 			{
 				downTriangleR <<< bks, tpb, smem >>> (d_IC,d2_right,d2_left);
-
-				cout << t_eq << endl;
 
 				cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
 
@@ -827,7 +812,6 @@ sweptWrapper(int bks, int tpb, const int dv, const double dt, const double t_end
 		// Call the kernels until you reach the iteration limit.
 		while(t_eq < t_end)
 		{
-
 			wholeDiamond <<< bks,tpb,smem >>> (d2_right, d2_left, d0_right, d0_left, false);
 
 			//So it always ends on a left pass since the down triangle is a right pass.
@@ -841,8 +825,6 @@ sweptWrapper(int bks, int tpb, const int dv, const double dt, const double t_end
 			{
 				downTriangle <<< bks,tpb,smem >>> (d_IC,d2_right,d2_left);
 
-				cout << t_eq << endl;
-
 				cudaMemcpy(T_f, d_IC, sizeof(REAL)*dv, cudaMemcpyDeviceToHost);
 
 				fwr << " Velocity " << t_eq << " ";
@@ -851,10 +833,10 @@ sweptWrapper(int bks, int tpb, const int dv, const double dt, const double t_end
 
 				fwr << endl;
 
-				upTriangle <<< bks,tpb,smem >>> (d_IC,d0_right,d0_left);
+				upTriangle <<< bks,tpb,smem >>> (d_IC, d0_right, d0_left);
 
 				//Split
-				wholeDiamond <<< bks,tpb,smem >>> (d0_right,d0_left,d2_right,d2_left,true);
+				wholeDiamond <<< bks,tpb,smem >>> (d0_right, d0_left, d2_right, d2_left, true);
 
 				t_eq += t_fullstep;
 
@@ -1039,7 +1021,5 @@ int main( int argc, char *argv[])
 	cudaFreeHost(IC);
     cudaFreeHost(T_final);
 
-
 	return 0;
-
 }

@@ -46,7 +46,7 @@ binary = precision + "Out"
 alpha = 8.418e-5
 dto = 1e-5
 divs = 1024
-tpbs = 128
+tpbs = 64
 fqCoeff = 0.3
 ksexactpath = op.join(exactpath, "KS" + precision + '_Official.txt')
 
@@ -60,7 +60,7 @@ def make_KSExact():
     executable = op.join(binpath, binName)
     dt = 1e-7
     tf = probs[1][1]
-    mh.runCUDA(executable, divs, tpbs, dt, tf, tf*fqCoeff, 0, ksexactpath)
+    mh.runCUDA(executable, divs, tpbs, dt, tf, tf*fqCoeff, 1, ksexactpath)
 
 def Fo(dx,dt):
     alpha = 8.418e-5
@@ -115,8 +115,9 @@ def consistency(problem, tf, dt=dto, div=4096, tpb=128):
     executable = op.join(binpath, binName)
     vfile = op.join(sourcepath, 'temp.dat')
     collect = []
+    pord = [1, 2, 0]
 
-    for s in range(3):
+    for s in pord:
         mh.runCUDA(executable, div, tpb, dt, tf, tf*2.0, s, vfile)
         antworten = rh.Solved(vfile)
         collect.append((antworten.varNames, antworten.tFinal, antworten.vals))
@@ -169,8 +170,8 @@ def plotit(dct, basename, shower, dtbool):
         for i, k2 in enumerate(dct[k1].keys()):
             ax = fig.add_subplot(rw, rw, i+1)
             ax.set_title(str(k2))
-            ax.set_ylabel(ylbl)
-            ax.set_xlabel(axlabel[0])
+            ax.set_ylabel(ylbl, fontsize="small")
+            ax.set_xlabel(axlabel[0], fontsize="small")
             ax.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
             for k3 in sorted(dct[k1][k2].keys()):
                 x = []
@@ -207,7 +208,7 @@ def rmcrud(ext):
 if __name__ == "__main__":
     
     sp.call("make", cwd=sourcepath)
-    make_KSExact()
+    #make_KSExact()
 
     #Problem and finish time.  dt is set by end of swept run.
 

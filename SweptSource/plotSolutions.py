@@ -74,7 +74,7 @@ def heat_msg(div,dt,bks,tf,fr):
     ot = int(tf/fr)+2
     if stab:
         return "STABLE \n Fo = {0}  |  nCycles: {1}  |  #Outputs: {2}".format(Fo, cyc, ot)
-    else:
+    else:you
         return "UNSTABLE UNSTABLE \n Fo: {0} is too low.".format(Fo)
 
 def ks_msg(div,dt,bks,tf,fr):
@@ -116,7 +116,7 @@ entryframe.pack(side='bottom')
 master.title("Plot the result of the numerical solution")
 
 problem = Tk.StringVar(master)
-problem.set(OPTIONS[2]) # default value
+problem.set(OPTIONS[0]) # default value
 
 #Number of divisions power of two
 divpow = Tk.IntVar(master)
@@ -292,7 +292,8 @@ if tst:
 else:
     fh, a = plt.subplots(1, 1, figsize=(11,7))
 
-if road.tFinal.size > 10:
+print(road.tFinal.size)
+if road.tFinal.size < 10:
     road.plotResult(fh, a)
     road.annotatePlot(fh,a)
     plt.show()
