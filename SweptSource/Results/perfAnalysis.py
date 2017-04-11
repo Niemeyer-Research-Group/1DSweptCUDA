@@ -1,3 +1,7 @@
+'''
+    Post-processing performance test results
+
+'''
 import pandas as pd
 import numpy as np
 import os
@@ -8,6 +12,16 @@ import palettable.colorbrewer as pal
 from datetime import datetime
 from cycler import cycler
 
+#Set up directory structure.
+thispath = op.abspath(op.dirname(__file__))
+os.chdir(thispath)
+sourcepath = op.dirname(thispath)
+gitpath = op.dirname(sourcepath) #Top level of git repo
+modpath = op.join(gitpath,"pyAnalysisTools")
+sys.path.append(modpath)
+
+import analysis_help as ah
+
 #Flags for type of run.
 readin = False
 savepl = True
@@ -17,22 +31,10 @@ writeout = False
 if readin:
     writeout = False
 
-def plotItBar(axi, dat):
-
-    rects = axi.patches
-    for r, val in zip(rects, dat):
-        axi.text(r.get_x() + r.get_width()/2, val+.5, val, ha='center', va='bottom')
-
-    return
 #Cycle through markers and colors.
 plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors)+
     cycler('marker', ['D', 'o', 'h', '*', '^', 'x', 'v', '8']))
 
-#Set up directory structure.
-thispath = op.abspath(op.dirname(__file__))
-os.chdir(thispath)
-sourcepath = op.dirname(thispath)
-gitpath = op.dirname(sourcepath) #Top level of git repo
 plotpath = op.join(op.join(op.join(gitpath, "ResultPlots"), "performance"), "Summary") #Plots folder
 tablefile = op.join(plotpath, "SweptTestResults.html")
 storepath = op.join(thispath, "allResults.h5")
@@ -52,59 +54,25 @@ if readin:
     headers = df_result.columns.values.tolist()
 
 else:
-    files = []
-    for fl in os.listdir(thispath):
-        if fl.count("_") == 3:
-            files.append(fl)
+    df_result = ah.gatherTest(thispath)
 
-    files = sorted(files)
-    dd = pd.read_table(files[0], delim_whitespace=True)
-    headers = dd.columns.values.tolist()
-    headers = [h.replace("_", " ") for h in headers]
-    midx_name = ["Problem", "Precision", "Algorithm", headers[0]]
-    dfs_all = []
-    #Put all files in dataframes.  Make a multiindex from names first.
-    for f in files:
-        dd = pd.read_table(f, delim_whitespace=True)
-        dd.columns = headers
-        ds = dd.pivot(headers[0], headers[1], headers[2])
-        idx1 = ds.index.get_level_values(0)
-        outidx = f.split("_")
-        midx = []
-        for i in idx1:
-            outidx[-1] = i
-            midx.append(tuple(outidx))
-
-        idx_real = pd.MultiIndex.from_tuples(midx, names=midx_name)
-        ds.set_index(idx_real, inplace=True)
-        dfs_all.append(ds)
-
-    df_result = pd.concat(dfs_all)
-
-df_best = df_result.min(axis=1)
-#Plot most common best launch.
-df_best_idx = df_result.idxmin(axis=1)
-
-df_launch = df_best_idx.value_counts()
-df_launch.index = pd.to_numeric(df_launch.index)
-df_launch.sort_index(inplace=True)
+parseRun = ah.QualityRuns(df_result)
 
 plotfile = op.join(plotpath,"Best_Launch.pdf")
 
 plt.figure(figsize=(14,8))
-ax = df_launch.plot.bar(rot=0, legend=False)
+ax = parseRun.bestLaunch.plot.bar(rot=0, legend=False)
 
-plotItBar(ax, df_launch)
+ah.plotItBar(ax, df_launch)
 
 plt.title("Best performance configuration all {:d} combinations".format(df_result.index.size))
 plt.ylabel("Frequency")
 plt.xlabel("Threads per block")
-plt.ylim([0,df_launch.max()+5])
+plt.ylim([0,parseRun.bestLaunch.max()+5])
 plt.grid(alpha=0.5)
 
 if savepl:
     plt.savefig(plotfile, bbox_inches='tight')
-
 
 #Get level values to iterate
 algs = df_result.index.get_level_values("Algorithm").unique().tolist()

@@ -1,28 +1,17 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
 '''
-This file is the current iteration of research being done to implement the
-swept rule for Partial differential equations in one dimension.  This research
-is a collaborative effort between teams at MIT, Oregon State University, and
-Purdue University.
-
 Copyright (C) 2015 Kyle Niemeyer, niemeyek@oregonstate.edu AND
 Daniel Magee, mageed@oregonstate.edu
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the MIT license.
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-
 You should have received a copy of the MIT license along with this program.
 If not, see <https://opensource.org/licenses/MIT>.
 '''
 
 # Just writing a plotting script for the Swept rule CUDA.
-# Perhaps this will also be the calling script.
 
 import matplotlib.pyplot as plt
 #from math import *
