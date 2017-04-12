@@ -63,5 +63,5 @@ def runCUDA(Prog, divisions, threadsPerBlock, timeStep, finishTime, frequency,
             exeStr = shlex.split(execut)
             proc = sp.Popen(exeStr)
             sp.Popen.wait(proc)
-
+            
     return None

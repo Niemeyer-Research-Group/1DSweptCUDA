@@ -57,10 +57,10 @@ def gatherTest(resultPath):
 
 class QualityRuns(object):
     def __init__(self, dataMat):
-        self.bestRun = dataMat.min(axis=1)
-        self.bestIdx = dataMat.idxmin(axis=1)
-        self.bestLaunch = self.bestIdx.value_counts()
-        self.bestLaunch.index = pd.to_numeric(self.bestLaunch)
+        self.bestRun = pd.DataFrame(dataMat.min(axis=1))
+        bestIdx = dataMat.idxmin(axis=1)
+        bestL = pd.DataFrame(bestIdx.value_counts())
+        self.bestLaunch.index = pd.to_numeric(bestL)
         self.bestLaunch.sort_index(inplace=True)
 
-        
+    
