@@ -32,9 +32,9 @@ def gatherTest(resultPath):
 
     midx_name= ["Problem", "Precision", "Algorithm", "Num Spatial Points"]
     files = []
-    for fl in os.listdir(thispath):
+    for fl in os.listdir(resultPath):
         if fl.count("_") == 3:
-            files.append(fl)
+            files.append(op.join(resultPath, fl))
 
     files = sorted(files)
     dfs_all = []
@@ -43,7 +43,7 @@ def gatherTest(resultPath):
     for f in files:
         mydf = mh.Perform(f)
         idx1 = mydf.dataMatrix.index.get_level_values(0)
-        outidx = f.split("_")
+        outidx = op.basename(f).split("_")
         midx = []
         for i in idx1:
             outidx[-1] = i
@@ -59,8 +59,8 @@ class QualityRuns(object):
     def __init__(self, dataMat):
         self.bestRun = pd.DataFrame(dataMat.min(axis=1))
         bestIdx = dataMat.idxmin(axis=1)
-        bestL = pd.DataFrame(bestIdx.value_counts())
-        self.bestLaunch.index = pd.to_numeric(bestL)
+        self.bestLaunch = bestIdx.value_counts()
+        self.bestLaunch.index = pd.to_numeric(self.bestLaunch)
         self.bestLaunch.sort_index(inplace=True)
 
     

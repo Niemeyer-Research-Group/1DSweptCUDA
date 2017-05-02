@@ -1,0 +1,10 @@
+#zshrc PATH -----------------------------------
+
+export PATH="$HOME/anaconda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/usr/local/cuda-7.5/bin"
+
+#bashrc PATHS ------------------------------------
+#Should have a symlink to current or favored version of cuda here.
+export LD_LIBRARY_PATH=/usr/local/cuda/include
+
+# added by Anaconda2 4.1.1 installer
+export PATH="/home/osumageed/anaconda2/bin:$PATH"

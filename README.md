@@ -14,7 +14,9 @@ Repository for 1D Swept rule written in CUDA.
     
 2. If you don't know your GPU's compute capability, find it with the deviceQuery.cu program in the utilities folder in the samples folder included in the CUDA toolkit installation.
 Linux Path: /usr/local/cuda/samples/1_Utilities
-Navigate to the folder, run make and run the deviceQuery program.
+Navigate to the folder, 'make' the executable and run the deviceQuery program.
+
+    __OR__ if MATLAB is available, you can open matlab and type gpuDevice in the command line.  You can also see the number of GPUs in your environment with gpuDeviceCount and feed the index to gpuDevice to query individual GPUs.
 
 3. Open the Makefile in the SweptSource folder and change the compute_ and sm_ numbers in CUDAFLAGS to your compute capability.
 
@@ -23,11 +25,11 @@ The path settings I use can be found in examplerc.txt.
 
 ## Swept program instructions
 
-It's recommended that the user begin by running the plotSolutions.py python script from the command line in the source code directory.
-This will create the bin subdirectory for the executables, compile all the programs and plot the result of the program.
+It's recommended that the user begin by running the plotSolutions.py python script from the command line in the SweptSource directory.
+This will create the SweptSource/bin subdirectory for the executables, compile all the programs and plot the result of the program with the conditions you select in the GUI.
 
 In addition, the programs may be compiled using make from the command line or individually.
-All source files have a compile command in the header comments.
+All source files have an example of a compile command in the docstring.
 
 All programs can be run from the terminal with the same command:
 
@@ -39,29 +41,41 @@ All programs can be run from the terminal with the same command:
 | timestep(s) | Will give error if relevant ratio (dt/dx) is unstable.
 | finishtime(s) | Ending time for the simulation.  Approximate for swept rule.
 | outputfrequency(s) | Checkpoint at which program writes out simulation results (i.e. every 400s).  Example: if the finish time is 1000s and the output frequency is 400s, the program will write out the initial condition and the solution at two intermediate times (~400 and 800s)
-| algorithm | 0 for classic, 1 for swept
-| variant | 0 for standard shared memory swept, 1 for variant
+| algorithm | 0 for classic, 1 for shared swept, 2 for variant (hybrid or register)
 | SolutionfilePath | Path should point to .dat folder in Results file. Name should include problem and precision. Format: Line 1 is length of full spatial domain, number of spatial points and grid step, Other rows are results with format: variable, time, value at each spatial point.
 | TimingFilePath (Optional) | Path should point to .txt folder in Results file. Title should include problem, precision and algorithm.  Format is #SpatialPoints, #ThreadsPerBlock, us per timestep.
 
 ## Directory Structure
-* SweptSource 
-    * Contains the relevant source code for this project.  
-        * plotSolutions.py: Plot simulation results.
-        * sweptPerformanceTest.py: Conduct a performance test on a single problem, precision and algorithm over a range of problem sizes and launch configurations.
-        * quickperform.py: Run all performance tests.
-    * All output from CUDA programs is kept in the Results folder.  
-        * perfAnalysis: Parse timing output for all problems and produce performance plots.  Plots and tables saved in Result plots folder in top level.
-    * Testing folder for accuracy tests of all problems.    
-* Result plots: All plots for accuracy, simulation results, swept rule visualization, and performance results. 
-* Other top level folders
-    * Scratch pad for development of algorithms, unit tests, and intermediate versions to show effect of development process on performance.
+* __SweptSource__
+    * Contains the relevant source code for this project (.cu) files.  
+    * _myVectorTypes.h_: Modifies the CUDA VectorTypes header to allow vector operations on double3 and 4 data types.
+    * _plotSolutions.py_: Plot simulation results with GUI.
+    * _sweptPerformanceTest.py_: Conduct a performance test on a single problem, precision and algorithm over a range of problem sizes and launch configurations.
+    * _quickperform.py_: Runs a full performance test suite.  Takes a command line argument for # of test suites to run, defaults to 1.
+    * __Results__ 
+        * Contains results of performance test (as .txt and .h5) and results of simulation (as .dat) files. 
+        * _perfAnalysis.py_: Parses results of performance tests and makes informative plots in __ResultPlots__ folder.
+    * __Testing__ 
+        * _KSDouble_Official.txt_: The official version of the KS result.  Run with very small (10^-8) timestep.  KS has no analytical solution so this is the basis for accuracy judgements.
+        * _testProcedure.py_: Python script that determines the consistency and accuracy of the programs.  Consistency is measured by comparing the results of the versions (classic, swept, variant) to each other and cataloguing the differences in ResultPlots/ExactTesting/cinsistency.out.  Accuracy is measured against analytic solutions (Heat and Euler Equations) or small timestep solution (KS equation.)  Error plots available in ResultPlots/ExactTesting/.
+* __ResultPlots__: 
+    * All plots for accuracy, simulation results, swept rule visualization, and performance results.  See [the plot readme](ResultPlots/PlotREADME.md) for further details.
+* __pyAnalysisTools__
+    * _Analysis_help.py_: Classes and functions for post-processing and analysis of performance.
+    * _main_help.py_: Classes and functions for collecting and parsing raw performance data.
+    * _result_help.py_: Classes and functions for parsing and plotting simulation data.
+* __docs__
+    * Explanation of decomposition, discretization, and environment.
 
 ## Test Problem Discretizations
-[This Document](1_D_swept_equations.pdf) explains the numerical methods used in these programs
+[This Document](docs/1_D_swept_equations.pdf) explains the numerical methods used in these programs
 
 ## Swept Scheme
-[This Document](Swept_1_D_Scheme_Description.pdf) explains the swept algorithm and it's motivation.
+[This Document](docs/Swept_1_D_Scheme_Description.pdf) explains the swept algorithm and it's motivation.
+
+## Test Hardware
+GPU Performance Tests were run on an NVIDIA Tesla K40c GPGPU
+CPU Performance Tests were run on a single Intel Xeon E5-2630 @ 2.4 GHz with 8 cores and max 16 threads.
 
 ## Dependencies
 ### Hardware

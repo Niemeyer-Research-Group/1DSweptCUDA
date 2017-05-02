@@ -1,0 +1,2 @@
+Num_Spatial_Points	Threads_per_Block	Time_per_timestep_(us)
+2048	64	52.9317

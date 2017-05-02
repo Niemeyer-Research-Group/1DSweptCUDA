@@ -38,6 +38,8 @@
 #include <fstream>
 #include <omp.h>
 
+
+
 // This file uses vector types to hold the dependent variables so fundamental operations on those types are defined as macros to accommodate different data types.  Also, keeping types consistent for common constants (0, 1, 2, etc) used in computation has an appreciable positive effect on performance.
 #ifndef REAL
     #define REAL            float
@@ -421,9 +423,9 @@ classicEuler(REALthree *euler_in, REALthree *euler_out, const bool finalstep)
 }
 
 /**
-    Builds a right-side-up triangle using the swept rule.
+    Builds an upright triangle using the swept rule.
 
-    Right-side-up triangle using the swept rule.  This function is called first using the initial conditions or after results are read out using downTriange.  In the latter case, it takes the result of down triangle as IC.
+    Upright triangle using the swept rule.  This function is called first using the initial conditions or after results are read out using downTriange.  In the latter case, it takes the result of down triangle as IC.
 
     @param IC Array of initial condition values in order of spatial point.
     @param outRight Array to store the right sides of the triangles to be passed.
@@ -473,12 +475,19 @@ upTriangle(const REALthree *IC, REALthree *outRight, REALthree *outLeft)
 		__syncthreads();
 
 	}
-
+    // Passes right and keeps left
     writeOutRight(temper, outRight, outLeft, threadIdx.x, gid, blockDim.x);
 }
 
-// Down triangle is only called at the end when data is passed left.  It's never split.
-// It returns IC which is a full 1D result at a certain time.
+/**
+    Builds an inverted triangle using the swept rule.
+
+    Inverted triangle using the swept rule.  downTriangle is only called at the end when data is passed left.  It's never split.  Sides have already been passed between nodes, but will be swapped and parsed by readIn function.
+
+    @param IC Full solution at some timestep.
+    @param inRight Array of right edges seeding solution vector.
+    @param inLeft Array of left edges seeding solution vector.
+*/
 __global__
 void
 downTriangle(REALthree *IC, const REALthree *inRight, const REALthree *inLeft)
@@ -519,7 +528,18 @@ downTriangle(REALthree *IC, const REALthree *inRight, const REALthree *inLeft)
     IC[gid] = temper[tididx];
 }
 
-//Full refers to whether or not there is a node run on the CPU.
+
+/**
+    Builds an diamond using the swept rule after a left pass.
+
+    Unsplit diamond using the swept rule.  wholeDiamond must apply boundary conditions only at it's center.
+
+    @param inRight Array of right edges seeding solution vector.
+    @param inLeft Array of left edges seeding solution vector.
+    @param outRight Array to store the right sides of the triangles to be passed.
+    @param outLeft Array to store the left sides of the triangles to be passed.
+    @param Full True if there is not a node run on the CPU, false otherwise.
+*/
 __global__
 void
 wholeDiamond(const REALthree *inRight, const REALthree *inLeft, REALthree *outRight, REALthree *outLeft, const bool split)

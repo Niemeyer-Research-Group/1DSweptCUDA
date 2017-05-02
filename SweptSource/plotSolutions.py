@@ -63,7 +63,7 @@ def heat_msg(div,dt,bks,tf,fr):
     ot = int(tf/fr)+2
     if stab:
         return "STABLE \n Fo = {0}  |  nCycles: {1}  |  #Outputs: {2}".format(Fo, cyc, ot)
-    else:you
+    else:
         return "UNSTABLE UNSTABLE \n Fo: {0} is too low.".format(Fo)
 
 def ks_msg(div,dt,bks,tf,fr):
