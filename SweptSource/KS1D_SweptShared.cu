@@ -1,4 +1,4 @@
-/* 
+/** 
     Copyright (C) 2017 Kyle Niemeyer, niemeyek@oregonstate.edu AND
     Daniel Magee, mageed@oregonstate.edu
 */
@@ -22,6 +22,8 @@
 #include <cstdlib>
 #include <cmath>
 #include <fstream>
+
+#define GPUNUM          0
 
 #ifndef REAL
 	#define REAL        float
@@ -870,7 +872,7 @@ int main( int argc, char *argv[])
 
 	cout.precision(10);
 	// Choose the GPGPU.  This is device 0 in my machine which has 2 devices.
-	cudaSetDevice(0);
+	cudaSetDevice(GPUNUM);
 	if (sizeof(REAL)>6) cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
 
 	const int dv = atoi(argv[1]); //Number of spatial points

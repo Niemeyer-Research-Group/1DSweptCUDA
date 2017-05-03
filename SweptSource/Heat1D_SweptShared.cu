@@ -1,4 +1,4 @@
-/* 
+/** 
     Copyright (C) 2017 Kyle Niemeyer, niemeyek@oregonstate.edu AND
     Daniel Magee, mageed@oregonstate.edu
 */
@@ -22,6 +22,8 @@
 #include <cmath>
 #include <fstream>
 #include <omp.h>
+
+#define GPUNUM          0
 
 #ifndef REAL
     #define REAL        float
@@ -701,7 +703,7 @@ int main(int argc, char *argv[])
 
     cout.precision(10);
 	// Choose the GPGPU.  This is device 0 in my machine which has 2 devices.
-	cudaSetDevice(0);
+	cudaSetDevice(GPUNUM);
     if (sizeof(REAL)>6) cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
 
     int dv = atoi(argv[1]); //Number of spatial points
@@ -788,6 +790,14 @@ int main(int argc, char *argv[])
 	cudaEventSynchronize(stop);
 	cudaEventElapsedTime( &timed, start, stop);
 
+    cudaError_t error = cudaGetLastError();
+    if(error != cudaSuccess)
+    {
+        // print the CUDA error message and exit
+        printf("CUDA error: %s\n", cudaGetErrorString(error));
+        exit(-1);
+    }
+
 	timed *= 1.e3;
 
     double n_timesteps = tfm/dt;
@@ -811,6 +821,7 @@ int main(int argc, char *argv[])
 	fwr.close();
 
 	// Free the memory and reset the device.
+    cudaDeviceSynchronize();
 
 	cudaEventDestroy( start );
 	cudaEventDestroy( stop );

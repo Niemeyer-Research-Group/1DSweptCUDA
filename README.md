@@ -18,6 +18,8 @@ Navigate to the folder, 'make' the executable and run the deviceQuery program.
 
     __OR__ if MATLAB is available, you can open matlab and type gpuDevice in the command line.  You can also see the number of GPUs in your environment with gpuDeviceCount and feed the index to gpuDevice to query individual GPUs.
 
+    If using a GPU numbered other than 0: change the GPUNUM preprocessor variable in each source code file.
+
 3. Open the Makefile in the SweptSource folder and change the compute_ and sm_ numbers in CUDAFLAGS to your compute capability.
 
 4. Make sure the nvcc compiler is on your shell path.  On Linux it should be in: /usr/local/cuda/bin

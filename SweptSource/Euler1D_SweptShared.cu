@@ -11,7 +11,7 @@
     
     The problem may be evaluated in three ways: Classic, SharedGPU, and Hybrid.  Classic simply steps forward in time and calls the kernel once every timestep (predictor step or full step).  SharedGPU uses the GPU for all computation and applies the swept rule.  Hybrid applies the swept rule but computes the node on the boundary with the CPU.  
 */
-/* 
+/** 
     Copyright (C) 2017 Kyle Niemeyer, niemeyek@oregonstate.edu AND
     Daniel Magee, mageed@oregonstate.edu
 */
@@ -38,9 +38,10 @@
 #include <fstream>
 #include <omp.h>
 
-
-
 // This file uses vector types to hold the dependent variables so fundamental operations on those types are defined as macros to accommodate different data types.  Also, keeping types consistent for common constants (0, 1, 2, etc) used in computation has an appreciable positive effect on performance.
+
+#define GPUNUM              0
+
 #ifndef REAL
     #define REAL            float
     #define REALtwo         float2
@@ -438,9 +439,9 @@ upTriangle(const REALthree *IC, REALthree *outRight, REALthree *outLeft)
 	extern __shared__ REALthree temper[];
 
 	int gid = blockDim.x * blockIdx.x + threadIdx.x; //Global Thread ID
-	int tididx = threadIdx.x + 2; //Block Thread ID
-    int tidxTop = tididx + dimens.base; //
-    int k=4;
+	int tididx = threadIdx.x + 2; //Thread's lane in the node [2, blockDim.x+1]
+    int tidxTop = tididx + dimens.base; //Thread's second row lane. 
+    int k=4; //Start k at 4 since the base and second step occur before loop.
 
     //Assign the initial values to the first row in temper, each block
     //has it's own version of temper shared among its threads.
@@ -448,6 +449,7 @@ upTriangle(const REALthree *IC, REALthree *outRight, REALthree *outLeft)
 
     __syncthreads();
 
+    //First step gets predictor values for lanes excluding outer two on each side.
 	if (threadIdx.x > 1 && threadIdx.x <(blockDim.x-2))
 	{
 		temper[tidxTop] = eulerStutterStep(temper, tididx, false, false);
@@ -455,7 +457,7 @@ upTriangle(const REALthree *IC, REALthree *outRight, REALthree *outLeft)
 
 	__syncthreads();
 
-	//The initial conditions are timslice 0 so start k at 1.
+	//Step through solution excluding two more lanes on each side each step.
 	while (k < (blockDim.x>>1))
 	{
 		if (threadIdx.x < (blockDim.x-k) && threadIdx.x >= k)
@@ -497,10 +499,13 @@ downTriangle(REALthree *IC, const REALthree *inRight, const REALthree *inLeft)
 	int gid = blockDim.x * blockIdx.x + threadIdx.x;
     int tididx = threadIdx.x + 2;
     int tidxTop = tididx + dimens.base;
-    int k = dimens.hts[2];
+    //k starts at blockDim.x/2 and shrinks from there as the lane width grows.
+    int k = dimens.hts[2]; 
 
 	readIn(temper, inRight, inLeft, threadIdx.x, gid);
 
+    //Masks edges (whole domain edges not nodal edges) on last timestep. 
+    //Stored in one register per thread.
     const char4 truth = {gid == 0, gid == 1, gid == dimens.idxend_1, gid == dimens.idxend};
 
     __syncthreads();
@@ -532,13 +537,14 @@ downTriangle(REALthree *IC, const REALthree *inRight, const REALthree *inLeft)
 /**
     Builds an diamond using the swept rule after a left pass.
 
-    Unsplit diamond using the swept rule.  wholeDiamond must apply boundary conditions only at it's center.
+    Unsplit diamond using the swept rule.  
+    wholeDiamond must apply boundary conditions only at edges at only on it's center timestep.
 
     @param inRight Array of right edges seeding solution vector.
     @param inLeft Array of left edges seeding solution vector.
     @param outRight Array to store the right sides of the triangles to be passed.
     @param outLeft Array to store the left sides of the triangles to be passed.
-    @param Full True if there is not a node run on the CPU, false otherwise.
+    @param split True if there is a node run on the CPU, false otherwise.
 */
 __global__
 void
@@ -551,8 +557,12 @@ wholeDiamond(const REALthree *inRight, const REALthree *inLeft, REALthree *outRi
     int tididx = threadIdx.x + 2;
     int tidxTop = tididx + dimens.base;
 
+    //Masks edges in the same way as downTriangle
     char4 truth = {gid == 0, gid == 1, gid == dimens.idxend_1, gid == dimens.idxend};
 
+    //If this is a hybrid scheme and this kernel is run alongside a cpu function:
+    //Add a block size to the global id (to pick and place the correct values from the global array)
+    //And reset the truth values since this is not going to have any edges.
     if (split)
     {
         gid += blockDim.x;
@@ -563,6 +573,8 @@ wholeDiamond(const REALthree *inRight, const REALthree *inLeft, REALthree *outRi
 
     __syncthreads();
 
+    //k starts behind the downTriangle k because we need to do the first timestep outside the loop
+    //to get the order right. 
     int k = dimens.hts[0];
 
     if (tididx < (dimens.base-dimens.hts[2]) && tididx >= dimens.hts[2])
@@ -627,6 +639,7 @@ wholeDiamond(const REALthree *inRight, const REALthree *inLeft, REALthree *outRi
 		__syncthreads();
 	}
 
+    //Split is the hybrid version of splitDiamond so write out left.  Otherwise right.
     if (split)
     {
         writeOutLeft(temper, outRight, outLeft, threadIdx.x, gid, blockDim.x);
@@ -638,25 +651,35 @@ wholeDiamond(const REALthree *inRight, const REALthree *inLeft, REALthree *outRi
 }
 
 
-//Split one is always first.
+/**
+    Builds an diamond using the swept rule after a right pass.
+
+    Diamond with node 0 split across the boundary at it's center.  
+
+    @param inRight Array of right edges seeding solution vector.
+    @param inLeft Array of left edges seeding solution vector.
+    @param outRight Array to store the right sides of the triangles to be passed.
+    @param outLeft Array to store the left sides of the triangles to be passed.
+*/
 __global__
 void
 splitDiamond(REALthree *inRight, REALthree *inLeft, REALthree *outRight, REALthree *outLeft)
 {
     extern __shared__ REALthree temper[];
 
-    //Same as upTriangle
     int gid = blockDim.x * blockIdx.x + threadIdx.x;
     int tididx = threadIdx.x + 2;
     int tidxTop = tididx + dimens.base;
-    int k = dimens.hts[2];
+    int k = dimens.hts[2]; //Starts more like downTriangle
 
 	readIn(temper, inRight, inLeft, threadIdx.x, gid);
 
+    //The edges are now in the center of the node 0 which is easy to find using the global id.
     const char4 truth = {gid == dimens.hts[0], gid == dimens.hts[1], gid == dimens.hts[2], gid == dimens.hts[3]};
 
     __syncthreads();
 
+    //Still need to set the boundary values first because they aren't necessarily preserved in the global arrays.
     if (truth.z)
     {
         temper[tididx] = dbd[0];
@@ -672,7 +695,6 @@ splitDiamond(REALthree *inRight, REALthree *inLeft, REALthree *outRight, REALthr
 
     while(k>0)
     {
-
         if (!truth.y && !truth.z && tididx < (dimens.base-k) && tididx >= k)
         {
             temper[tidxTop] = eulerStutterStep(temper, tididx, truth.w, truth.x);
@@ -698,7 +720,6 @@ splitDiamond(REALthree *inRight, REALthree *inLeft, REALthree *outRight, REALthr
 	__syncthreads();
     k=4;
 
-    //The initial conditions are timslice 0 so start k at 1.
     while(k<dimens.hts[2])
     {
         if (!truth.y && !truth.z && threadIdx.x < (blockDim.x-k) && threadIdx.x >= k)
@@ -722,9 +743,10 @@ splitDiamond(REALthree *inRight, REALthree *inLeft, REALthree *outRight, REALthr
 	writeOutLeft(temper, outRight, outLeft, threadIdx.x, gid, blockDim.x);
 }
 
-
+//Now we can set the namespace.
 using namespace std;
 
+//Get energy out from conserved variables for plotting.
 __host__
 __forceinline__
 REAL
@@ -734,22 +756,30 @@ energy(REALthree subj)
     return subj.z/subj.x - HALF*u*u;
 }
 
+/** 
+    Do a node on the CPU.  The diamond split along the boundary.
+
+    @param temper The working array.
+    @param htcpu The index for masking.
+*/ 
+
 __host__
 void
 CPU_diamond(REALthree *temper, int htcpu[5])
 {
-
     omp_set_num_threads(8);
 
+    //Assert the boundary conditions.
     temper[htcpu[2]] = bd[0];
     temper[htcpu[2]+dimz.base] = bd[0];
 
     temper[htcpu[1]] = bd[1];
     temper[htcpu[1]+dimz.base] = bd[1];
 
-    //Splitting it is the whole point!
+    //Continue stepping forward and expanding the mask until the loop stops.
     for (int k = htcpu[0]; k>0; k-=4)
     {
+        //Parallelize the loop over the unmasked indices.
         #pragma omp parallel for
         for(int n = k; n<(dimz.base-k); n++)
         {
@@ -769,6 +799,7 @@ CPU_diamond(REALthree *temper, int htcpu[5])
         }
     }
 
+    //Do the central loop that covers the entire nodal domain.
     #pragma omp parallel for
     for(int n = 4; n < (dimz.base-4); n++)
     {
@@ -778,7 +809,7 @@ CPU_diamond(REALthree *temper, int htcpu[5])
         }
     }
 
-    //Top part.
+    //And do the top part.  Shrink the mask until the loop ends.
     for (int k = 6; k<htcpu[2]; k+=4)
     {
         #pragma omp parallel
@@ -801,30 +832,35 @@ CPU_diamond(REALthree *temper, int htcpu[5])
     }
 }
 
-//Classic Discretization wrapper.
+//Parameters are straighforward and taken directly from inputs to program.  Wrapper that clls the classic procedure.
 double
 classicWrapper(const int bks, int tpb, const int dv, const double dt, const double t_end,
     REALthree *IC, REALthree *T_f, const double freq, ofstream &fwr)
 {
     REALthree *dEuler_in, *dEuler_out;
 
+    //Allocate device arrays.
     cudaMalloc((void **)&dEuler_in, sizeof(REALthree)*dv);
     cudaMalloc((void **)&dEuler_out, sizeof(REALthree)*dv);
 
     // Copy the initial conditions to the device array.
     cudaMemcpy(dEuler_in,IC,sizeof(REALthree)*dv,cudaMemcpyHostToDevice);
 
+    //Print to make sure we're here
     cout << "Classic scheme" << endl;
 
+    //Start the timer (simulation timer that is.)
     double t_eq = 0.0;
     double twrite = freq - QUARTER*dt;
 
+    //Call the kernel to step forward alternating global arrays with each call.
     while (t_eq < t_end)
     {
         classicEuler <<< bks,tpb >>> (dEuler_in, dEuler_out, false);
         classicEuler <<< bks,tpb >>> (dEuler_out, dEuler_in, true);
         t_eq += dt;
 
+        //If multiple timesteps should be written out do so here with the file provided.
         if (t_eq > twrite)
         {
             cudaMemcpy(T_f, dEuler_in, sizeof(REALthree)*dv, cudaMemcpyDeviceToHost);
@@ -858,30 +894,34 @@ classicWrapper(const int bks, int tpb, const int dv, const double dt, const doub
 
 }
 
-//The wrapper that calls the routine functions.
+//The wrapper that enacts the swept rule.
 double
 sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double t_end, const int cpu,
     REALthree *IC, REALthree *T_f, const double freq, ofstream &fwr)
 {
-    const size_t smem = (2*dimz.base)*sizeof(REALthree);
-    const int cpuLoc = dv-tpb;
+    const size_t smem = (2*dimz.base)*sizeof(REALthree); //Amt of shared memory to request
+    const int cpuLoc = dv-tpb; //Where to write the cpu values back to device memory to make swap if hybrid.
 
+    // CPU mask values for boundary.
     int htcpu[5];
     for (int k=0; k<5; k++) htcpu[k] = dimz.hts[k]+2;
 
 	REALthree *d_IC, *d0_right, *d0_left, *d2_right, *d2_left;
 
+    // Allocate device global memory
 	cudaMalloc((void **)&d_IC, sizeof(REALthree)*dv);
 	cudaMalloc((void **)&d0_right, sizeof(REALthree)*dv);
 	cudaMalloc((void **)&d0_left, sizeof(REALthree)*dv);
     cudaMalloc((void **)&d2_right, sizeof(REALthree)*dv);
 	cudaMalloc((void **)&d2_left, sizeof(REALthree)*dv);
 
+    // Transfer over the initial conditions.
 	cudaMemcpy(d_IC,IC,sizeof(REALthree)*dv,cudaMemcpyHostToDevice);
 
-	// Start the counter and start the clock.
+	// Start the simulation time counter and start the clock.
 	const double t_fullstep = 0.25*dt*(double)tpb;
 
+    //Call up first out of loop with right and left 0
 	upTriangle <<<bks, tpb, smem>>> (d_IC, d0_right, d0_left);
 
     double t_eq;
@@ -889,8 +929,10 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 
 	// Call the kernels until you reach the final time
 
+    // The hybrid version.
     if (cpu)
     {
+        // Tell us what it is and allocate the host arrays.  cudaHostAlloc is pinned memory that transfers faster.
         cout << "Hybrid Swept scheme" << endl;
 
         REALthree *h_right, *h_left;
@@ -898,33 +940,38 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
         cudaHostAlloc((void **) &h_right, tpb*sizeof(REALthree), cudaHostAllocDefault);
         cudaHostAlloc((void **) &h_left, tpb*sizeof(REALthree), cudaHostAllocDefault);
 
-        t_eq = t_fullstep;
+        t_eq = t_fullstep; 
 
+        // Start 3 cuda streams to overlap memory transfer and kernel launch with cpu computation.
         cudaStream_t st1, st2, st3;
         cudaStreamCreate(&st1);
         cudaStreamCreate(&st2);
         cudaStreamCreate(&st3);
 
-        //Split Diamond Begin------
+        // Split Diamond Begin------
 
+        // Call wholeDiamond on first non-default stream and launch with one missing block.
         wholeDiamond <<<bks-1, tpb, smem, st1>>> (d0_right, d0_left, d2_right, d2_left, true);
-
+        // Simultaneously transfer the right and left values for node1 to the CPU.
         cudaMemcpyAsync(h_left, d0_left, tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st2);
         cudaMemcpyAsync(h_right, d0_right, tpb*sizeof(REALthree), cudaMemcpyDeviceToHost, st3);
 
+        // Wait for memory to arrive. and read the edges into the working array: tmpr.
         cudaStreamSynchronize(st2);
         cudaStreamSynchronize(st3);
 
         // CPU Part Start -----
 
         for (int k=0; k<tpb; k++)  readIn(tmpr, h_right, h_left, k, k);
-
+        // Step forward with temper which now contains only edges 
         CPU_diamond(tmpr, htcpu);
-
+        // And write those values back to the edges.
         for (int k=0; k<tpb; k++)  writeOutLeft(tmpr, h_right, h_left, k, k, 0);
-
+        // Simultaneously write those edges back out to the device passing the left one to the end.
         cudaMemcpyAsync(d2_right, h_right, tpb*sizeof(REALthree), cudaMemcpyHostToDevice, st2);
         cudaMemcpyAsync(d2_left + cpuLoc, h_left, tpb*sizeof(REALthree), cudaMemcpyHostToDevice, st3);
+
+        // No need to explicitly synchronize.  This is implicitly synchronized by calling the next kernel in the default stream.
 
         // CPU Part End -----
 
@@ -954,8 +1001,6 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
             cudaMemcpyAsync(d2_left + cpuLoc, h_left, tpb*sizeof(REALthree), cudaMemcpyHostToDevice, st3);
 
             // CPU Part End -----
-
-            // Automatic synchronization with memcpy in default stream
 
             //Split Diamond End------
 
@@ -1001,6 +1046,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
         free(tmpr);
 
 	}
+    // Shared (GPU only) version of the swept scheme.
     else
     {
         cout << "GPU only Swept scheme" << endl;
@@ -1013,7 +1059,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
             wholeDiamond <<<bks, tpb, smem>>> (d2_right, d2_left, d0_right, d0_left, false);
 
             splitDiamond <<<bks, tpb, smem>>> (d0_right, d0_left, d2_right, d2_left);
-            //So it always ends on a left pass since the down triangle is a right pass.
+            //It always ends on a left pass since the down triangle is a right pass.
             t_eq += t_fullstep;
 
             if (t_eq > twrite)
@@ -1048,7 +1094,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
     		}
         }
     }
-
+    // The last call is down so call it and pass the relevant data to the host with memcpy.
     downTriangle <<<bks, tpb, smem>>> (d_IC, d2_right, d2_left);
 
 	cudaMemcpy(T_f, d_IC, sizeof(REALthree)*dv, cudaMemcpyDeviceToHost);
@@ -1064,17 +1110,17 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 
 int main( int argc, char *argv[] )
 {
-    //That is, there are less than 8 arguments.
+    // That is, there must be 8 or 9 argumets arguments.
     if (argc < 8)
 	{
 		cout << "The Program takes 8 inputs, #Divisions, #Threads/block, deltat, finish time, output frequency..." << endl;
         cout << "Algorithm type, Variable Output File, Timing Output File (optional)" << endl;
 		exit(-1);
 	}
-    cout.precision(10);
+    cout.precision(10); 
 
 	// Choose the GPGPU.  This is device 0 in my machine which has 2 devices.
-	cudaSetDevice(0);
+	cudaSetDevice(GPUNUM);
     if (sizeof(REAL)>6) cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
 
     dimz.gam = 1.4;
@@ -1087,30 +1133,29 @@ int main( int argc, char *argv[] )
     bd[0].z = ONE/dimz.mgam; //Energy
     bd[1].z = 0.1/dimz.mgam;
 
-
     const int dv = atoi(argv[1]); //Number of spatial points
 	const int tpb = atoi(argv[2]); //Threads per Block
-    const double dt = atof(argv[3]);
+    const double dt = atof(argv[3]); //Timestep
 	const double tf = atof(argv[4]) - QUARTER*dt; //Finish time
-    const double freq = atof(argv[5]);
+    const double freq = atof(argv[5]); //Frequency of output (i.e. every 20 s (simulation time))
     const int scheme = atoi(argv[6]); //2 for Alternate, 1 for GPUShared, 0 for Classic
     const int bks = dv/tpb; //The number of blocks
-    const double dx = lx/((REAL)dv-TWO);
+    const double dx = lx/((REAL)dv-TWO); //Grid size.
     char const *prec;
     prec = (sizeof(REAL)<6) ? "Single": "Double";
 
     //Declare the dimensions in constant memory.
     dimz.dt_dx = dt/dx; // dt/dx
-    dimz.base = tpb+4;
-    dimz.idxend = dv-1;
-    dimz.idxend_1 = dv-2;
+    dimz.base = tpb+4; // Length of the base of a node.
+    dimz.idxend = dv-1; // Index of last spatial point.
+    dimz.idxend_1 = dv-2; // 2nd to last spatial point.
 
-    for (int k=-2; k<3; k++) dimz.hts[k+2] = (tpb/2) + k;
+    for (int k=-2; k<3; k++) dimz.hts[k+2] = (tpb/2) + k; //Middle values in the node (masking values)
 
     cout << "Euler --- #Blocks: " << bks << " | Length: " << lx << " | Precision: " << prec << " | dt/dx: " << dimz.dt_dx << endl;
 
-	//Conditions for main input.
-	//dv and tpb must be powers of two.  dv must be larger than tpb and divisible by tpb.
+	// Conditions for main input.
+	// dv and tpb must be powers of two.  dv must be larger than tpb and divisible by tpb.
 
 	if ((dv & (tpb-1) !=0) || (tpb&31) != 0)
     {
@@ -1127,10 +1172,10 @@ int main( int argc, char *argv[] )
 
 	// Initialize arrays.
     REALthree *IC, *T_final;
-	cudaHostAlloc((void **) &IC, dv*sizeof(REALthree), cudaHostAllocDefault);
-	cudaHostAlloc((void **) &T_final, dv*sizeof(REALthree), cudaHostAllocDefault);
+	cudaHostAlloc((void **) &IC, dv*sizeof(REALthree), cudaHostAllocDefault); // Initial conditions
+	cudaHostAlloc((void **) &T_final, dv*sizeof(REALthree), cudaHostAllocDefault); // Final values
 
-	for (int k = 0; k<dv; k++) IC[k] = (k<dv/2) ? bd[0] : bd[1];
+	for (int k = 0; k<dv; k++) IC[k] = (k<dv/2) ? bd[0] : bd[1]; // Populate initial conditions
 
 	// Call out the file before the loop and write out the initial condition.
 	ofstream fwr;
@@ -1157,8 +1202,7 @@ int main( int argc, char *argv[] )
     for (int k = 1; k<(dv-1); k++) fwr << pressure(IC[k]) << " ";
     fwr << endl;
 
-    //Transfer data to GPU.
-	// This puts the Fourier number in constant memory.
+    // Transfer data to GPU in constant memory.
 	cudaMemcpyToSymbol(dimens,&dimz,sizeof(dimensions));
     cudaMemcpyToSymbol(dbd,&bd,2*sizeof(REALthree));
 
@@ -1203,6 +1247,7 @@ int main( int argc, char *argv[] )
     cout << n_timesteps << " timesteps" << endl;
 	cout << "Averaged " << per_ts << " microseconds (us) per timestep" << endl;
 
+    // Write out time per timestep to timing file.
     if (argc>7)
     {
         ofstream ftime;
