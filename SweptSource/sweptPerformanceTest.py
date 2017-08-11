@@ -162,7 +162,7 @@ if len(sys.argv) < 2:
     alg_menu = Tk.OptionMenu(dropframe, alg, *SCHEME)
     alg_menu.grid(row=0, column=1)
 
-    reset_vals(alg.get())
+    reset_label(alg.get())
 
     master.mainloop()
 

@@ -25,19 +25,18 @@ import time
 SCHEMES = [
     "Classic",
     "Shared",
-    "Hybrid"
 ]
 
 OPTIONS = {
-    "Heat": SCHEMES[:],
+#    "Heat": SCHEMES[:],
     "Euler": SCHEMES[:],
-    "KS": SCHEMES[:]
+#    "KS": SCHEMES[:]
 }
 
-OPTIONS["KS"][-1] = "Register"
+# OPTIONS["KS"][-1] = "Register"
 
 PRECISION = [
-    "Single",
+#    "Single",	
     "Double"
 ]
 
@@ -60,7 +59,7 @@ if not op.isdir(binpath):
     os.mkdir(binpath)
 
 sp.call("make")
-st = 5e4 #Number of timesteps
+st = 5e5 #Number of timesteps
 timeend = '_Timing.txt'
 stfile = op.join(rsltpath, 'performanceData.h5')
 finalfile = op.join(rsltpath, 'performanceParsed.h5')
@@ -70,8 +69,8 @@ if op.isfile(stfile):
 
 store = pd.HDFStore(stfile)
 
-div = [2**k for k in range(11, 21)]
-blx = [2**k for k in range(5, 11)]
+div = [2**k for k in range(11,20)]
+blx = [2**k for k in range(6, 10)]
 print nRuns
 
 for n in xrange(nRuns):
@@ -84,7 +83,7 @@ for n in xrange(nRuns):
             binf = opt + pr + 'Out'
             ExecL = op.join(binpath,binf)
 
-            for sch in range(3):
+            for sch in range(len(SCHEMES)):
                 timename = opt + "_" + pr + "_" + OPTIONS[opt][sch] + timeend
                 
                 timepath = op.join(rsltpath, timename)

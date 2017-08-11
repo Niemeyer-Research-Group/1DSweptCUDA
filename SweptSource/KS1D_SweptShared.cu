@@ -23,7 +23,9 @@
 #include <cmath>
 #include <fstream>
 
-#define GPUNUM          0
+#ifndef GPUNUM
+    #define GPUNUM              0
+#endif
 
 #ifndef REAL
 	#define REAL        float

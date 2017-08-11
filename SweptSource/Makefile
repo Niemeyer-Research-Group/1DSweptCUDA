@@ -1,7 +1,7 @@
 # Simple makefile for all test problems for 1D Swept Rule
-# -maxrregcount=73
+# -maxrregcount=73 -DGPUNUM=1
 
-CUDAFLAGS = -gencode arch=compute_35,code=sm_35 -lm -restrict -O3 -Xcompiler -fopenmp --ptxas-options=-v
+CUDAFLAGS = -gencode arch=compute_35,code=sm_35 -lm -restrict -O3 -Xcompiler -fopenmp --ptxas-options=-v 
 CUDAFLAGSDOUBLE := $(CUDAFLAGS) -DREAL=double -DREALtwo=double2 -DREALthree=double3 -DREALfour=double4
 
 # It will put the compiled programs in the bin subdirectory within the directory

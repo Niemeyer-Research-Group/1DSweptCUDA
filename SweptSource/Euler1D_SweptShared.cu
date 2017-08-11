@@ -40,7 +40,9 @@
 
 // This file uses vector types to hold the dependent variables so fundamental operations on those types are defined as macros to accommodate different data types.  Also, keeping types consistent for common constants (0, 1, 2, etc) used in computation has an appreciable positive effect on performance.
 
-#define GPUNUM              0
+#ifndef GPUNUM
+    #define GPUNUM              0
+#endif
 
 #ifndef REAL
     #define REAL            float
