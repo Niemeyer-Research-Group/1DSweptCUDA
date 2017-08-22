@@ -175,7 +175,7 @@ upTriangle(const REAL *IC, REAL *outRight, REAL *outLeft)
         k--;
         __syncthreads();
 
-        if (tididx > (blockDim.x-k) && tididx <= k)
+        if (tididx > (blockDim.x-k) && tididx <= k)    
 		{
 			temper[tididx] = execFunc(temper, tid_top);
 		}
