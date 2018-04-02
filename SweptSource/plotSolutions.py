@@ -28,11 +28,11 @@ import palettable.colorbrewer as pal
 import time
 
 sourcepath = op.abspath(op.dirname(__file__))
-rsltpath = op.join(sourcepath,'Results')
-binpath = op.join(sourcepath,'bin') #Binary directory
+rsltpath = op.join(sourcepath, 'Results')
+binpath = op.join(sourcepath, 'bin') #Binary directory
 gitpath = op.dirname(sourcepath) #Top level of git repo
-plotpath = op.join(op.join(gitpath,"ResultPlots"),"performance") #Folder for plots
-modpath = op.join(gitpath,"pyAnalysisTools")
+plotpath = op.join(op.join(gitpath, "ResultPlots"), "performance") #Folder for plots
+modpath = op.join(gitpath, "pyAnalysisTools")
 os.chdir(sourcepath)
 
 sys.path.append(modpath)
@@ -53,33 +53,32 @@ OPT_PREC = [
     "Double"
 ]
 
-def heat_msg(div,dt,bks,tf,fr):
+def heat_msg(div, dt, bks, tf, fr):
     dx = 0.001
     div = 2**div
     bks = 2**bks
     cyc = int(tf/(bks*dt))
     Fo = alpha*dt/(dx**2)
-    stab = Fo<.5
+    stab = Fo < .5
     ot = int(tf/fr)+2
     if stab:
         return "STABLE \n Fo = {0}  |  nCycles: {1}  |  #Outputs: {2}".format(Fo, cyc, ot)
-    else:
-        return "UNSTABLE UNSTABLE \n Fo: {0} is too low.".format(Fo)
+    return "UNSTABLE UNSTABLE \n Fo: {0} is too low.".format(Fo)
 
-def ks_msg(div,dt,bks,tf,fr):
+def ks_msg(div, dt, bks, tf, fr):
     dx = 0.5
     div = 2**div
     bks = 2**bks
     cyc = int(4*tf/(bks*dt))
     dtdx = dt/dx
-    stab = dtdx<.015
+    stab = dtdx < .015
     ot = int(tf/fr)+2
     if stab:
         return "STABLE \n dt/dx = {0}  |  nCycles: {1}  |  #Outputs: {2}".format(dtdx, cyc, ot)
-    else:
-        return "UNSTABLE UNSTABLE \n dt/dx: {0} is too low.".format(dtdx)
 
-def euler_msg(div,dt,bks,tf,fr):
+    return "UNSTABLE UNSTABLE \n dt/dx: {0} is too low.".format(dtdx)
+
+def euler_msg(div, dt, bks, tf, fr):
     div = 2**div
     dx = 1.0/(float(div-1.0))
     bks = 2**bks
@@ -89,8 +88,8 @@ def euler_msg(div,dt,bks,tf,fr):
     ot = int(tf/fr)+2
     if stab:
         return "STABLE \n dt/dx = {0}  |  nCycles: {1}  |  #Outputs: {2}".format(dtdx, cyc, ot)
-    else:
-        return "UNSTABLE UNSTABLE \n dt/dx: {0} is too low.".format(dtdx)
+
+    return "UNSTABLE UNSTABLE \n dt/dx: {0} is too low.".format(dtdx)
 
 funs = [ks_msg, heat_msg, euler_msg]
 
@@ -175,40 +174,40 @@ check_one = Tk.Checkbutton(entryframe, text="Swept Scheme ", variable=sw)
 check_two = Tk.Checkbutton(entryframe, text="Alternative Swept ", variable=proc_share)
 check_three = Tk.Checkbutton(entryframe, text="Double Precision ", variable=prec)
 
-check_one.grid(row = 9, column = 0)
-check_two.grid(row = 10, column = 0)
-check_three.grid(row = 9, column = 1)
+check_one.grid(row=9, column=0)
+check_two.grid(row=10, column=0)
+check_three.grid(row=9, column=1)
 
 # Just have one update routine and update for all changes.
 
-Tk.Label(entryframe, text= "Number of divisions: 2^").grid(row=1, column = 0)
+Tk.Label(entryframe, text= "Number of divisions: 2^").grid(row=1, column=0)
 div_ent = Tk.Entry(entryframe, textvariable=divpow)
-div_ent.grid(row = 1, column = 1)
-res_one = Tk.Label(entryframe, text = str(2**divpow.get()), anchor = Tk.W)
-res_one.grid(row = 2, column = 1)
-master.bind_class("Entry","<FocusOut>", reset_label)
+div_ent.grid(row=1, column=1)
+res_one = Tk.Label(entryframe, text=str(2**divpow.get()), anchor=Tk.W)
+res_one.grid(row=2, column=1)
+master.bind_class("Entry", "<FocusOut>", reset_label)
 
-Tk.Label(entryframe, text= "Threads per block: 2^").grid(row=3, column = 0)
+Tk.Label(entryframe, text= "Threads per block: 2^").grid(row=3, column=0)
 blk_ent = Tk.Entry(entryframe, textvariable=blkpow)
-blk_ent.grid(row = 3, column = 1)
-res_two = Tk.Label(entryframe, text = str(2**blkpow.get()), anchor = Tk.W)
-res_two.grid(row = 4, column = 1)
+blk_ent.grid(row=3, column=1)
+res_two = Tk.Label(entryframe, text=str(2**blkpow.get()), anchor=Tk.W)
+res_two.grid(row=4, column=1)
 
-Tk.Label(entryframe, text= u"\N{GREEK CAPITAL LETTER DELTA}"+"t (seconds): ").grid(row=5, column = 0)
-Tk.Entry(entryframe, textvariable=deltat).grid(row = 5, column = 1)
+Tk.Label(entryframe, text= u"\N{GREEK CAPITAL LETTER DELTA}"+"t (seconds): ").grid(row=5, column=0)
+Tk.Entry(entryframe, textvariable=deltat).grid(row=5, column=1)
 
-Tk.Label(entryframe, text= "Stopping time (seconds): ").grid(row=6, column = 0)
-Tk.Entry(entryframe, textvariable=t_final).grid(row = 6, column = 1)
+Tk.Label(entryframe, text= "Stopping time (seconds): ").grid(row=6, column=0)
+Tk.Entry(entryframe, textvariable=t_final).grid(row=6, column=1)
 
-Tk.Label(entryframe, text= "Output frequency (seconds): ").grid(row=7, column = 0)
-Tk.Entry(entryframe, textvariable=fq).grid(row = 7, column = 1)
+Tk.Label(entryframe, text= "Output frequency (seconds): ").grid(row=7, column=0)
+Tk.Entry(entryframe, textvariable=fq).grid(row=7, column=1)
 res_three = Tk.Label(entryframe)
-res_three.grid(row = 11, column = 0, columnspan = 2)
+res_three.grid(row=11, column=0, columnspan=2)
 
 button_send = Tk.Button(endframe, text="OK", command=ok)
-button_send.grid(row = 0, column = 0)
+button_send.grid(row=0, column=0)
 button_sk = Tk.Button(endframe, text="REPLOT W/O RUNNING", command=replot)
-button_sk.grid(row = 0, column = 1)
+button_sk.grid(row=0, column=1)
 problem_menu = Tk.OptionMenu(dropframe, problem, *OPTIONS, command=reset_vals)
 problem_menu.grid()
 
@@ -233,15 +232,15 @@ if not op.isdir(rsltpath):
     os.mkdir(rsltpath)
 
 Varfile = op.join(rsltpath, typename + "_Result.dat")
-respath = op.join(gitpath,'ResultPlots')
-pltpath = op.join(respath,'SimResults')
-gifpath = op.join(respath,'Gifs')
-temppath = op.join(gifpath,"Temp")
+respath = op.join(gitpath, 'ResultPlots')
+pltpath = op.join(respath, 'SimResults')
+gifpath = op.join(respath, 'Gifs')
+temppath = op.join(gifpath, "Temp")
 
 if not op.isdir(temppath):
     os.mkdir(temppath)
 
-avifile = op.join(temppath,typename+".avi")
+avifile = op.join(temppath, typename+".avi")
 
 div = 2**divpow.get()
 bks = 2**blkpow.get()

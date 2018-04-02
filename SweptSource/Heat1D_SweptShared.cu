@@ -637,6 +637,7 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
     			twrite += freq;
     		}
         }
+        cudaStreamDestroy(st1);
         cudaFreeHost(h_right);
         cudaFreeHost(h_left);
         free(tmpr);

@@ -19,21 +19,18 @@ import os.path as op
 import sys
 
 sourcepath = op.abspath(op.dirname(__file__))
-rsltpath = op.join(sourcepath,'Results')
-binpath = op.join(sourcepath,'bin') #Binary directory
+rsltpath = op.join(sourcepath, 'Results')
+binpath = op.join(sourcepath, 'bin') #Binary directory
 gitpath = op.dirname(sourcepath) #Top level of git repo
-plotpath = op.join(op.join(gitpath,"ResultPlots"),"performance") #Folder for plots
-modpath = op.join(gitpath,"pyAnalysisTools")
+plotpath = op.join(op.join(gitpath, "ResultPlots"), "performance") #Folder for plots
+modpath = op.join(gitpath, "pyAnalysisTools")
 os.chdir(sourcepath)
 
 sys.path.append(modpath)
 import main_help as mh
-
-import numpy as np
 import subprocess as sp
-import shlex
+import numpy as np
 import Tkinter as Tk
-import ttk
 
 OPTIONS = [
     "Heat",
@@ -57,9 +54,9 @@ if len(sys.argv) < 2:
     #GUI start
     master = Tk.Tk()
 
-    dropframe = Tk.Frame(master, pady = 2)
-    entryframe = Tk.Frame(master, pady = 1)
-    endframe = Tk.Frame(master, pady = 2)
+    dropframe = Tk.Frame(master, pady=2)
+    entryframe = Tk.Frame(master, pady=1)
+    endframe = Tk.Frame(master, pady=2)
     errframe = Tk.Frame(master)
 
     dropframe.pack()
@@ -118,43 +115,43 @@ if len(sys.argv) < 2:
     master.protocol("WM_DELETE_WINDOW", on_closing)
     master.bind('<Return>', ret)
 
-    Tk.Checkbutton(entryframe, text="Double Precision", variable=prec).grid(row = 8, column = 0)
+    Tk.Checkbutton(entryframe, text="Double Precision", variable=prec).grid(row=8, column=0)
 
-    Tk.Label(entryframe, text="Number of divisions: 2^").grid(row=1, column = 0)
+    Tk.Label(entryframe, text="Number of divisions: 2^").grid(row=1, column=0)
     div_one = Tk.Entry(entryframe, textvariable=divpow)
-    div_one.grid(row = 1, column = 1)
+    div_one.grid(row=1, column=1)
 
-    Tk.Label(entryframe, text="Threads per block: 2^").grid(row=3, column = 0)
+    Tk.Label(entryframe, text="Threads per block: 2^").grid(row=3, column=0)
     blk_one = Tk.Entry(entryframe, textvariable=blkpow)
-    blk_one.grid(row = 3, column = 1)
+    blk_one.grid(row=3, column=1)
 
-    Tk.Label(entryframe, text=" to: 2^").grid(row=1, column = 2)
-    div_two = Tk.Entry(entryframe, textvariable=divpowend)
-    div_two.grid(row = 1, column = 3)
+    Tk.Label(entryframe, text=" to: 2^").grid(row=1, column=2)
+    div_two=Tk.Entry(entryframe, textvariable=divpowend)
+    div_two.grid(row=1, column=3)
 
-    Tk.Label(entryframe, text=" to: 2^").grid(row=3, column = 2)
+    Tk.Label(entryframe, text=" to: 2^").grid(row=3, column=2)
     blk_two = Tk.Entry(entryframe, textvariable=blkpowend)
-    blk_two.grid(row = 3, column = 3)
+    blk_two.grid(row=3, column=3)
 
-    Tk.Label(entryframe, text= "Number of timesteps: ").grid(row=6, column = 0)
-    Tk.Entry(entryframe, textvariable=steps).grid(row = 6, column = 1)
+    Tk.Label(entryframe, text= "Number of timesteps: ").grid(row=6, column=0)
+    Tk.Entry(entryframe, textvariable=steps).grid(row=6, column=1)
     Tk.Label()
 
-    res_one = Tk.Label(entryframe, text = str(2**divpow.get()))
-    res_one.grid(row = 2, column = 1)
-    res_two = Tk.Label(entryframe, text = str(2**blkpow.get()))
-    res_two.grid(row = 4, column = 1)
-    res_three = Tk.Label(entryframe, text = str(2**divpowend.get()))
-    res_three.grid(row = 2, column = 3)
-    res_four = Tk.Label(entryframe, text = str(2**blkpowend.get()))
-    res_four.grid(row = 4, column = 3)
+    res_one = Tk.Label(entryframe, text=str(2**divpow.get()))
+    res_one.grid(row=2, column=1)
+    res_two = Tk.Label(entryframe, text=str(2**blkpow.get()))
+    res_two.grid(row=4, column=1)
+    res_three = Tk.Label(entryframe, text=str(2**divpowend.get()))
+    res_three.grid(row=2, column=3)
+    res_four = Tk.Label(entryframe, text=str(2**blkpowend.get()))
+    res_four.grid(row=4, column=3)
 
     master.bind_class("Entry", "<FocusOut>", reset_label)
 
     button_send = Tk.Button(endframe, text="OK", command=ok)
-    button_send.grid(row = 0, column = 0)
+    button_send.grid(row=0, column=0)
     button_sk = Tk.Button(endframe, text="REPLOT W/O RUNNING", command=replot)
-    button_sk.grid(row = 0, column = 1)
+    button_sk.grid(row=0, column=1)
 
     problem_menu = Tk.OptionMenu(dropframe, problem, *OPTIONS)
     problem_menu.grid(row=0, column=0)
@@ -206,13 +203,13 @@ timename = fname + "_" + precise + "_" + sch
 binf = fname + precise + 'Out'
 vf = fname + precise + rsltout
 timefile = timename + timeout
-plotstr = timename.replace("_"," ")
+plotstr = timename.replace("_", " ")
 
-timepath = op.join(rsltpath,timefile)
-Varfile = op.join(rsltpath,vf)
+timepath = op.join(rsltpath, timefile)
+Varfile = op.join(rsltpath, vf)
 
 #Standard testing runs for these algorithms
-dts = [.001, float(format(1.0/div[-1],'.0e'))*.1, .005]
+dts = [.001, float(format(1.0/div[-1], '.0e'))*.1, .005]
 tfs = [st*m for m in dts]
 dt, tf = dts[prob_idx], tfs[prob_idx]
 
@@ -225,9 +222,9 @@ if not op.isdir(binpath):
 if not op.isdir(rsltpath):
     os.mkdir(rsltpath)
 
-t_fn = open(timepath,'w')
+t_fn = open(timepath, 'w')
 
-ExecL = op.join(binpath,binf)
+ExecL = op.join(binpath, binf)
 
 sp.call("make")
 
@@ -237,7 +234,6 @@ t_fn.close()
 
 mh.runCUDA(ExecL, div, blx, dt, tf, tf*2.0, algs, Varfile, timepath)
 print div, blx
-
 
 myFrame = mh.Perform(timepath)
 myFrame.plotframe(plotpath, False)

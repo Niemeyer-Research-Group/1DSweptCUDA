@@ -2,6 +2,24 @@
 
 # 1DSweptCUDA
 
+<!-- TOC -->
+
+- [1DSweptCUDA](#1dsweptcuda)
+    - [CUDA instructions](#cuda-instructions)
+    - [Swept program instructions](#swept-program-instructions)
+    - [Directory Structure](#directory-structure)
+    - [Test Problem Discretizations](#test-problem-discretizations)
+    - [Swept Scheme](#swept-scheme)
+    - [Test Hardware](#test-hardware)
+    - [Dependencies](#dependencies)
+        - [Hardware](#hardware)
+        - [Python](#python)
+        - [CUDA](#cuda)
+        - [Command line](#command-line)
+    - [Additional Notes](#additional-notes)
+
+<!-- /TOC -->
+
 Repository for 1D Swept rule written in CUDA.
 
 *This project was developed on the Ubuntu 16.04 OS.  All programs are designed to be executed via the terminal.  A UNIX OS is strongly recommended*
@@ -29,7 +47,7 @@ The path settings I use can be found in examplerc.txt.
 
 ## Swept program instructions
 
-It's recommended that the user begin by running the plotSolutions.py python script from the command line in the SweptSource directory.
+It's recommended that the user begin by running the plotSolutions.py script from the command line in the SweptSource directory.
 This will create the SweptSource/bin subdirectory for the executables, compile all the programs and plot the result of the program with the conditions you select in the GUI.
 
 In addition, the programs may be compiled using make from the command line or individually.
@@ -61,7 +79,7 @@ All programs can be run from the terminal with the same command:
         * _perfAnalysis.py_: Parses results of performance tests and makes informative plots in __ResultPlots__ folder.
     * __Testing__ 
         * _KSDouble_Official.txt_: The official version of the KS result.  Run with very small (10^-8) timestep.  KS has no analytical solution so this is the basis for accuracy judgements.
-        * _testProcedure.py_: Python script that determines the consistency and accuracy of the programs.  Consistency is measured by comparing the results of the versions (classic, swept, variant) to each other and cataloguing the differences in ResultPlots/ExactTesting/cinsistency.out.  Accuracy is measured against analytic solutions (Heat and Euler Equations) or small timestep solution (KS equation.)  Error plots available in ResultPlots/ExactTesting/.
+        * _testProcedure.py_: Script to verify the consistency and accuracy of the programs.  Consistency is measured by comparing the results of the versions (classic, swept, variant) to each other and cataloguing the differences in ResultPlots/ExactTesting/cinsistency.out.  Accuracy is measured against analytic solutions (Heat and Euler Equations) or small timestep solution (KS equation.)  Error plots available in ResultPlots/ExactTesting/.
 * __ResultPlots__: 
     * All plots for accuracy, simulation results, swept rule visualization, and performance results.  See [the plot readme](ResultPlots/PlotREADME.md) for further details.
 * __pyAnalysisTools__
@@ -87,13 +105,12 @@ CPU Performance Tests were run on a single Intel Xeon E5-2630 @ 2.4 GHz with 8 c
 
 ### Python
 * Python version 2.7
-* Anaconda for python 2.7
 * [exactpack](https://github.com/losalamos/ExactPack)
 * [palettable](https://jiffyclub.github.io/palettable/#palette-interface)
 
 ### CUDA
-* Cuda 7.5 or 8.0
-* gcc and g++
+* Cuda 7.5+
+* gcc and g++ compatible with CUDA version
 * OpenMP
 
 ### Command line

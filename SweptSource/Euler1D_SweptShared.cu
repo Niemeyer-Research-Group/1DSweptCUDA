@@ -1106,7 +1106,6 @@ sweptWrapper(const int bks, int tpb, const int dv, const double dt, const double
 	cudaFree(d0_left);
     cudaFree(d2_right);
 	cudaFree(d2_left);
-
     return t_eq;
 }
 
