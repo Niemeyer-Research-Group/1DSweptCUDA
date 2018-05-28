@@ -1,5 +1,5 @@
 '''
-    Run the performance test described in the paper.  
+    Run the performance test described in the paper.
     Will save all best runs to an hd5 file in a pandas dataframe in Results folder.
     Will also save ALL timing for the last run to appropriately named text files in Results folder.
 '''
@@ -40,7 +40,7 @@ OPTIONS = {
 # OPTIONS["KS"][-1] = "Register"
 
 PRECISION = [
-    "Single",	
+    "Single",
     "Double"
 ]
 
@@ -89,7 +89,7 @@ for n in range(nRuns):
 
             for sch in range(len(SCHEMES)):
                 timename = opt + "_" + pr + "_" + OPTIONS[opt][sch] + timeend
-                
+
                 timepath = op.join(rsltpath, timename)
 
                 #Erase existing run and write header.
@@ -108,9 +108,9 @@ for n in range(nRuns):
 names = ['n'+str(k) for k in range(nRuns)] + ['mean', 'std']
 df_all = pd.concat([store[k] for k in store.keys()], axis=1)
 df_all = pd.concat([df_all, df_all.mean(axis=1), df_all.std(axis=1)], axis=1)
+df_all.columns = namess2
 store.close()
 
 store2 = pd.HDFStore(finalfile)
 store2.put('runs' ,df_all)
 store2.close()
-
