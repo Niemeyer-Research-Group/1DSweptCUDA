@@ -8,13 +8,12 @@ import sys
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from cycler import cycler
-import palettable.colorbrewer as pal
 import numpy as np
 import datetime as dtime
 import subprocess as sp
 import warnings
 import collections
-warnings.filterwarnings("ignore")
+from exactpack.solvers.riemann import Sod
 
 exactpath = op.abspath(op.dirname(__file__))
 sourcepath = op.dirname(exactpath)
@@ -23,23 +22,18 @@ binpath = op.join(sourcepath,'bin') #Binary directory
 gitpath = op.dirname(sourcepath) #Top level of git repo
 plotpath = op.join(op.join(gitpath, "ResultPlots"), "ExactTesting") #Folder for plots
 modpath = op.join(gitpath, "pyAnalysisTools")
-
 os.chdir(sourcepath)
 
 sys.path.append(modpath)
 import main_help as mh
 import result_help as rh
 
-from exactpack.solvers.riemann import Sod
-import warnings
+warnings.filterwarnings("ignore")
 
 mpl.rcParams['lines.linewidth'] = 3
 mpl.rcParams['lines.markersize'] = 8
 mpl.rcParams["grid.alpha"] = 0.5
 mpl.rcParams["axes.grid"] = True
-
-plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors)+
-    cycler('marker', ['D', 'o', 'h', '*', '^', 'x', 'v', '8']))
 
 precision = "Double"
 binary = precision + "Out"
@@ -50,9 +44,9 @@ tpbs = 64
 fqCoeff = 0.3
 ksexactpath = op.join(exactpath, "KS" + precision + '_Official.txt')
 
-probs = [["Heat", 50.0],
-        ["KS", 20.0], 
-        ["Euler", 0.22]] 
+probs = [ ["Heat", 50.0],
+          ["KS", 20.0], 
+          ["Euler", 0.22] ] 
 
 def make_KSExact():
     p = "KS"

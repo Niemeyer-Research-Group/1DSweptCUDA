@@ -8,27 +8,37 @@ PROJECT_DIR = $(shell pwd)
 OUT_DIR := ./bin
 #$(PROJECT_DIR)
 
+.PHONY: clean cleanr test
+
 EUL := Euler1D_SweptShared.cu
 HT := Heat1D_SweptShared.cu
 KS := KS1D_SweptShared.cu
 
 default:	$(OUT_DIR)/HeatSingleOut $(OUT_DIR)/KSSingleOut $(OUT_DIR)/EulerSingleOut $(OUT_DIR)/HeatDoubleOut $(OUT_DIR)/KSDoubleOut $(OUT_DIR)/EulerDoubleOut
 
-$(OUT_DIR)/HeatSingleOut:	$(HT)
+$(OUT_DIR)/HeatSingleOut: $(HT)
 	nvcc -o $@ $< $(CUDAFLAGS)
 
-$(OUT_DIR)/KSSingleOut:	$(KS)
+$(OUT_DIR)/KSSingleOut: $(KS)
+	nvcc -o $@ $< -w $(CUDAFLAGS)
+
+$(OUT_DIR)/EulerSingleOut: $(EUL)
 	nvcc -o $@ $< $(CUDAFLAGS)
 
-$(OUT_DIR)/EulerSingleOut:	$(EUL)
-	nvcc -o $@ $< $(CUDAFLAGS)
-
-$(OUT_DIR)/HeatDoubleOut:	$(HT)
+$(OUT_DIR)/HeatDoubleOut: $(HT)
 	nvcc -o $@ $< $(CUDAFLAGSDOUBLE)
 
 $(OUT_DIR)/KSDoubleOut:	$(KS)
+	nvcc -o $@ $< -w $(CUDAFLAGSDOUBLE)
+
+$(OUT_DIR)/EulerDoubleOut: $(EUL)
 	nvcc -o $@ $< $(CUDAFLAGSDOUBLE)
 
-$(OUT_DIR)/EulerDoubleOut:	$(EUL)
-	nvcc -o $@ $< $(CUDAFLAGSDOUBLE)
+cleanr:
+	rm ./bin/* Results/*.txt Results/*.dat
 
+clean:
+	rm ./bin/*
+
+test:
+	python Testing/testProcedure.py

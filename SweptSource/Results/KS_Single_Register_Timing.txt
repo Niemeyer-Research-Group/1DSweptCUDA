@@ -1,1 +1,0 @@
-Num_Spatial_Points	Threads_per_Block	Time_per_timestep_(us)

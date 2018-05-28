@@ -10,11 +10,11 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 from cycler import cycler
 import pandas as pd
-import palettable.colorbrewer as pal
+#import palettable.colorbrewer as pal
 import collections
 import main_help as mh
 
-plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors))
+#plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors))
 
 mpl.rcParams['lines.linewidth'] = 3
 mpl.rcParams["grid.alpha"] = 0.5

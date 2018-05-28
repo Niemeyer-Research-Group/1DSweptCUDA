@@ -7,8 +7,9 @@ import numpy as np
 import os
 import sys
 import os.path as op
+import matplotlib as mpl
 import matplotlib.pyplot as plt
-import palettable.colorbrewer as pal
+# import palettable.colorbrewer as pal
 from datetime import datetime
 from cycler import cycler
 
@@ -25,15 +26,17 @@ import analysis_help as ah
 #Flags for type of run.
 readin = False
 savepl = True
-writeout = False
+writeout = True
 
 #Don't want to overwrite with previous version.
 if readin:
     writeout = False
 
+if "Agg" not in mpl.backends.backend:
+	mpl.use("Agg")
+
 #Cycle through markers and colors.
-plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors)+
-    cycler('marker', ['D', 'o', 'h', '*', '^', 'x', 'v', '8']))
+plt.rc('axes', prop_cycle=cycler('marker', ['D', 'o', 'h', '*', '^', 'x', 'v', '8']))
 
 plotpath = op.join(op.join(op.join(gitpath, "ResultPlots"), "performance"), "Summary") #Plots folder
 tablefile = op.join(plotpath, "SweptTestResults.html")
@@ -57,6 +60,12 @@ else:
     df_result = ah.gatherTest(thispath)
 
 parseRun = ah.QualityRuns(df_result)
+#Now get the best scores for each.
+df_best = df_result.min(axis=1)
+df_best_idx = df_result.idxmin(axis=1)
+df_launch = df_best_idx.value_counts()
+df_launch.index = pd.to_numeric(df_launch.index)
+df_launch.sort_index(inplace=True)
 
 plotfile = op.join(plotpath,"Best_Launch.pdf")
 
@@ -74,6 +83,7 @@ plt.grid(alpha=0.5)
 if savepl:
     plt.savefig(plotfile, bbox_inches='tight')
 
+midx_name= ["Problem", "Precision", "Algorithm", "Num Spatial Points"]
 #Get level values to iterate
 algs = df_result.index.get_level_values("Algorithm").unique().tolist()
 algs.sort()
@@ -81,9 +91,6 @@ probs = df_result.index.get_level_values("Problem").unique().tolist()
 probs.sort()
 precs = df_result.index.get_level_values("Precision").unique().tolist()
 precs.sort()
-
-#Now get the best scores for each.
-df_best = df_result.min(axis=1)
 
 #Plot all the best launch bounds in barplot by runtype
 #Set up here, execution in following for loop.
@@ -185,30 +192,30 @@ plotfile = op.join(plotpath, "Speedups.pdf")
 if savepl:
     fig.savefig(plotfile, bbox_inches='tight')
 
-#Plot MPI version results vs CUDA for KS.
-fig, ax = plt.subplots(1, 1, figsize=(14, 8))
-dfM = pd.read_csv("KS_MPI.csv")
-mpihead = dfM.columns.values.tolist()
-dfM = dfM.set_index(mpihead[0])
-dfK = pd.DataFrame(df_best.xs("KS", level="Problem"))
-dfK = dfK.unstack("Precision")
-dfK = dfK.unstack("Algorithm")
-dfK.columns = dfK.columns.droplevel()
+# #Plot MPI version results vs CUDA for KS.
+# fig, ax = plt.subplots(1, 1, figsize=(14, 8))
+# dfM = pd.read_csv("KS_MPI.csv")
+# mpihead = dfM.columns.values.tolist()
+# dfM = dfM.set_index(mpihead[0])
+# dfK = pd.DataFrame(df_best.xs("KS", level="Problem"))
+# dfK = dfK.unstack("Precision")
+# dfK = dfK.unstack("Algorithm")
+# dfK.columns = dfK.columns.droplevel()
 
-dfKS = dfM.join(dfK)
-dfKS.dropna(inplace=True)
-dfKS.plot(ax=ax, logx=True, logy=True, linewidth=2, figsize=(14, 8))
-ax.set_ylabel(headers[2])
+# dfKS = dfM.join(dfK)
+# dfKS.dropna(inplace=True)
+# dfKS.plot(ax=ax, logx=True, logy=True, linewidth=2, figsize=(14, 8))
+# ax.set_ylabel(headers[2])
 
-ax.set_title("KS MPI vs GPU implementation")
-ax.grid(alpha=0.5)
+# ax.set_title("KS MPI vs GPU implementation")
+# ax.grid(alpha=0.5)
 
-tblMPI = op.join(plotpath, "KS_MPI_GPU_Comparison.html")
-dfKS.to_html(tblMPI)
+# tblMPI = op.join(plotpath, "KS_MPI_GPU_Comparison.html")
+# dfKS.to_html(tblMPI)
 
-plotfile = op.join(plotpath, "KS_MPI_GPU_Comparison.pdf")
-if savepl:
-    fig.savefig(plotfile, bbox_inches='tight')
+# plotfile = op.join(plotpath, "KS_MPI_GPU_Comparison.pdf")
+# if savepl:
+#     fig.savefig(plotfile, bbox_inches='tight')
 
 if writeout:
     df_result.to_html(tablefile)

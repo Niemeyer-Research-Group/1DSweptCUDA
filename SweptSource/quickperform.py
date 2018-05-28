@@ -7,20 +7,24 @@
 import os
 import os.path as op
 import sys
+import warnings
+import subprocess as sp
+import pandas as pd
+import time
 
 sourcepath = op.abspath(op.dirname(__file__))
-rsltpath = op.join(sourcepath,'Results')
-binpath = op.join(sourcepath,'bin') #Binary directory
+rsltpath = op.join(sourcepath, 'Results')
+binpath = op.join(sourcepath, 'bin') #Binary directory
 gitpath = op.dirname(sourcepath) #Top level of git repo
-modpath = op.join(gitpath,"pyAnalysisTools")
+modpath = op.join(gitpath, "pyAnalysisTools")
 os.chdir(sourcepath)
 
 sys.path.append(modpath)
 import main_help as mh
 import analysis_help as ah
-import subprocess as sp
-import pandas as pd
-import time
+
+
+warnings.filterwarnings("ignore")
 
 SCHEMES = [
     "Classic",
@@ -28,15 +32,15 @@ SCHEMES = [
 ]
 
 OPTIONS = {
-#    "Heat": SCHEMES[:],
+    "Heat": SCHEMES[:],
     "Euler": SCHEMES[:],
-#    "KS": SCHEMES[:]
+     "KS": SCHEMES[:]
 }
 
 # OPTIONS["KS"][-1] = "Register"
 
 PRECISION = [
-#    "Single",	
+    "Single",	
     "Double"
 ]
 
@@ -46,11 +50,11 @@ DT = {
     "KS": 0.005,
 }
 
-#Set this for numer of times to run it.  If no argument run it once.  Otherwise run it 
+#Set this for number of times to run it.  If no argument run it once.  Otherwise run it ntimes.
 if len(sys.argv) == 1:
     nRuns = 1
 else:
-    nRuns = sys.argv[1]
+    nRuns = int(sys.argv[1])
 
 if not op.isdir(rsltpath):
     os.mkdir(rsltpath)
@@ -59,7 +63,7 @@ if not op.isdir(binpath):
     os.mkdir(binpath)
 
 sp.call("make")
-st = 5e5 #Number of timesteps
+st = 5e4 #Number of timesteps (50,000)
 timeend = '_Timing.txt'
 stfile = op.join(rsltpath, 'performanceData.h5')
 finalfile = op.join(rsltpath, 'performanceParsed.h5')
@@ -71,9 +75,9 @@ store = pd.HDFStore(stfile)
 
 div = [2**k for k in range(11,20)]
 blx = [2**k for k in range(6, 10)]
-print nRuns
+print(nRuns)
 
-for n in xrange(nRuns):
+for n in range(nRuns):
     tt = time.time()
     for opt in sorted(OPTIONS.keys()):
         dt = DT[opt]
@@ -81,7 +85,7 @@ for n in xrange(nRuns):
         for pr in PRECISION:
             #Path to this executable file.
             binf = opt + pr + 'Out'
-            ExecL = op.join(binpath,binf)
+            ExecL = op.join(binpath, binf)
 
             for sch in range(len(SCHEMES)):
                 timename = opt + "_" + pr + "_" + OPTIONS[opt][sch] + timeend

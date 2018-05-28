@@ -8,7 +8,6 @@ import os.path as op
 import matplotlib.pyplot as plt
 from cycler import cycler
 import pandas as pd
-import palettable.colorbrewer as pal
 import shlex
 import subprocess as sp
 
@@ -27,7 +26,6 @@ class Perform(object):
         
     def plotframe(self, plotpath, shower):
         plotname = op.join(plotpath, self.datafilename + ".pdf")
-        plt.rc('axes', prop_cycle=cycler('color', pal.qualitative.Dark2_8.mpl_colors))
         self.dataMatrix.plot(logx=True, logy=True, grid=True, linewidth=2)
         plt.ylabel(self.headers[2])
         plt.xlabel(self.headers[0].replace("_", " "))
